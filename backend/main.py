@@ -1,5 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.ext.asyncio import AsyncSession
+from db import get_db
 
 app = FastAPI(title="TheraMusic API")
 
@@ -15,3 +17,9 @@ app.add_middleware(
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+@app.get("/db-health")
+async def db_health(db: AsyncSession = Depends(get_db)):
+    # 간단한 ping
+    result = await db.execute("SELECT 1")
+    return {"db": "ok", "result": result.scalar_one()}
