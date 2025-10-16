@@ -1,10 +1,10 @@
 # backend/routers/sessions.py
 from fastapi import APIRouter, Depends
-from auth_dep import get_current_user, User
+from backend.app.api.auth_dep import get_current_user, User
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from db import get_db
-from models import Patient, Session
+from backend.app.db import get_db
+from backend.app.models import Patient, Session
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
