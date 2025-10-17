@@ -3,7 +3,7 @@ import os, asyncio
 from typing import List, Dict, Any
 from openai import OpenAI, APIConnectionError, RateLimitError, OpenAIError
 
-MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 TIMEOUT = float(os.getenv("OPENAI_TIMEOUT_S", "15"))
 
 _client = OpenAI()  # OPENAI_API_KEY는 env로 자동 로딩

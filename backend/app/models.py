@@ -6,10 +6,17 @@ from sqlalchemy import (
     BigInteger, String, Text, Integer, DateTime, CheckConstraint,
     ForeignKey, Index
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 from sqlalchemy.sql import func
 
-from backend.app.db import Base
+import sys
+import os
+
+current_dir = os.path.dirname(os.path.abspath(__file__)) 
+project_root = os.path.abspath(os.path.join(current_dir, ".."))
+sys.path.insert(0, project_root)
+
+from app.db import Base
 from datetime import datetime
 
 class User(Base):
@@ -108,8 +115,9 @@ class TherapistManualInputs(Base):
     bpm_max: Mapped[int | None] = mapped_column()
     key_signature: Mapped[str | None] = mapped_column(String)
     vocals_allowed: Mapped[bool | None] = mapped_column()
-    include_instruments: Mapped[list[str] | None] = mapped_column(postgresql.ARRAY(String))
-    exclude_instruments: Mapped[list[str] | None] = mapped_column(postgresql.ARRAY(String))
+    include_instruments: Mapped[list[str] | None] = mapped_column(ARRAY(String))
+    exclude_instruments: Mapped[list[str] | None] = mapped_column(ARRAY(String))
+    
     duration_sec: Mapped[int | None] = mapped_column()
     notes: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())

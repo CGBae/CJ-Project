@@ -1,9 +1,12 @@
+from __future__ import annotations
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.app.db import get_db
-from __future__ import annotations
+from app.db import get_db
 from app.api.routers import patient, therapist
+
+from dotenv import load_dotenv
+load_dotenv()
 
 app = FastAPI(title="TheraMusic API")
 
