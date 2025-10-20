@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "@ai-sdk/openai": "^2.0.52",
+    "ai": "^5.0.72",
+    "openai": "^6.3.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
