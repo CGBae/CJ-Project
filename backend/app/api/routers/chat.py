@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.models import ConversationMessage, Session, SessionPatientIntake, TherapistManualInputs, SessionPrompt
-from app.services.openai_chat import chat_complete
+from app.services.openai_chat import chat_complete, analyze_dialog_for_mood
 from app.services.intent_detector import is_compose_request
 from app.services.openai_client import generate_prompt_from_guideline
 from app.services.prompt_from_guideline import (
@@ -69,7 +69,10 @@ async def chat_send(req: ChatSendReq, db: AsyncSession = Depends(get_db)):
         if session.initiator_type == "patient":
             intake = await db.get(SessionPatientIntake, req.session_id)
             # 간단 분석값(샘플): 실제로는 OpenAI로 대화 요약/키워드 뽑아 넣기
-            analyzed = {"mood": "calming", "keywords": [], "target": intake.goal if intake else None, "confidence": 0.7}
+            analyzed = await analyze_dialog_for_mood(history)
+            if not analyzed.get("target") and intake and intake.goal:
+                 analyzed["target"] = intake.goal
+                 
             extra = build_extra_requirements_for_patient(
                 getattr(intake, "vas", None),
                 getattr(intake, "prefs", None),

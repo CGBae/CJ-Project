@@ -1,6 +1,6 @@
 from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import insert, update
+from sqlalchemy import insert, update, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas import PatientIntake, PatientAnalyzeReq, SessionCreateResp, PromptResp
@@ -8,6 +8,7 @@ from app.models import Session, SessionPatientIntake, ConversationMessage, Sessi
 from app.db import get_db
 from app.services.openai_client import generate_prompt_from_guideline
 from app.services.prompt_from_guideline import build_extra_requirements_for_patient
+from app.services.openai_chat import analyze_dialog_for_mood
 
 router = APIRouter(prefix="/patient", tags=["patient"])
 
@@ -58,12 +59,25 @@ async def analyze_and_generate(req: PatientAnalyzeReq, db: AsyncSession = Depend
     if not s_intake:
         raise HTTPException(404, "session intake not found")
 
-    analyzed = {"mood": "calming", "keywords": [], "target": s_intake.goal, "confidence": 0.7}
+    q_dialog = select(ConversationMessage.role, ConversationMessage.content)\
+        .where(ConversationMessage.session_id == req.session_id)\
+        .order_by(ConversationMessage.created_at.asc())
+    
+    dialog_rows = (await db.execute(q_dialog)).all()
+    history = [{"role": r[0], "content": r[1]} for r in dialog_rows]
 
-    # analyzed 스냅샷
+    # [수정된 로직]: OpenAI 대화 분석 호출
+    analyzed = await analyze_dialog_for_mood(history)
+    
+    # 분석 결과에 목표가 없으면 인테이크 목표를 사용 (인테이크 목표가 DB 저장 시 dict 또는 JSONB라고 가정)
+    if not analyzed.get("target") and s_intake.goal:
+        analyzed["target"] = s_intake.goal 
+
+    # analyzed 스냅샷 (analyzed 객체 사용)
     await db.execute(
         insert(SessionPrompt).values(
-            session_id=req.session_id, stage="analyzed", data=analyzed, confidence=0.7
+            session_id=req.session_id, stage="analyzed", 
+            data=analyzed, confidence=analyzed.get("confidence", 0.0) # confidence도 분석 결과 사용
         )
     )
 
