@@ -1,12 +1,14 @@
 from __future__ import annotations
+
+import os
+from dotenv import load_dotenv
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"))
+
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
 from app.api.routers import patient, therapist
-
-from dotenv import load_dotenv
-load_dotenv()
 
 app = FastAPI(title="TheraMusic API")
 
