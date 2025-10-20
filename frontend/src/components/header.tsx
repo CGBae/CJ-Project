@@ -5,44 +5,101 @@ import { useEffect, useState } from 'react';
 
 export default function Header() {
   const [isAuthed, setIsAuthed] = useState(false);
+  const [role, setRole] = useState<'patient' | 'counselor' | null>(null);
   const isBypass = process.env.NEXT_PUBLIC_AUTH_BYPASS === 'true';
 
   useEffect(() => {
     if (isBypass) {
       setIsAuthed(true);
+      setRole('patient'); // 기본 환자 모드
       return;
     }
 
-    // 쿠키만으로는 클라이언트 판별이 어려울 수 있으니 간단히 /api/health나 /auth/me 핑
+    // 인증 상태 확인
     fetch('/api/health', { credentials: 'include' })
-      .then(r => setIsAuthed(r.ok))
+      .then(async (r) => {
+        if (r.ok) {
+          setIsAuthed(true);
+          // 실제 서비스라면 /auth/me 등의 엔드포인트에서 role 받아오기
+          const res = await fetch('/auth/me', { credentials: 'include' }).catch(() => null);
+          if (res?.ok) {
+            const data = await res.json();
+            setRole(data.role); // role: 'patient' | 'counselor'
+          } else {
+            setRole('patient');
+          }
+        } else {
+          setIsAuthed(false);
+        }
+      })
       .catch(() => setIsAuthed(false));
   }, [isBypass]);
+
+  const handleRoleToggle = () => {
+    setRole((prev) => (prev === 'patient' ? 'counselor' : 'patient'));
+  };
 
   return (
     <header className="border-b bg-white">
       <div className="max-w-6xl mx-auto flex items-center justify-between h-14 px-4">
-        <Link href="/" className="font-semibold">TheraMusic</Link>
+        <Link href="/" className="font-semibold text-lg">
+          TheraMusic
+        </Link>
+          
+
         <nav className="flex items-center gap-3">
           {isAuthed ? (
             <>
-              <Link href="/dashboard" className="hover:underline">대시보드</Link>
-              {isBypass && (
-                // ⬇️ 테스트 모드일 때만 노출되는 Protected 페이지 링크 버튼들
+              {/* 역할별 메뉴 */}
+              {role === 'patient' && (
                 <>
-                  <Link href="/intake/patient" className="px-2 py-1 border rounded text-sm hover:bg-gray-100">Intake/p</Link>
-                  <Link href="/intake/counselor" className="px-2 py-1 border rounded text-sm hover:bg-gray-100">Intake/c</Link>
-                  <Link href="/counsel" className="px-2 py-1 border rounded text-sm hover:bg-gray-100">Counsel</Link>
-                  <Link href="/music" className="px-2 py-1 border rounded text-sm hover:bg-gray-100">Music</Link>
-                  <Link href="/post" className="px-2 py-1 border rounded text-sm hover:bg-gray-100">Post</Link>
-                  <Link href="/summary/test-session" className="px-2 py-1 border rounded text-sm hover:bg-gray-100">Summary</Link>
-                  <Link href="/admin" className="px-2 py-1 border rounded text-sm hover:bg-gray-100">Admin</Link>
+                  <Link href="/dashboard/patient" className="hover:underline">환자대시보드</Link>
+                  <Link href="/intake/patient" className="hover:underline">접수</Link>
+                  <Link href="/counsel" className="hover:underline">상담</Link>
+                  <Link href="/music" className="hover:underline">음악</Link>
                 </>
               )}
-              <a href="http://localhost:8000/auth/logout" className="text-red-600 hover:underline">로그아웃</a>
+
+              {role === 'counselor' && (
+                <>
+                  <Link href="/dashboard/counselor" className="hover:underline">상담가대시보드</Link>
+                  <Link href="/intake/counselor" className="hover:underline">환자 접수</Link>
+                  <Link href="/counselor" className="hover:underline">환자 관리</Link>
+                </>
+              )}
+
+              {/* 테스트 모드에서 전체 노출
+              {isBypass && (
+                <>
+                  <Link href="/counsel" className="px-2 py-1 border rounded text-sm hover:bg-gray-100">Counsel</Link>
+                  <Link href="/music" className="px-2 py-1 border rounded text-sm hover:bg-gray-100">Music</Link>
+                  <Link href="/intake/patient" className="px-2 py-1 border rounded text-sm hover:bg-gray-100">Intake/p</Link>
+                  <Link href="/intake/counselor" className="px-2 py-1 border rounded text-sm hover:bg-gray-100">Intake/c</Link>
+                  <Link href="/counselor" className="px-2 py-1 border rounded text-sm hover:bg-gray-100">Counselor</Link>
+                  <Link href="/admin" className="px-2 py-1 border rounded text-sm hover:bg-gray-100">Admin</Link>
+                </>
+              )} */}
+
+              {/* 역할 전환 버튼 */}
+              <button
+                onClick={handleRoleToggle}
+                className="ml-2 px-3 py-1 text-sm border rounded hover:bg-gray-100"
+              >
+                {role === 'patient' ? '상담가 ver' : '환자 ver'}
+              </button>
+
+              {/* 로그아웃 */}
+              <a
+                href="http://localhost:8000/auth/logout"
+                className="text-red-600 hover:underline ml-2"
+              >
+                로그아웃
+              </a>
             </>
           ) : (
-            <Link href="/login" className="hover:underline">로그인</Link>
+            <Link href="/login" className="hover:underline">
+              로그인
+            </Link>
           )}
         </nav>
       </div>

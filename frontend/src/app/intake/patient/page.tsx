@@ -61,7 +61,7 @@ export default function PatientIntakePage() {
 
   // VAS 라벨 헬퍼 함수 (10점 척도 기준)
   const getAnxietyLabel = (value: number) => value <= 2 ? "전혀 안심" : value <= 4 ? "약간 안심" : value <= 6 ? "보통" : value <= 8 ? "불안함" : "극심한 불안";
-  const getMoodLabel = (value: number) => value <= 2 ? "매우 우울함" : value <= 4 ? "다소 우울함" : value <= 6 ? "보통" : value <= 8 ? "쾌활함" : "매우 행복함";
+ const getMoodLabel = (value: number) => value <= 2 ? "매우 긍정적/행복함" : value <= 4 ? "쾌활함" : value <= 6 ? "보통" : value <= 8 ? "다소 우울함" : "매우 부정적/우울함";
   const getPainLabel = (value: number) => value === 0 ? "통증 없음" : value <= 4 ? "약한 통증" : value <= 7 ? "중간 통증" : "심한 통증";
 
   // 장르 선택 버튼 스타일링 헬퍼 함수
@@ -92,31 +92,34 @@ export default function PatientIntakePage() {
             
             {/* 1. 불안 수준 VAS */}
             <div className="mb-6">
-                <label htmlFor="currentAnxietyLevel" className="block text-md font-medium text-gray-700 mb-2">
-                    현재 **불안** 수준: <span className="font-bold text-lg text-red-600">{formData.currentAnxietyLevel}점 ({getAnxietyLabel(formData.currentAnxietyLevel)})</span>
-                </label>
-                <input type="range" id="currentAnxietyLevel" name="currentAnxietyLevel" value={formData.currentAnxietyLevel} onChange={handleChange} min="0" max="10" step="1" className="w-full h-2 bg-red-100 rounded-lg appearance-none cursor-pointer" />
-                <div className="flex justify-between text-xs text-gray-500"><span>0: 전혀 안심</span><span>10: 극심한 불안</span></div>
-            </div>
+                {/* 💡 1. 불안 수준 라벨에 text-center 추가 */}
+                <label htmlFor="currentAnxietyLevel" className="block text-md font-medium text-gray-700 mb-2 text-center">
+                    현재 **불안** 수준: <span className="font-bold text-lg text-red-600">{formData.currentAnxietyLevel}점 ({getAnxietyLabel(formData.currentAnxietyLevel)})</span>
+                </label>
+                <input type="range" id="currentAnxietyLevel" name="currentAnxietyLevel" value={formData.currentAnxietyLevel} onChange={handleChange} min="0" max="10" step="1" className="w-full h-2 bg-red-100 rounded-lg appearance-none cursor-pointer" />
+                <div className="flex justify-between text-xs text-gray-500"><span>0: 전혀 불안하지 않음</span><span>10: 극심한 불안</span></div>
+            </div>
 
-            {/* 2. 기분 수준 VAS */}
-            <div className="mb-6">
-                <label htmlFor="currentMoodLevel" className="block text-md font-medium text-gray-700 mb-2">
-                    현재 **기분** 수준: <span className="font-bold text-lg text-blue-600">{formData.currentMoodLevel}점 ({getMoodLabel(formData.currentMoodLevel)})</span>
-                </label>
-                <input type="range" id="currentMoodLevel" name="currentMoodLevel" value={formData.currentMoodLevel} onChange={handleChange} min="0" max="10" step="1" className="w-full h-2 bg-blue-100 rounded-lg appearance-none cursor-pointer" />
-                <div className="flex justify-between text-xs text-gray-500"><span>0: 매우 부정적/우울함</span><span>10: 매우 긍정적/행복함</span></div>
-            </div>
+            <div className="mb-6">
+                {/* 💡 2. 기분 수준 라벨에 text-center 추가 */}
+                <label htmlFor="currentMoodLevel" className="block text-md font-medium text-gray-700 mb-2 text-center">
+                    현재 **기분** 수준: <span className="font-bold text-lg text-blue-600">{formData.currentMoodLevel}점 ({getMoodLabel(formData.currentMoodLevel)})</span>
+                </label>
+                <input type="range" id="currentMoodLevel" name="currentMoodLevel" value={formData.currentMoodLevel} onChange={handleChange} min="0" max="10" step="1" className="w-full h-2 bg-blue-100 rounded-lg appearance-none cursor-pointer" />
+                <div className="flex justify-between text-xs text-gray-500"><span>0: 매우 긍정적/행복함</span><span>10: 매우 부정적/우울함</span></div>
+            </div>
 
-            {/* 3. 통증 수준 VAS */}
-            <div>
-                <label htmlFor="currentPainLevel" className="block text-md font-medium text-gray-700 mb-2">
-                    현재 **통증** 수준: <span className="font-bold text-lg text-green-600">{formData.currentPainLevel}점 ({getPainLabel(formData.currentPainLevel)})</span>
-                </label>
-                <input type="range" id="currentPainLevel" name="currentPainLevel" value={formData.currentPainLevel} onChange={handleChange} min="0" max="10" step="1" className="w-full h-2 bg-green-100 rounded-lg appearance-none cursor-pointer" />
-                <div className="flex justify-between text-xs text-gray-500"><span>0: 통증 없음</span><span>10: 상상할 수 없는 최악의 통증</span></div>
-            </div>
-        </section>
+            <div>
+                {/* 💡 3. 통증 수준 라벨에 text-center 추가 */}
+                <label htmlFor="currentPainLevel" className="block text-md font-medium text-gray-700 mb-2 text-center">
+                    현재 **통증** 수준: <span className="font-bold text-lg text-green-600">{formData.currentPainLevel}점 ({getPainLabel(formData.currentPainLevel)})</span>
+                </label>
+                <input type="range" id="currentPainLevel" name="currentPainLevel" value={formData.currentPainLevel} onChange={handleChange} min="0" max="10" step="1" className="w-full h-2 bg-green-100 rounded-lg appearance-none cursor-pointer" />
+                <div className="flex justify-between text-xs text-gray-500"><span>0: 통증 없음</span><span>10: 상상할 수 없는 최악의 통증</span></div>
+            </div>
+        </section>
+        
+        {/* ... 이하 코드는 변경 없음 ... */}
 
         {/* 섹션 2: 음악 선호도 (버튼 선택형) */}
         <section className="p-6 border rounded-lg bg-gray-50 shadow-sm">
