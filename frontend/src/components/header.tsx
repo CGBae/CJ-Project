@@ -30,8 +30,7 @@ export default function Header() {
               {isBypass && (
                 // ⬇️ 테스트 모드일 때만 노출되는 Protected 페이지 링크 버튼들
                 <>
-                  <Link href="/intake/patient" className="px-2 py-1 border rounded text-sm hover:bg-gray-100">Intake/p</Link>
-                  <Link href="/intake/counselor" className="px-2 py-1 border rounded text-sm hover:bg-gray-100">Intake/c</Link>
+                  <Link href="/intake" className="px-2 py-1 border rounded text-sm hover:bg-gray-100">Intake</Link>
                   <Link href="/counsel" className="px-2 py-1 border rounded text-sm hover:bg-gray-100">Counsel</Link>
                   <Link href="/music" className="px-2 py-1 border rounded text-sm hover:bg-gray-100">Music</Link>
                   <Link href="/post" className="px-2 py-1 border rounded text-sm hover:bg-gray-100">Post</Link>
