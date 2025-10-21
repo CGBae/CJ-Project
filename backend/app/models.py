@@ -58,7 +58,7 @@ class Session(Base):
     created_by: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
-
+    creator: Mapped["User"] = relationship(back_populates="sessions")
     status: Mapped[str] = mapped_column(String, default="QUEUED", nullable=False)
     
     initiator_type: Mapped[str | None] = mapped_column(String, nullable=True)      # 'patient' | 'therapist'
