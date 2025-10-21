@@ -31,6 +31,8 @@ async def chat_send(req: ChatSendReq, db: AsyncSession = Depends(get_db)):
     session = await db.get(Session, req.session_id)
     if not session:
         raise HTTPException(404, "session not found")
+    
+    intake = await db.get(SessionPatientIntake, req.session_id)
 
     # 2) 사용자 메시지 저장
     await db.execute(
@@ -38,7 +40,13 @@ async def chat_send(req: ChatSendReq, db: AsyncSession = Depends(get_db)):
             session_id=req.session_id, role="user", content=req.message
         )
     )
-    await db.commit()
+    
+    if intake and not intake.has_dialog:
+        await db.execute(
+            update(SessionPatientIntake)
+            .where(SessionPatientIntake.session_id == req.session_id)
+            .values(has_dialog=True)
+        )
 
     # 3) 최근 히스토리 로드 (최신 순 정렬 후 뒤에서 자르기)
     q = select(ConversationMessage.role, ConversationMessage.content)\

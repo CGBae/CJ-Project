@@ -11,7 +11,7 @@ class SessionCreateResp(BaseModel):
 class PatientIntake(BaseModel):
     vas: Optional[Dict[str, int]] = None
     prefs: Optional[Dict[str, Any]] = None
-    goal: Optional[Dict[str, int]] = None
+    goal: Optional[Dict[str, str]] = None
     dialog: Optional[List[Dict[str,str]]] = None  # [{role, content}...]
 
 class PatientAnalyzeReq(BaseModel):
