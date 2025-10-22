@@ -7,8 +7,8 @@ from app.schemas import PatientIntake, PatientAnalyzeReq, SessionCreateResp, Pro
 from app.models import Session, SessionPatientIntake, ConversationMessage, SessionPrompt
 from app.db import get_db
 from app.services.openai_client import generate_prompt_from_guideline
-from app.services.prompt_from_guideline import build_extra_requirements_for_patient
-from app.services.openai_chat import analyze_dialog_for_mood
+# from app.services.prompt_from_guideline import build_extra_requirements_for_patient
+# from app.services.openai_chat import analyze_dialog_for_mood
 
 router = APIRouter(prefix="/patient", tags=["patient"])
 
@@ -67,22 +67,33 @@ async def analyze_and_generate(req: PatientAnalyzeReq, db: AsyncSession = Depend
     history = [{"role": r[0], "content": r[1]} for r in dialog_rows]
 
     # [수정된 로직]: OpenAI 대화 분석 호출
-    analyzed = await analyze_dialog_for_mood(history)
+    # analyzed = await analyze_dialog_for_mood(history)
     
     # 분석 결과에 목표가 없으면 인테이크 목표를 사용 (인테이크 목표가 DB 저장 시 dict 또는 JSONB라고 가정)
-    if not analyzed.get("target") and s_intake.goal:
-        analyzed["target"] = s_intake.goal 
+    # if not analyzed.get("target") and s_intake.goal:
+    #     analyzed["target"] = s_intake.goal 
 
     # analyzed 스냅샷 (analyzed 객체 사용)
-    await db.execute(
-        insert(SessionPrompt).values(
-            session_id=req.session_id, stage="analyzed", 
-            data=analyzed, confidence=analyzed.get("confidence", 0.0) # confidence도 분석 결과 사용
-        )
-    )
+    # await db.execute(
+    #     insert(SessionPrompt).values(
+    #         session_id=req.session_id, stage="analyzed", 
+    #         data=analyzed, confidence=analyzed.get("confidence", 0.0) # confidence도 분석 결과 사용
+    #     )
+    # )
 
     # 환자 흐름용 '추가 요구사항' 텍스트 구성
-    extra = build_extra_requirements_for_patient(s_intake.vas, s_intake.prefs, s_intake.goal, analyzed)
+    # extra = build_extra_requirements_for_patient(s_intake.vas, s_intake.prefs, s_intake.goal, analyzed)
+
+    history_text = "\n".join([f"[{m['role']}]: {m['content']}" for m in history])
+    
+    extra = (
+        f"--- [환자 사전 정보 (User Input)] ---\n"
+        f"1. 목표(Goal): {s_intake.goal}\n"
+        f"2. VAS 점수: {s_intake.vas}\n"
+        f"3. 선호/금기(Prefs): {s_intake.prefs}\n\n"
+        f"--- [환자 전체 대화 내용 (Dialog)] ---\n"
+        f"{history_text if history_text else '대화 내용 없음. 사전 정보를 기반으로 생성.'}\n"
+    )
 
     # OpenAI 호출: 긴 가이드라인 그대로 + 추가요구사항 텍스트
     prompt_text = await generate_prompt_from_guideline(req.guideline_json, extra)
