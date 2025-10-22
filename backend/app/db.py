@@ -3,7 +3,7 @@ import os
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 
-ASYNC_DB_URL = os.getenv("ASYNC_DATABASE_URL", "postgresql+asyncpg://postgres:1234@localhost:5432/cj_db")
+ASYNC_DB_URL = os.getenv("ASYNC_DATABASE_URL", "")
 
 class Base(DeclarativeBase):
     pass

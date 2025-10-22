@@ -22,17 +22,19 @@ async def generate_prompt_from_guideline(
     extra_requirements: str,
 ) -> str:
     """
-    긴 JSON 가이드라인을 그대로 user 메시지에 포함하여
+    긴 JSON 가이드라인을 '기본 템플릿'으로, 
+    extra_requirements를 '가장 중요한 환자 맞춤형 수정사항'으로 삼아
     '단일 텍스트 프롬프트'를 생성. 실패 시 예외 발생.
     """
     messages = [
         {"role": "system", "content": SYSTEM_BASE},
         {"role": "user", "content":
-            f"다음 JSON 가이드라인과 추가 요구사항을 모두 준수하여 "
-            f"ElevenLabs Music API용 '단 하나의 텍스트 프롬프트 본문'만 생성하세요.\n\n"
-            f"[JSON 가이드라인]\n{guideline_json}\n\n"
-            f"[추가 요구사항]\n{extra_requirements}\n\n"
-            f"※ 출력은 프롬프트 본문만. 따옴표/설명 금지."
+            f"다음 [환자 맞춤형 요구사항]은 환자의 현재 상태를 반영하는 가장 중요한 정보입니다.\n"
+                f"이 요구사항을 **최우선으로 반영**하여, 아래의 [기본 가이드라인]을 **수정하고 보완**하세요.\n"
+                f"최종 결과물은 ElevenLabs Music API용 '단 하나의 텍스트 프롬프트 본문'만 생성하세요.\n\n"
+                f"--- [환자 맞춤형 요구사항 (가장 중요)] ---\n{extra_requirements}\n\n"
+                f"--- [기본 가이드라인 (템플릿)] ---\n{guideline_json}\n\n"
+                f"※ 출력은 프롬프트 본문만. 따옴표/설명 금지."
         }
     ]
 

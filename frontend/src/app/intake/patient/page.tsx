@@ -12,11 +12,15 @@ export default function PatientIntakePage() {
     const [error, setError] = useState<string | null>(null);
     const router = useRouter();
 
-    // VAS Input 및 Textarea 핸들러
+    // VAS Input, Textarea, Checkbox 핸들러
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value, type } = e.target;
         if (type === 'range') {
             setFormData(prev => ({ ...prev, [name]: Number(value) }));
+        }
+        if (type === 'checkbox') {
+             const { checked } = e.target as HTMLInputElement;
+             setFormData(prev => ({ ...prev, [name]: checked }));
         }
     };
 
@@ -52,7 +56,6 @@ export default function PatientIntakePage() {
             return;
         }
         
-        // 백엔드 스키마에 맞게 데이터 구조를 변경합니다.
         const payload = {
             vas: {
                 anxiety: formData.currentAnxietyLevel,
@@ -62,15 +65,15 @@ export default function PatientIntakePage() {
             prefs: {
                 preferred: formData.preferredMusicGenres,
                 disliked: formData.dislikedMusicGenres,
+                vocals_allowed: formData.vocalsAllowed, // 보컬 포함 여부 값 추가
             },
             goal: {
                 text: sessionGoal
             },
-            dialog: null, // 초기 Intake에서는 대화 내용 없음
+            dialog: null,
         };
 
         try {
-            // 백엔드 API 호출
             const response = await fetch('http://localhost:8000/patient/intake', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -85,7 +88,6 @@ export default function PatientIntakePage() {
                 throw new Error(errorMessage || `서버 에러: ${response.status}`);
             }
 
-            // 응답에서 session_id를 받아 다음 페이지로 이동
             const data = await response.json();
             console.log('Session created:', data);
             router.push(`/counsel?session=${data.session_id}`);
@@ -175,7 +177,7 @@ export default function PatientIntakePage() {
                         </div>
                     </div>
 
-                    <div>
+                    <div className="mb-6">
                         <label className="block text-sm font-medium text-gray-700 mb-3">❌ **비선호**하는 음악 장르</label>
                         <div className="flex flex-wrap gap-2">
                             {MUSIC_GENRE_OPTIONS.map((genre) => (
@@ -183,9 +185,27 @@ export default function PatientIntakePage() {
                             ))}
                         </div>
                     </div>
+                    
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">🎤 **보컬(가사)** 포함 여부</label>
+                        <div className="flex items-center">
+                            <span className={`text-sm font-medium ${!formData.vocalsAllowed ? 'text-indigo-600' : 'text-gray-500'}`}>연주곡만</span>
+                            <label htmlFor="vocalsAllowed" className="relative inline-flex items-center cursor-pointer mx-4">
+                                <input
+                                    type="checkbox"
+                                    id="vocalsAllowed"
+                                    name="vocalsAllowed"
+                                    className="sr-only peer"
+                                    checked={formData.vocalsAllowed}
+                                    onChange={handleChange}
+                                />
+                                <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-4 peer-focus:ring-indigo-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                            </label>
+                            <span className={`text-sm font-medium ${formData.vocalsAllowed ? 'text-indigo-600' : 'text-gray-500'}`}>보컬 포함</span>
+                        </div>
+                    </div>
                 </section>
                 
-                {/* 에러 메시지 출력 */}
                 {error && (
                     <div className="flex items-center justify-center p-3 bg-red-100 text-red-700 rounded-md text-sm">
                         <Info className="w-5 h-5 mr-2 flex-shrink-0" />
@@ -193,7 +213,6 @@ export default function PatientIntakePage() {
                     </div>
                 )}
 
-                {/* 제출 버튼 */}
                 <button 
                     type="submit" 
                     disabled={loading} 
