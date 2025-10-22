@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.models import Session, SessionPrompt, Track
-from app.services.elevenlabs_client import compose_and_wait, ElevenLabsError
+# 1. 함수 이름을 'compose_and_save'으로 변경합니다.
+from app.services.elevenlabs_client import compose_and_save, ElevenLabsError
 
 router = APIRouter(prefix="/music", tags=["music"])
 
@@ -14,7 +15,6 @@ class ComposeReq(BaseModel):
     session_id: int
     music_length_ms: int = Field(120_000, ge=10_000, le=300_000)
     force_instrumental: bool = True
-    # 필요시 추가 파라미터: model/preset/quality 등
     extra: dict | None = None
 
 class ComposeResp(BaseModel):
@@ -29,7 +29,6 @@ async def compose_music(req: ComposeReq, db: AsyncSession = Depends(get_db)):
         raise HTTPException(404, "session not found")
     prompt = (session.prompt or {}).get("text")
     if not prompt:
-        # final이 없다면 prompt 스냅샷에서 마지막 final 찾기(보정)
         q = select(SessionPrompt.data).where(
             SessionPrompt.session_id == req.session_id,
             SessionPrompt.stage == "final",
@@ -41,7 +40,8 @@ async def compose_music(req: ComposeReq, db: AsyncSession = Depends(get_db)):
 
     # 2) ElevenLabs 호출
     try:
-        track_url = await compose_and_wait(
+        # 2. 호출하는 함수 이름을 'compose_and_save'으로 변경합니다.
+        track_url = await compose_and_save(
             prompt,
             music_length_ms=req.music_length_ms,
             force_instrumental=req.force_instrumental,

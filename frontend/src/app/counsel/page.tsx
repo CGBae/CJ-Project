@@ -107,7 +107,7 @@ export default function CounselPage() {
                     title: `(AI 생성) '${finalPrompt.substring(0, 20)}...'`,
                     artist: 'TheraMusic AI',
                     prompt: finalPrompt,
-                    audioUrl: result.track_url, // 실제 ElevenLabs URL
+                    audioUrl: `http://localhost:8000${result.track_url}`, // 실제 ElevenLabs URL
                 };
                 
                 addTrackToPlaylist(newTrack);

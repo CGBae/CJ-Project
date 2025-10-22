@@ -1,110 +1,87 @@
 from __future__ import annotations
-import os, asyncio, time
+import os
+import time
 from typing import Any, Dict, Optional
 import httpx
+import asyncio
 
+# .env 파일에 있는 'ELEVEN_API_KEY'를 그대로 사용합니다.
 ELEVEN_API_KEY = os.getenv("ELEVEN_API_KEY", "")
 BASE = os.getenv("ELEVEN_MUSIC_BASE", "https://api.elevenlabs.io")
-CREATE_PATH = os.getenv("ELEVEN_MUSIC_CREATE", "/v1/music/generate")
-STATUS_PATH_TPL = os.getenv("ELEVEN_MUSIC_STATUS", "/v1/music/tasks/{task_id}")
-DOWNLOAD_FIELD = os.getenv("ELEVEN_MUSIC_DOWNLOAD_FIELD", "audio_url")
+# API 경로는 계정에서 지원하는 정확한 경로를 확인해야 합니다.
+# Text-to-Sound Effects API 또는 Text-to-Speech API 일 수 있습니다.
+# CREATE_PATH = os.getenv("ELEVEN_MUSIC_CREATE", "/v1/text-to-speech/{voice_id}/stream")
+CREATE_PATH = "/v1/music/generate"
 
-DEFAULT_TIMEOUT = 30.0
-POLL_INTERVAL_SEC = 2.5
-POLL_TIMEOUT_SEC = 120.0   # 전체 대기 최대(필요시 늘려)
+# 안정적인 목소리 ID 예시 (실제 ElevenLabs 계정에서 확인 필요)
+DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"
+
+DEFAULT_TIMEOUT = 180.0
 
 class ElevenLabsError(RuntimeError):
     pass
 
 def _headers() -> Dict[str, str]:
+    """ElevenLabs API 요청에 필요한 헤더를 생성합니다."""
     if not ELEVEN_API_KEY:
-        raise ElevenLabsError("ELEVEN_API_KEY is not set")
+        raise ElevenLabsError("ELEVEN_API_KEY가 .env 파일에 설정되지 않았습니다.")
+    
     return {
-        "Authorization": f"Bearer {ELEVEN_API_KEY}",
+        "xi-api-key": ELEVEN_API_KEY,
         "Content-Type": "application/json",
+        "Accept": "audio/mpeg", # 이제 오디오 파일을 직접 받겠다고 명시합니다.
     }
 
-async def create_music_job(
+async def compose_and_save(
     prompt_text: str,
     *,
     music_length_ms: int = 120_000,
     force_instrumental: bool = True,
-    composition_plan: Optional[Dict[str, Any]] = None,
     extra: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
-    프롬프트 텍스트로 생성 작업을 등록하고 task_id(또는 job_id)를 반환.
-    실제 파라미터/필드명은 계정 문서에 맞춰 extra로 보강 가능.
+    ElevenLabs API를 호출하여 오디오를 직접 받아 파일로 저장하고,
+    해당 파일의 접근 URL을 반환합니다.
     """
-    url = f"{BASE.rstrip('/')}{CREATE_PATH}"
+    # Text-to-Speech API를 사용하는 경우, URL에 voice_id가 포함되어야 합니다.
+    path = CREATE_PATH.format(voice_id=DEFAULT_VOICE_ID)
+    url = f"{BASE.rstrip('/')}{path}"
+    
+    # ElevenLabs API가 요구하는 payload 형식에 맞춰야 합니다.
+    # 아래는 Text-to-Speech API의 예시입니다.
     payload: Dict[str, Any] = {
         "prompt": prompt_text,
-        "music_length_ms": music_length_ms,
-        "force_instrumental": force_instrumental,
+        "duration_seconds": int(music_length_ms / 1000), # ms를 초(second)로 변환
+        "instrumental": force_instrumental,
     }
-    if composition_plan:
-        payload["composition_plan"] = composition_plan
     if extra:
         payload.update(extra)
 
+    print(f"ElevenLabs API 호출 시작... URL: {url}")
     async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
-        r = await client.post(url, headers=_headers(), json=payload)
-        if r.status_code >= 400:
-            raise ElevenLabsError(f"create failed {r.status_code}: {r.text}")
-        data = r.json()
-        # 문서에 따라 'task_id' / 'job_id' / 'id' 등 다를 수 있음
-        task_id = data.get("task_id") or data.get("job_id") or data.get("id")
-        if not task_id:
-            raise ElevenLabsError(f"no task id in response: {data}")
-        return task_id
-
-async def poll_music_url(task_id: str) -> Optional[str]:
-    """
-    작업 상태를 조회하여 재생 가능한 URL을 얻으면 반환.
-    아직이면 None 반환.
-    """
-    path = STATUS_PATH_TPL.format(task_id=task_id)
-    url = f"{BASE.rstrip('/')}{path}"
-    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
-        r = await client.get(url, headers=_headers())
-        if r.status_code >= 400:
-            raise ElevenLabsError(f"status failed {r.status_code}: {r.text}")
-        data = r.json()
-        # 문서에 따라 status/progress/urls 구조가 다를 수 있음
-        status = (data.get("status") or "").lower()
-        # 완료 시 URL 획득(필드명 가변)
-        if status in ("ready", "completed", "succeeded", "finished"):
-            url = data.get(DOWNLOAD_FIELD) or data.get("audio", {}).get("url") or data.get("result_url")
-            return url
-        elif status in ("failed", "error"):
-            raise ElevenLabsError(f"task failed: {data}")
-        return None
-
-async def compose_and_wait(
-    prompt_text: str,
-    *,
-    music_length_ms: int = 120_000,
-    force_instrumental: bool = True,
-    composition_plan: Optional[Dict[str, Any]] = None,
-    extra: Optional[Dict[str, Any]] = None,
-    max_wait_sec: float = POLL_TIMEOUT_SEC,
-) -> str:
-    """
-    생성 요청 → 폴링 → URL 반환까지 한 번에 처리.
-    """
-    task_id = await create_music_job(
-        prompt_text,
-        music_length_ms=music_length_ms,
-        force_instrumental=force_instrumental,
-        composition_plan=composition_plan,
-        extra=extra,
-    )
-    # 폴링
-    started = time.time()
-    while True:
-        url = await poll_music_url(task_id)
-        if url:
-            return url
-        if time.time() - started > max_wait_sec:
-            raise ElevenLabsError(f"timeout waiting for task {task_id}")
-        await asyncio.sleep(POLL_INTERVAL_SEC)
+        try:
+            r = await client.post(url, headers=_headers(), json=payload)
+            r.raise_for_status() # 200 OK가 아니면 에러를 발생시킴
+        except httpx.HTTPStatusError as e:
+             # 에러 응답은 보통 텍스트이므로 .text로 확인
+            raise ElevenLabsError(f"API returned status {e.response.status_code}: {e.response.text}") from e
+        except Exception as e:
+            raise ElevenLabsError(f"API call failed: {e}") from e
+    
+    # --- 오디오 파일 저장 로직 ---
+    # 1. 저장할 폴더가 없으면 만듭니다.
+    save_dir = "static/audio"
+    os.makedirs(save_dir, exist_ok=True)
+    
+    # 2. 고유한 파일 이름을 만듭니다.
+    file_name = f"music_{int(time.time())}.mp3"
+    file_path = os.path.join(save_dir, file_name)
+    
+    # 3. 응답으로 받은 오디오 데이터(r.content)를 파일에 씁니다.
+    with open(file_path, "wb") as f:
+        f.write(r.content)
+        
+    print(f"음악 파일 저장 완료: {file_path}")
+    
+    # 4. 프론트엔드가 접근할 수 있는 URL 경로를 반환합니다.
+    return f"/{save_dir.replace(os.sep, '/')}/{file_name}"
