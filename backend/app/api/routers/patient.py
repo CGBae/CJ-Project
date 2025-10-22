@@ -2,6 +2,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import insert, update, select
 from sqlalchemy.ext.asyncio import AsyncSession
+import json
 
 from app.schemas import PatientIntake, PatientAnalyzeReq, SessionCreateResp, PromptResp
 from app.models import Session, SessionPatientIntake, ConversationMessage, SessionPrompt
@@ -87,26 +88,42 @@ async def analyze_and_generate(req: PatientAnalyzeReq, db: AsyncSession = Depend
     history_text = "\n".join([f"[{m['role']}]: {m['content']}" for m in history])
     
     extra = (
-        f"--- [환자 사전 정보 (User Input)] ---\n"
-        f"1. 목표(Goal): {s_intake.goal}\n"
-        f"2. VAS 점수: {s_intake.vas}\n"
-        f"3. 선호/금기(Prefs): {s_intake.prefs}\n\n"
+        f"--- [환자 사전 정보 (User Input) - JSON 형식] ---\n"
+        f"1. 목표(Goal): {json.dumps(s_intake.goal, indent=2) if s_intake.goal else '없음'}\n"
+        f"2. VAS 점수: {json.dumps(s_intake.vas, indent=2) if s_intake.vas else '없음'}\n"
+        f"3. 선호/금기(Prefs): {json.dumps(s_intake.prefs, indent=2) if s_intake.prefs else '없음'}\n\n"
         f"--- [환자 전체 대화 내용 (Dialog)] ---\n"
         f"{history_text if history_text else '대화 내용 없음. 사전 정보를 기반으로 생성.'}\n"
     )
 
-    # OpenAI 호출: 긴 가이드라인 그대로 + 추가요구사항 텍스트
-    prompt_text = await generate_prompt_from_guideline(req.guideline_json, extra)
-
-    # final 스냅샷 + 세션 업데이트
+    prompt_result = await generate_prompt_from_guideline(req.guideline_json, extra)
+    
+    # 결과 추출
+    music_prompt = prompt_result.get("music_prompt", "calming ambient music, no vocals.")
+    lyrics_text = prompt_result.get("lyrics_text", "가사가 생성되지 않았습니다.")
+    
+    # DB에 저장할 최종 데이터 구성
+    final_data_to_save = {
+        "text": music_prompt,        # 👈 ElevenLabs에 전달할 음악 지시만 'text' 필드에 저장
+        "music_prompt": music_prompt,
+        "lyrics_text": lyrics_text    # 👈 프론트엔드에서 보여줄 가사 전문
+    }
+    
+    # 5. final 스냅샷 + 세션 업데이트
     await db.execute(
-        insert(SessionPrompt).values(session_id=req.session_id, stage="final", data={"text": prompt_text})
+        insert(SessionPrompt).values(session_id=req.session_id, stage="final", data=final_data_to_save)
     )
     await db.execute(
         update(Session).where(Session.id == req.session_id).values(
-            prompt={"text": prompt_text},
+            prompt=final_data_to_save,
             input_source="patient_analyzed"
         )
     )
     await db.commit()
-    return {"session_id": req.session_id, "prompt_text": prompt_text}
+    
+    # 프론트엔드에 응답 (PromptResp는 prompt_text만 요구하므로 music_prompt를 반환)
+    return {
+        "session_id": req.session_id, 
+        "prompt_text": music_prompt,
+        "lyrics_text": lyrics_text # 👈 가사 전문을 응답에 추가
+    }

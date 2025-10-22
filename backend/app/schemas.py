@@ -21,6 +21,7 @@ class PatientAnalyzeReq(BaseModel):
 class PromptResp(BaseModel):
     session_id: int
     prompt_text: str
+    lyrics_text: Optional[str] = None
 
 # 상담사 흐름
 class TherapistManualInput(BaseModel):
