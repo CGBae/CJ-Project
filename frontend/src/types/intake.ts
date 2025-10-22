@@ -26,6 +26,8 @@ export interface PatientIntakeData {
   // 음악 선호도
   preferredMusicGenres: string[]; 
   dislikedMusicGenres: string[]; 
+
+  vocalsAllowed: boolean;
 }
 
 export const initialPatientIntakeData: PatientIntakeData = {
@@ -34,6 +36,7 @@ export const initialPatientIntakeData: PatientIntakeData = {
     currentPainLevel: 5, 
     preferredMusicGenres: [], 
     dislikedMusicGenres: [],
+    vocalsAllowed: false,
 };
 
 
