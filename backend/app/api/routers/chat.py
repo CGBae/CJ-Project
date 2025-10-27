@@ -1,8 +1,9 @@
 from __future__ import annotations
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import insert, select, update
+from sqlalchemy import insert, select, update, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import List, Dict
 
 from app.db import get_db
 from app.models import ConversationMessage, Session, SessionPatientIntake, TherapistManualInputs, SessionPrompt
@@ -13,6 +14,9 @@ from app.services.prompt_from_guideline import (
     build_extra_requirements_for_patient,
     build_extra_requirements_for_therapist
 )
+
+from app.services.auth_service import get_current_user
+from app.models import User
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -26,11 +30,18 @@ class ChatSendResp(BaseModel):
     composed_prompt: str | None = None  # 음악 생성 트리거 시 반환
 
 @router.post("/send", response_model=ChatSendResp)
-async def chat_send(req: ChatSendReq, db: AsyncSession = Depends(get_db)):
+async def chat_send(
+    req: ChatSendReq, 
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     # 1) 세션 확인
     session = await db.get(Session, req.session_id)
     if not session:
         raise HTTPException(404, "session not found")
+    
+    if session.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your session")
     
     intake = await db.get(SessionPatientIntake, req.session_id)
 
@@ -47,6 +58,8 @@ async def chat_send(req: ChatSendReq, db: AsyncSession = Depends(get_db)):
             .where(SessionPatientIntake.session_id == req.session_id)
             .values(has_dialog=True)
         )
+        
+    await db.commit()
 
     # 3) 최근 히스토리 로드 (최신 순 정렬 후 뒤에서 자르기)
     q = select(ConversationMessage.role, ConversationMessage.content)\
@@ -125,3 +138,63 @@ async def chat_send(req: ChatSendReq, db: AsyncSession = Depends(get_db)):
         await db.commit()
 
     return ChatSendResp(assistant=assistant_text, composed_prompt=composed_prompt)
+
+class ChatHistoryResp(BaseModel):
+    """대화 기록 응답을 위한 스키마"""
+    session_id: int
+    history: List[Dict[str, str]]
+
+@router.get("/history/{session_id}", response_model=ChatHistoryResp)
+async def get_chat_history(session_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    주어진 세션 ID에 해당하는 모든 대화 기록을 시간순으로 반환합니다.
+    (counsel/page.tsx가 대화 이어하기를 위해 호출합니다)
+    """
+    session = await db.get(Session, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    q_dialog = select(ConversationMessage.id, ConversationMessage.role, ConversationMessage.content)\
+        .where(ConversationMessage.session_id == session_id)\
+        .order_by(ConversationMessage.created_at.asc())
+    
+    dialog_rows = (await db.execute(q_dialog)).all()
+    history = [
+        {"id": str(row.id), "role": row.role, "content": row.content} 
+        for row in dialog_rows
+    ]
+
+    return {"session_id": session_id, "history": history}
+
+
+class DeleteHistoryResp(BaseModel):
+    session_id: int
+    deleted_count: int
+
+@router.delete("/history/{session_id}", response_model=DeleteHistoryResp)
+async def delete_chat_history(session_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    주어진 세션 ID에 해당하는 '대화 기록'을 모두 삭제합니다.
+    (dashboard/patient/page.tsx가 호출합니다)
+    """
+    # 1. 삭제할 메시지 수 확인
+    q_count = select(func.count(ConversationMessage.id)).where(ConversationMessage.session_id == session_id)
+    count_result = (await db.execute(q_count)).scalar_one_or_none() or 0
+
+    if count_result == 0:
+        return {"session_id": session_id, "deleted_count": 0}
+
+    # 2. 메시지 삭제
+    q_delete = delete(ConversationMessage).where(ConversationMessage.session_id == session_id)
+    await db.execute(q_delete)
+    
+    # 3. Intake의 has_dialog 플래그 초기화
+    await db.execute(
+        update(SessionPatientIntake)
+        .where(SessionPatientIntake.session_id == session_id)
+        .values(has_dialog=False)
+    )
+    
+    await db.commit()
+    
+    return {"session_id": session_id, "deleted_count": count_result}

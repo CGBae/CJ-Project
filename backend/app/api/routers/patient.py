@@ -11,13 +11,24 @@ from app.services.openai_client import generate_prompt_from_guideline
 # from app.services.prompt_from_guideline import build_extra_requirements_for_patient
 # from app.services.openai_chat import analyze_dialog_for_mood
 
+from app.services.auth_service import get_current_user
+from app.models import User
+
 router = APIRouter(prefix="/patient", tags=["patient"])
 
 @router.post("/intake", response_model=SessionCreateResp)
-async def create_patient_session(payload: PatientIntake, db: AsyncSession = Depends(get_db)):
+async def create_patient_session(
+    payload: PatientIntake, 
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     # 1) 세션 생성
     res = await db.execute(
-        insert(Session).values(initiator_type="patient", status="QUEUED").returning(Session.id)
+        insert(Session).values(
+            initiator_type="patient", 
+            status="QUEUED",
+            created_by=current_user.id
+        ).returning(Session.id)
     )
     session_id = res.scalar_one()
 

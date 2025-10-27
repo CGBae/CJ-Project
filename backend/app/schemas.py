@@ -40,3 +40,7 @@ class TherapistPromptReq(BaseModel):
     session_id: int
     guideline_json: str
     manual: TherapistManualInput
+
+class KakaoLoginRequest(BaseModel):
+    code: str
+    redirect_uri: str
