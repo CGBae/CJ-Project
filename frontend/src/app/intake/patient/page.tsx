@@ -1,9 +1,10 @@
 'use client'; 
 
-import React, { useState, FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, FormEvent, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { PatientIntakeData, initialPatientIntakeData, MUSIC_GENRE_OPTIONS } from '@/types/intake'; 
 import { Info, Loader2 } from 'lucide-react';
+import { addPatient, linkSessionToPatient } from '@/lib/utils/patients';
 
 export default function PatientIntakePage() {
     const [formData, setFormData] = useState<PatientIntakeData>(initialPatientIntakeData);
@@ -11,6 +12,17 @@ export default function PatientIntakePage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const router = useRouter();
+    const searchParams = useSearchParams();
+
+    // URL에서 'userId'를 가져옵니다. (로그인 시뮬레이션용)
+    const userId = searchParams.get('userId');
+
+    useEffect(() => {
+        // (이 페이지는 /dashboard/patient 에서 userId를 받아오는 것을 가정합니다)
+        if (!userId) {
+            setError("잘못된 접근입니다. 환자 대시보드를 통해 접근해주세요.");
+        }
+    }, [userId]);
 
     // VAS Input, Textarea, Checkbox 핸들러
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -44,7 +56,7 @@ export default function PatientIntakePage() {
         });
     };
 
-    // 폼 제출 핸들러 (실제 API 호출)
+    // 폼 제출 핸들러 (API 호출 및 환자 등록)
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
         setLoading(true);
@@ -52,6 +64,11 @@ export default function PatientIntakePage() {
 
         if (!sessionGoal.trim()) {
             setError('오늘의 상담 목표를 입력해주세요.');
+            setLoading(false);
+            return;
+        }
+        if (!userId) {
+            setError('환자 ID를 찾을 수 없습니다. 대시보드에서 다시 시도해주세요.');
             setLoading(false);
             return;
         }
@@ -65,32 +82,37 @@ export default function PatientIntakePage() {
             prefs: {
                 preferred: formData.preferredMusicGenres,
                 disliked: formData.dislikedMusicGenres,
-                vocals_allowed: formData.vocalsAllowed, // 보컬 포함 여부 값 추가
+                vocals_allowed: formData.vocalsAllowed,
             },
-            goal: {
-                text: sessionGoal
-            },
+            goal: { text: sessionGoal },
             dialog: null,
         };
 
         try {
+            // 💡 [핵심 수정]
+            // 1. [1단계] 'addPatient'는 이미 /dashboard/patient에서 수행되었다고 가정합니다.
+            //    (또는 환자가 회원가입 시 이미 patientsDB에 추가됨)
+            //    여기서는 'userId'를 사용하여 환자와 세션을 연결하기만 합니다.
+
+            // 2. [2단계] 백엔드 API를 호출하여 새 세션을 생성합니다.
             const response = await fetch('http://localhost:8000/patient/intake', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
-
             if (!response.ok) {
                 const errorData = await response.json();
-                const errorMessage = typeof errorData.detail === 'string' 
-                    ? errorData.detail 
-                    : JSON.stringify(errorData.detail);
-                throw new Error(errorMessage || `서버 에러: ${response.status}`);
+                throw new Error(errorData.detail || '서버 에러');
             }
-
-            const data = await response.json();
-            console.log('Session created:', data);
-            router.push(`/counsel?session=${data.session_id}`);
+            const data = await response.json(); // { session_id, status }
+            
+            // 3. [3단계] '가짜 DB'에 환자 ID와 세션 ID를 연결합니다.
+            linkSessionToPatient(userId, data.session_id);
+            
+            console.log(`기존 환자(${userId})의 새 세션(${data.session_id}) 연결 완료.`);
+            
+            // 4. [4단계] 상담 페이지로 이동 (patientId도 함께 전달!)
+            router.push(`/counsel?session=${data.session_id}&patientId=${userId}`);
 
         } catch (err) {
             console.error('Intake submission failed:', err);
@@ -116,9 +138,10 @@ export default function PatientIntakePage() {
     
     return (
         <div className="intake-container p-6 md:p-8 max-w-3xl mx-auto bg-white shadow-xl rounded-lg my-10">
+            {/* 이름/나이 입력란이 없는, 환자 본인용 폼 */}
             <h1 className="text-3xl font-extrabold text-gray-800 mb-8 text-center">AI 심리 상담 준비</h1>
             <form onSubmit={handleSubmit} className="space-y-8">
-
+                
                 {/* 섹션 1: VAS */}
                 <section className="p-6 border rounded-lg shadow-sm">
                     <h2 className="text-xl font-bold mb-5 text-indigo-700 border-b pb-2">나의 현재 상태</h2>
@@ -182,6 +205,7 @@ export default function PatientIntakePage() {
                         <div className="flex flex-wrap gap-2">
                             {MUSIC_GENRE_OPTIONS.map((genre) => (
                                 <button key={`dislike-${genre}`} type="button" onClick={() => handleGenreToggle(genre, 'disliked')} className={getButtonClass(genre, 'disliked')}>{genre}</button>
+
                             ))}
                         </div>
                     </div>
@@ -215,11 +239,11 @@ export default function PatientIntakePage() {
 
                 <button 
                     type="submit" 
-                    disabled={loading} 
+                    disabled={loading || !userId} // userId가 없으면 제출 비활성화
                     className="w-full py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition duration-200 disabled:opacity-70 disabled:cursor-not-allowed mt-6 text-lg flex items-center justify-center gap-2"
                 >
                     {loading && <Loader2 className="w-5 h-5 animate-spin" />}
-                    {loading ? '세션 생성 중...' : 'AI 채팅 시작하기 →'}
+                    {loading ? '상담 세션 생성 중...' : 'AI 채팅 시작하기 →'}
                 </button>
             </form>
         </div>

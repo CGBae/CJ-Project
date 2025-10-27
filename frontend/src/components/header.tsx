@@ -56,6 +56,7 @@ export default function Header() {
                   <Link href="/dashboard/patient" className="hover:underline">환자대시보드</Link>
                   <Link href="/intake/patient" className="hover:underline">접수</Link>
                   <Link href="/counsel" className="hover:underline">상담</Link>
+                  <Link href="/compose" className="hover:underline">작곡체험</Link>
                   <Link href="/music" className="hover:underline">음악</Link>
                 </>
               )}
@@ -67,18 +68,6 @@ export default function Header() {
                   <Link href="/counselor" className="hover:underline">환자 관리</Link>
                 </>
               )}
-
-              {/* 테스트 모드에서 전체 노출
-              {isBypass && (
-                <>
-                  <Link href="/counsel" className="px-2 py-1 border rounded text-sm hover:bg-gray-100">Counsel</Link>
-                  <Link href="/music" className="px-2 py-1 border rounded text-sm hover:bg-gray-100">Music</Link>
-                  <Link href="/intake/patient" className="px-2 py-1 border rounded text-sm hover:bg-gray-100">Intake/p</Link>
-                  <Link href="/intake/counselor" className="px-2 py-1 border rounded text-sm hover:bg-gray-100">Intake/c</Link>
-                  <Link href="/counselor" className="px-2 py-1 border rounded text-sm hover:bg-gray-100">Counselor</Link>
-                  <Link href="/admin" className="px-2 py-1 border rounded text-sm hover:bg-gray-100">Admin</Link>
-                </>
-              )} */}
 
               {/* 역할 전환 버튼 */}
               <button
