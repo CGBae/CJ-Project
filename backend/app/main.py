@@ -9,16 +9,22 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
-from app.api.routers import patient, therapist, chat, music
+from app.api.routers import patient, therapist, chat, music, auth
 from fastapi.staticfiles import StaticFiles
 
 app = FastAPI(title="TheraMusic API")
+
+origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    # (추후 배포 시 프론트엔드 도메인 추가)
+]
 
 # 💡 1. CORS 미들웨어를 가장 먼저 등록합니다.
 # 이렇게 해야 모든 API 요청에 CORS 정책이 적용됩니다.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[origins],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -32,6 +38,7 @@ app.include_router(chat.router)
 app.include_router(patient.router)
 app.include_router(therapist.router)
 app.include_router(music.router)
+app.include_router(auth.router)
 
 
 @app.get("/health")

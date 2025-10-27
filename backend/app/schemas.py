@@ -21,6 +21,7 @@ class PatientAnalyzeReq(BaseModel):
 class PromptResp(BaseModel):
     session_id: int
     prompt_text: str
+    lyrics_text: Optional[str] = None
 
 # 상담사 흐름
 class TherapistManualInput(BaseModel):
@@ -39,3 +40,7 @@ class TherapistPromptReq(BaseModel):
     session_id: int
     guideline_json: str
     manual: TherapistManualInput
+
+class KakaoLoginRequest(BaseModel):
+    code: str
+    redirect_uri: str

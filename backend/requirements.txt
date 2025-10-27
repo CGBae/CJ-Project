@@ -9,3 +9,6 @@ alembic
 psycopg2-binary
 openai
 elevenlabs
+httpx
+passlib[bcrypt]
+python-jose
