@@ -24,7 +24,7 @@ origins = [
 # 이렇게 해야 모든 API 요청에 CORS 정책이 적용됩니다.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origins],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
