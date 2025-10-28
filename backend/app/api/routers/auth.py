@@ -8,10 +8,10 @@ import os
 from app.db import get_db
 from app.models import User
 from app.services.auth_service import (
-    create_access_token, verify_password, hash_password, get_current_user
+    create_access_token, verify_password, hash_password
 )
 # app.schemas.py에 UserCreate, Token 스키마 추가 필요
-from app.schemas import UserCreate, Token, KakaoLoginRequest, UserPublic
+from app.schemas import UserCreate, Token, KakaoLoginRequest
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -152,25 +152,4 @@ async def login_with_kakao(
     access_token = create_access_token(
         data={"sub": str(user.id), "role": user.role} # 기존 JWT 시스템과 동일하게 이메일을 sub로 사용
     )
-    from fastapi.responses import JSONResponse
-
-    response = JSONResponse(content={"access_token": access_token, "token_type": "bearer"})
-    response.set_cookie(
-        key="access_token", 
-        value=access_token, 
-        httponly=True, 
-        max_age=3600,  # 1시간 (초 단위)
-        expires=3600,
-        samesite="None", # 개발 환경에서는 "Lax" 또는 "None"을 사용해야 할 수 있습니다.
-        secure=False # http://localhost를 사용하므로 False (HTTPS 사용 시 True)
-    )
-    return response # JSONResponse
-
-@router.get("/me", response_model=UserPublic)
-async def get_my_info(current_user: User = Depends(get_current_user)):
-    """
-    현재 인증된 사용자 정보 (JWT 토큰 기반)를 반환합니다.
-    Header.tsx에서 인증 상태 및 역할을 확인하는 데 사용됩니다.
-    """
-    # get_current_user는 DB에서 User 객체를 성공적으로 가져왔음을 보장합니다.
-    return current_user
+    return {"access_token": access_token, "token_type": "bearer"}
