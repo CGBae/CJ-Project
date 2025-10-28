@@ -95,9 +95,17 @@ export default function PatientIntakePage() {
             //    여기서는 'userId'를 사용하여 환자와 세션을 연결하기만 합니다.
 
             // 2. [2단계] 백엔드 API를 호출하여 새 세션을 생성합니다.
+
+            const token = localStorage.getItem('accessToken');
+        if (!token) {
+            throw new Error("로그인 정보가 없습니다. 다시 로그인해주세요.");
+        }
             const response = await fetch('http://localhost:8000/patient/intake', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}` // 👈 [핵심] JWT 토큰 전송
+            },
                 body: JSON.stringify(payload),
             });
             if (!response.ok) {
