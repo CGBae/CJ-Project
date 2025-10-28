@@ -7,6 +7,7 @@ export default function Header() {
   const [isAuthed, setIsAuthed] = useState(false);
   const [role, setRole] = useState<'patient' | 'counselor' | null>(null);
   const isBypass = process.env.NEXT_PUBLIC_AUTH_BYPASS === 'true';
+  const BACKEND_URL = 'http://localhost:8000';
 
   useEffect(() => {
     if (isBypass) {
@@ -15,24 +16,39 @@ export default function Header() {
       return;
     }
 
+    const token = localStorage.getItem('accessToken');
+
+    if (!token) {
+      // 토큰이 없으면 비로그인 상태로 확정
+      setIsAuthed(false);
+      setRole(null);
+      return;
+    }
+
     // 인증 상태 확인
-    fetch('/api/health', { credentials: 'include' })
+    fetch(`${BACKEND_URL}/auth/me`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    })
       .then(async (r) => {
         if (r.ok) {
+          const data = await r.json();
           setIsAuthed(true);
-          // 실제 서비스라면 /auth/me 등의 엔드포인트에서 role 받아오기
-          const res = await fetch('/auth/me', { credentials: 'include' }).catch(() => null);
-          if (res?.ok) {
-            const data = await res.json();
-            setRole(data.role); // role: 'patient' | 'counselor'
-          } else {
-            setRole('patient');
-          }
+          setRole(data.role || 'patient');
         } else {
+          // r.status가 401 Unauthorized 등 인증 실패 시
           setIsAuthed(false);
+          setRole(null);
+          localStorage.removeItem('accessToken');
         }
       })
-      .catch(() => setIsAuthed(false));
+      .catch((e) => {
+        // 네트워크 오류 (CORS 포함) 발생 시
+        console.error("Authentication check failed:", e);
+        setIsAuthed(false);
+        setRole(null);
+      });
   }, [isBypass]);
 
   const handleRoleToggle = () => {
