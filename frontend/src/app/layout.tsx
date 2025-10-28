@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Header from "../components/header";
+import KakaoScriptLoader from '@/components/KakaoScriptLoader';
 
 export const metadata: Metadata = {
   title: 'TheraMusic',
@@ -23,6 +24,8 @@ export default function RootLayout({
           </div>
         )}
         <main className="max-w-6xl mx-auto p-4">{children}</main>
+
+        <KakaoScriptLoader />
       </body>
     </html>
   );
