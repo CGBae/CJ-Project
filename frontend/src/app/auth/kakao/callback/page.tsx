@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react'; // 💡 1. useRef를 import 합니다.
+import { useEffect, useState, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 
@@ -8,42 +8,40 @@ export default function KakaoCallbackPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [error, setError] = useState<string | null>(null);
-    
-    // 💡 2. 중복 실행을 방지하기 위한 '잠금 장치(flag)'를 만듭니다.
     const isProcessingRef = useRef(false);
 
     useEffect(() => {
-        // 3. URL에서 카카오가 보내준 '인가 코드'를 추출합니다.
         const code = searchParams.get('code');
 
-        // 💡 4. [핵심 수정] 
-        //    (1) 코드가 있고, (2) 아직 처리 중(잠금 상태)이 아닐 때만 실행합니다.
         if (code && !isProcessingRef.current) {
-            
-            // (3) 즉시 '잠금' 상태로 만듭니다. (Strict Mode의 두 번째 실행 방지)
             isProcessingRef.current = true;
 
             const processLogin = async (authCode: string) => {
                 try {
-                    // (4) 백엔드에 이 코드를 보내서 실제 로그인(토큰 교환)을 요청합니다.
+                    // 💡 1. [핵심 수정] 
+                    // 백엔드의 auth.py에 정의된 올바른 주소('/auth/kakao/callback')로 수정합니다.
                     const response = await fetch('http://localhost:8000/auth/kakao/callback', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ code: authCode }),
+                        // 💡 2. [핵심 수정]
+                        // 이 API는 'code'만 받도록 되어있으므로, 'redirect_uri'를 제거합니다.
+                        body: JSON.stringify({ 
+                            code: authCode 
+                        }),
                     });
 
                     if (!response.ok) {
                         const errData = await response.json();
-                        // (KOE320 에러는 여기서 잡힙니다)
                         throw new Error(errData.detail || '로그인에 실패했습니다.');
                     }
 
-                    const { access_token, user_role } = await response.json();
-
-                    // (5) 받은 JWT 토큰을 localStorage에 저장합니다.
-                    localStorage.setItem('accessToken', access_token);
+                    const { access_token, user_role, user_name } = await response.json();
                     
-                    // (6) 역할에 따라 적절한 대시보드로 이동시킵니다.
+                    // 3. 받은 JWT 토큰과 사용자 이름을 localStorage에 저장합니다.
+                    localStorage.setItem('accessToken', access_token);
+                    localStorage.setItem('userName', user_name); // 👈 환영 메시지에 사용
+                    
+                    // 4. 역할에 따라 적절한 대시보드로 이동시킵니다.
                     if (user_role === 'counselor') {
                         router.push('/dashboard/counselor');
                     } else {
@@ -60,7 +58,7 @@ export default function KakaoCallbackPage() {
              setError('카카오 인증 코드를 받지 못했습니다.');
         }
         
-    }, [searchParams, router]); // 의존성 배열은 그대로 둡니다.
+    }, [searchParams, router]);
 
     // (로딩 및 에러 UI 렌더링)
     return (
