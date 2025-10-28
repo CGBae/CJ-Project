@@ -2,9 +2,10 @@
 
 import React, { useState, FormEvent, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { api, setAuthToken } from '@/lib/api';
 import { PatientIntakeData, initialPatientIntakeData, MUSIC_GENRE_OPTIONS } from '@/types/intake'; 
 import { Info, Loader2 } from 'lucide-react';
-import { addPatient, linkSessionToPatient } from '@/lib/utils/patients';
+//import { addPatient, linkSessionToPatient } from '@/lib/utils/patients';
 
 export default function PatientIntakePage() {
     const [formData, setFormData] = useState<PatientIntakeData>(initialPatientIntakeData);
@@ -12,17 +13,22 @@ export default function PatientIntakePage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const router = useRouter();
-    const searchParams = useSearchParams();
+    //const searchParams = useSearchParams();
 
     // URL에서 'userId'를 가져옵니다. (로그인 시뮬레이션용)
-    const userId = searchParams.get('userId');
+    //const userId = searchParams.get('userId');
 
     useEffect(() => {
-        // (이 페이지는 /dashboard/patient 에서 userId를 받아오는 것을 가정합니다)
-        if (!userId) {
-            setError("잘못된 접근입니다. 환자 대시보드를 통해 접근해주세요.");
-        }
-    }, [userId]);
+        const token = localStorage.getItem('accessToken');
+    if (!token) {
+      // 토큰이 없으면 로그인 페이지로 리디렉션
+      setError('로그인이 필요합니다. 로그인 페이지로 이동합니다.');
+      router.push('/login');
+      return;
+    }
+    // (중요) api(axios) 인스턴스에 토큰을 설정
+    setAuthToken(token);
+  }, [router]);
 
     // VAS Input, Textarea, Checkbox 핸들러
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -67,60 +73,71 @@ export default function PatientIntakePage() {
             setLoading(false);
             return;
         }
-        if (!userId) {
-            setError('환자 ID를 찾을 수 없습니다. 대시보드에서 다시 시도해주세요.');
-            setLoading(false);
-            return;
-        }
+        // if (!userId) {
+        //     setError('환자 ID를 찾을 수 없습니다. 대시보드에서 다시 시도해주세요.');
+        //     setLoading(false);
+        //     return;
+        // }
         
         const payload = {
             vas: {
                 anxiety: formData.currentAnxietyLevel,
-                mood: formData.currentMoodLevel,
+                depression: formData.currentMoodLevel,
                 pain: formData.currentPainLevel,
             },
             prefs: {
-                preferred: formData.preferredMusicGenres,
-                disliked: formData.dislikedMusicGenres,
-                vocals_allowed: formData.vocalsAllowed,
+                genres: formData.preferredMusicGenres,
+                contraindications: formData.dislikedMusicGenres,
+                lyrics_allowed: formData.vocalsAllowed,
             },
             goal: { text: sessionGoal },
-            dialog: null,
+            dialog: [],
         };
 
         try {
-            // 💡 [핵심 수정]
-            // 1. [1단계] 'addPatient'는 이미 /dashboard/patient에서 수행되었다고 가정합니다.
-            //    (또는 환자가 회원가입 시 이미 patientsDB에 추가됨)
-            //    여기서는 'userId'를 사용하여 환자와 세션을 연결하기만 합니다.
+            const response = await api.post('/patient/intake', payload);
 
-            // 2. [2단계] 백엔드 API를 호출하여 새 세션을 생성합니다.
-            const response = await fetch('http://localhost:8000/patient/intake', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || '서버 에러');
-            }
-            const data = await response.json(); // { session_id, status }
-            
-            // 3. [3단계] '가짜 DB'에 환자 ID와 세션 ID를 연결합니다.
-            linkSessionToPatient(userId, data.session_id);
-            
-            console.log(`기존 환자(${userId})의 새 세션(${data.session_id}) 연결 완료.`);
-            
-            // 4. [4단계] 상담 페이지로 이동 (patientId도 함께 전달!)
-            router.push(`/counsel?session=${data.session_id}&patientId=${userId}`);
+      // (기존 response.ok 체크는 axios에선 불필요. 2xx가 아니면 catch로 감)
 
-        } catch (err) {
-            console.error('Intake submission failed:', err);
-            setError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
-        } finally {
-            setLoading(false);
+      const data = response.data; // { session_id, status }
+
+      // ⬇️ [수정] '가짜 DB' 로직(linkSessionToPatient) 제거
+
+      console.log(`새 세션(${data.session_id}) 생성 완료.`);
+
+      // 4. [4단계] 상담 페이지로 이동 (session_id만 전달)
+      // (경로는 프로젝트에 맞게 수정)
+      router.push(`/chat/${data.session_id}`);
+    } catch (err: unknown) {
+      console.error('Intake submission failed:', err);
+      let errorMessage = '알 수 없는 오류가 발생했습니다.';
+
+      const isObject = (v: unknown): v is Record<string, unknown> =>
+        typeof v === 'object' && v !== null;
+
+      if (isObject(err) && 'response' in err) {
+        const response = (err as { response?: { status?: number; data?: { detail?: string } } }).response;
+        if (response?.status === 401) {
+          errorMessage = '인증이 만료되었습니다. 다시 로그인해주세요.';
+          localStorage.removeItem('accessToken');
+          setAuthToken(null);
+          router.push('/login');
+        } else {
+          errorMessage = response?.data?.detail ?? '서버 에러가 발생했습니다.';
         }
-    };
+      } else if (isObject(err) && 'request' in err) {
+        // 요청은 했으나 응답을 못 받음
+        errorMessage = '서버에 연결할 수 없습니다.';
+      } else if (isObject(err) && 'message' in err && typeof (err as { message?: unknown }).message === 'string') {
+        // 일반 Error 객체 등
+        errorMessage = (err as { message?: string }).message!;
+      }
+
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
 
     // VAS 라벨 헬퍼 함수
     const getAnxietyLabel = (value: number) => value <= 2 ? "매우 안정" : value <= 4 ? "약간 안정" : value <= 6 ? "보통" : value <= 8 ? "불안함" : "극심한 불안";
@@ -239,7 +256,7 @@ export default function PatientIntakePage() {
 
                 <button 
                     type="submit" 
-                    disabled={loading || !userId} // userId가 없으면 제출 비활성화
+                    disabled={loading} // userId가 없으면 제출 비활성화
                     className="w-full py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition duration-200 disabled:opacity-70 disabled:cursor-not-allowed mt-6 text-lg flex items-center justify-center gap-2"
                 >
                     {loading && <Loader2 className="w-5 h-5 animate-spin" />}
