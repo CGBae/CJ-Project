@@ -23,13 +23,14 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
-    email: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=True)
-    password_hash: Mapped[str] = mapped_column(Text, nullable=True)
+    kakao_id: Mapped[Optional[int]] = mapped_column(BigInteger, unique=True, index=True)
+    email: Mapped[Optional[str]] = mapped_column(String, unique=True, index=True, nullable=True)
+    password_hash: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     role: Mapped[str] = mapped_column(String, default="therapist", nullable=False)
     created_at: Mapped[Optional["datetime"]] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
-    social_provider: Mapped[str] = mapped_column(String, nullable=True, index=True)
+    social_provider: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
     social_id: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=True)
 
     sessions: Mapped[list["Session"]] = relationship(back_populates="creator")
