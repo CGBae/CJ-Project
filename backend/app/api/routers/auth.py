@@ -52,7 +52,7 @@ async def login_for_access_token(
     # user = ...
     user = await get_user_by_email(db, form_data.username)
     
-    if not user or not user.hashed_password or not verify_password(form_data.password, user.hashed_password): # password_hash 대신 hashed_password로 가정
+    if not user or not user.password_hash or not verify_password(form_data.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",

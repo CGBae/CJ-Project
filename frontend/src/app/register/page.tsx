@@ -28,6 +28,7 @@ export default function RegisterPage() {
         setLoading(true);
         
         try {
+            // 회원가입 API 호출 (JSON 형식)
             const response = await fetch('http://localhost:8000/auth/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -35,13 +36,13 @@ export default function RegisterPage() {
             });
 
             if (response.status === 400) {
-                // 백엔드에서 "Email already registered." 오류가 났을 때
                 const errData = await response.json();
-                setError(errData.detail || '이미 등록된 이메일입니다.');
+                setError(errData.detail || '이미 등록된 이메일이거나 요청이 잘못되었습니다.');
                 return;
             }
 
             if (!response.ok) {
+                // 500 에러 등의 일반적인 서버 오류
                 throw new Error('회원가입 요청 처리 중 서버 오류가 발생했습니다.');
             }
 
@@ -51,7 +52,7 @@ export default function RegisterPage() {
 
         } catch (err) {
             console.error("Registration error:", err);
-            setError(err instanceof Error ? err.message : '알 수 없는 오류 발생');
+            setError('회원가입 중 오류 발생: 서버 연결 또는 데이터 확인');
         } finally {
             setLoading(false);
         }
@@ -87,9 +88,11 @@ export default function RegisterPage() {
                             type="password"
                             autoComplete="new-password"
                             required
-                            placeholder="비밀번호 (최소 8자)"
+                            placeholder="비밀번호 (최소 8자, 최대 72자)"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
+                            // 💡 bcrypt 72바이트 제한 방어
+                            maxLength={72} 
                             className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
                             disabled={loading}
                         />
@@ -104,6 +107,7 @@ export default function RegisterPage() {
                             placeholder="비밀번호 확인"
                             value={confirmPassword}
                             onChange={(e) => setConfirmPassword(e.target.value)}
+                            maxLength={72}
                             className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
                             disabled={loading}
                         />
@@ -116,7 +120,7 @@ export default function RegisterPage() {
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full flex justify-center items-center px-4 py-3 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400 transition-colors"
+                        className="w-full flex justify-center items-center px-4 py-3 text-sm font-medium rounded-lg shadow-sm text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400 transition-colors"
                     >
                         {loading ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : null}
                         회원가입 완료

@@ -16,13 +16,17 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login") # 4단계에서 만들 라우터 경로
 
 def verify_password(plain_password, password_hash):
     return pwd_context.verify(plain_password, password_hash)
 
 def hash_password(password):
+    
+    if not isinstance(password, (str, bytes)):
+        raise TypeError("Password must be a string or bytes.")
+     
     return pwd_context.hash(password)
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
