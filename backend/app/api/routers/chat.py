@@ -40,7 +40,7 @@ async def chat_send(
     if not session:
         raise HTTPException(404, "session not found")
     
-    if session.user_id != current_user.id:
+    if session.created_by != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your session")
     
     intake = await db.get(SessionPatientIntake, req.session_id)

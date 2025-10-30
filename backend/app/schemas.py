@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field, EmailStr
+from datetime import datetime 
 
 # 공통
 class SessionCreateResp(BaseModel):
@@ -76,3 +77,23 @@ class UserPublic(BaseModel):
     class Config:
         # SQLAlchemy 2.0 (Mapped) 모델을 Pydantic으로 자동 변환
         from_attributes = True
+
+    # 1. /sessions/my API가 반환할 데이터 모양 정의
+class SessionInfo(BaseModel):
+    id: int
+    created_at: datetime
+    # 필요하다면 Session 모델의 다른 필드도 추가 가능 (예: status: str | None = None)
+
+    class Config:
+        from_attributes = True # SQLAlchemy 모델 -> Pydantic 자동 변환 (orm_mode = True for Pydantic v1)
+
+# 2. /music/my API가 반환할 데이터 모양 정의
+class MusicTrackInfo(BaseModel):
+    id: int # Track 모델의 id
+    title: str # 프론트엔드에서 사용할 제목 (music.py에서 생성 필요)
+    prompt: str # 프론트엔드에서 사용할 프롬프트 (music.py에서 생성 필요)
+    audioUrl: str # 프론트엔드에서 사용하는 필드명 (music.py의 track_url을 매핑)
+    # 필요하다면 Track 모델의 다른 필드도 추가 가능 (예: created_at: datetime)
+
+    class Config:
+        from_attributes = True # SQLAlchemy 모델 -> Pydantic 자동 변환

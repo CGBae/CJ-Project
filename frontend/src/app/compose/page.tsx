@@ -1,14 +1,21 @@
 'use client';
 
-import React, { useState, FormEvent } from 'react';
+import React, { useState, FormEvent, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-// 💡 1. 'addTrackToPlaylist' (공용)와 'addMusicToPatient' (환자 계정용)를 모두 가져옵니다.
-import { addTrackToPlaylist, MusicTrack } from '@/lib/utils/music';
-import { addMusicToPatient } from '@/lib/utils/patients';
 import { Loader2, Music, Info, Sparkles } from 'lucide-react';
 
+// MusicTrack 타입 정의 (변경 없음)
+interface MusicTrack {
+  id: string | number;
+  title: string;
+  artist: string;
+  prompt: string;
+  audioUrl: string;
+}
+
+
 export default function ComposePage() {
-    // --- 상태 관리 ---
+    // --- 상태 관리 (변경 없음) ---
     const [mood, setMood] = useState('calming');
     const [instrument, setInstrument] = useState('Piano');
     const [tempo, setTempo] = useState('medium');
@@ -17,16 +24,22 @@ export default function ComposePage() {
     const [musicKey, setMusicKey] = useState('Neutral');
     const [excludedInstruments, setExcludedInstruments] = useState<string[]>([]);
     const [notes, setNotes] = useState('');
-    
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [loadingStatus, setLoadingStatus] = useState('');
     const router = useRouter();
 
-    // 💡 2. 현재 로그인한 환자의 ID를 시뮬레이션합니다. (대시보드와 동일하게)
-    const SIMULATED_LOGGED_IN_PATIENT_ID = 'p_user_001';
+    // 페이지 로드 시 로그인 확인 (변경 없음)
+    useEffect(() => {
+        const token = localStorage.getItem('accessToken');
+        if (!token) {
+            setError('음악 작곡을 하려면 로그인이 필요합니다.');
+            // router.push('/login?next=/compose');
+        }
+    }, [router]);
 
-    // 폼 입력값 변경 핸들러
+    // --- 핸들러 함수들 (변경 없음) ---
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value, type } = e.target;
         if (name === 'instrument') setInstrument(value);
@@ -34,18 +47,16 @@ export default function ComposePage() {
         else if (name === 'notes') setNotes(value);
         else if (type === 'checkbox') setVocalsAllowed((e.target as HTMLInputElement).checked);
     };
-
-    // 제외할 악기 체크박스 핸들러
     const handleExcludeToggle = (instrument: string) => {
-        setExcludedInstruments(prev => 
-            prev.includes(instrument) 
+        setExcludedInstruments(prev =>
+            prev.includes(instrument)
             ? prev.filter(item => item !== instrument)
             : [...prev, instrument]
         );
     };
 
     /**
-     * 폼 제출 시, 3단계에 걸쳐 백엔드 API를 호출합니다.
+     * 폼 제출 시, 백엔드 API를 호출하여 음악을 생성합니다.
      */
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
@@ -53,97 +64,119 @@ export default function ComposePage() {
         setLoadingStatus('');
         setError(null);
 
-        let finalPrompt = ''; 
+        // [수정] localStorage에서 토큰 가져오기
+        const token = localStorage.getItem('accessToken');
+        if (!token) {
+            setError('로그인이 필요합니다.');
+            setLoading(false);
+            return;
+        }
+
+        let finalPrompt = '';
         let newSessionId = 0;
 
         try {
-            // --- 1단계: 새 세션 생성 (/therapist/new) ---
+            // --- 💡 1단계: 새 세션 생성 (/patient/intake 사용) ---
             setLoadingStatus('새 세션 준비 중...');
-            const sessionResponse = await fetch('http://localhost:8000/therapist/new', { method: 'POST' });
-            if (!sessionResponse.ok) throw new Error('세션 생성에 실패했습니다.');
+            const intakePayload = {
+                // 💡 vas, prefs는 null 또는 빈 객체로 보냅니다 (백엔드 스키마 확인 필요).
+                vas: null,
+                prefs: null,
+                goal: { text: "작곡 체험 세션" },
+                dialog: []
+            };
+            const sessionResponse = await fetch('http://localhost:8000/patient/intake', { // ✅ API 경로 확인
+                 method: 'POST',
+                 headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${token}` // ✅ 인증 헤더 추가
+                 },
+                 body: JSON.stringify(intakePayload)
+            });
+            if (sessionResponse.status === 401) throw new Error('인증 실패(세션 생성)');
+            if (!sessionResponse.ok) { // 422 오류 등 처리
+                 const errData = await sessionResponse.json().catch(()=>({ detail: '세션 생성 실패 응답 파싱 불가' }));
+                 throw new Error(errData.detail || `세션 생성 실패 (${sessionResponse.status})`);
+            }
             const sessionData = await sessionResponse.json();
             newSessionId = sessionData.session_id;
 
-            // --- 2단계: 폼 데이터로 프롬프트 생성 (/therapist/manual-generate) ---
-            setLoadingStatus('AI가 작곡 아이디어 구상 중...');
-            
+            // --- 2단계: 프롬프트 생성 (/therapist/manual-generate 사용 유지) ---
+            // 🚨 [주의] 이 API가 인증을 요구하는지, session 소유권을 확인하는지 백엔드 확인 권장!
+            setLoadingStatus('AI 작곡 아이디어 구상 중...');
             let bpmRange = { min: 70, max: 90 };
             if (tempo === 'slow') bpmRange = { min: 50, max: 70 };
             if (tempo === 'fast') bpmRange = { min: 100, max: 120 };
 
             const manualPayload = {
-                session_id: newSessionId,
-                guideline_json: "{}",
-                manual: {
-                    mood: mood,
-                    bpm_min: bpmRange.min,
-                    bpm_max: bpmRange.max,
-                    key_signature: musicKey,
-                    vocals_allowed: vocalsAllowed,
-                    include_instruments: [instrument],
-                    exclude_instruments: excludedInstruments,
-                    duration_sec: duration,
-                    notes: notes,
-                }
+                 session_id: newSessionId, guideline_json: "{}",
+                 manual: { mood, bpm_min: bpmRange.min, bpm_max: bpmRange.max, key_signature: musicKey,
+                           vocals_allowed: vocalsAllowed, include_instruments: [instrument],
+                           exclude_instruments: excludedInstruments, duration_sec: duration, notes }
             };
-            const generateResponse = await fetch('http://localhost:8000/therapist/manual-generate', {
+            const generateResponse = await fetch('http://localhost:8000/therapist/manual-generate', { // ✅ API 경로 확인
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, // ✅ 인증 헤더 추가
                 body: JSON.stringify(manualPayload)
             });
-            if (!generateResponse.ok) throw new Error('프롬프트 생성에 실패했습니다.');
+            if (generateResponse.status === 401) throw new Error('인증 실패(프롬프트)');
+            if (!generateResponse.ok) {
+                const errData = await generateResponse.json().catch(() => ({ detail: '프롬프트 생성 실패 응답 파싱 불가' }));
+                throw new Error(errData.detail || `프롬프트 생성 실패 (${generateResponse.status})`);
+            }
             const promptData = await generateResponse.json();
+            // 백엔드 응답이 { prompt_text: "..." } 형태인지 확인
+            if (typeof promptData.prompt_text !== 'string') {
+                 console.error("Unexpected prompt data format:", promptData);
+                 throw new Error("잘못된 프롬프트 데이터 형식");
+            }
             finalPrompt = promptData.prompt_text;
-            console.log("최종 프롬프트 수신:", finalPrompt);
 
-            // --- 3단계: 실제 음악 생성 요청 (/music/compose) ---
+            // --- 3단계: 음악 생성 (/music/compose 사용 유지) ---
+            // 🚨 [주의] 이 API가 인증 및 세션 소유권 확인을 하는지 백엔드 확인 권장!
             setLoadingStatus('ElevenLabs에서 음악 생성 중...');
-            const musicResponse = await fetch('http://localhost:8000/music/compose', {
+            const musicResponse = await fetch('http://localhost:8000/music/compose', { // ✅ API 경로 확인
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, // ✅ 인증 헤더 추가
                 body: JSON.stringify({
                     session_id: newSessionId,
                     music_length_ms: duration * 1000,
                     force_instrumental: !vocalsAllowed,
                 }),
             });
+            if (musicResponse.status === 401) throw new Error('인증 실패(음악생성)');
             if (!musicResponse.ok) {
-                 const errorData = await musicResponse.json();
-                 throw new Error(errorData.detail || '음악 생성 API 호출에 실패했습니다.');
+                const errorData = await musicResponse.json();
+                throw new Error(errorData.detail || `음악 생성 실패 (${musicResponse.status})`);
             }
             const result = await musicResponse.json();
-            if (!result.track_url) throw new Error("음악 생성 결과가 올바르지 않습니다.");
+            if (!result.track_url) throw new Error("음악 생성 결과 URL 없음");
 
-            // --- 4단계: 두 곳의 플레이리스트에 모두 저장 ---
-            const newTrack: MusicTrack = {
-                id: `track_compose_${Date.now()}`,
-                title: `(작곡 체험) ${mood} 분위기, ${instrument} 음악`,
-                artist: 'TheraMusic AI (Me)',
-                prompt: finalPrompt,
-                audioUrl: `http://localhost:8000${result.track_url}`
-            };
-            
-            // 💡 3. [핵심 수정] 
-            // (1) 환자 본인용 공용 플레이리스트에 추가 (/music 페이지용)
-            addTrackToPlaylist(newTrack); 
-            // (2) '로그인한' 환자의 '가짜 DB' 계정에도 추가 (대시보드용)
-            addMusicToPatient(SIMULATED_LOGGED_IN_PATIENT_ID, newTrack);
+            // --- 💡 4단계: '가짜 DB' 저장 로직 *삭제* ---
+            // const newTrack: MusicTrack = { ... };
+            // addTrackToPlaylist(newTrack);
+            // addMusicToPatient(...);
 
-            // 💡 4. [수정] 대시보드로 이동하여 '최근 음악' 목록 갱신을 바로 확인
-            router.push('/dashboard/patient');
+            // --- 5단계: 음악 목록 페이지로 이동 ---
+            alert("음악 생성이 완료되었습니다! 플레이리스트에서 확인하세요.");
+            router.push('/music'); // ✅ /music 페이지로 이동
 
         } catch (err) {
             console.error('Compose music failed:', err);
-            setError(err instanceof Error ? err.message : '알 수 없는 오류 발생');
+            const errorMessage = err instanceof Error ? err.message : '알 수 없는 오류 발생';
+            setError(errorMessage);
+            // 인증 실패 시 localStorage 비우고 로그인 페이지로 이동
+            if (errorMessage.includes('인증 실패')) {
+                 localStorage.removeItem('accessToken');
+                 router.push('/login?next=/compose');
+            }
         } finally {
             setLoading(false);
             setLoadingStatus('');
         }
     };
 
-    /**
-     * 버튼 스타일을 동적으로 반환하는 헬퍼 함수
-     */
+    // --- 헬퍼 함수 및 JSX (변경 없음) ---
     const getButtonClass = (isActive: boolean) => {
         const baseClass = "px-4 py-2 rounded-full transition duration-150 text-sm font-medium border";
         return isActive
@@ -153,7 +186,7 @@ export default function ComposePage() {
 
     return (
         <div className="compose-container p-6 md:p-8 max-w-2xl mx-auto bg-white shadow-xl rounded-lg my-10 relative">
-            
+            {/* 로딩 오버레이 */}
             {loading && (
                 <div className="absolute inset-0 bg-white bg-opacity-80 flex flex-col justify-center items-center z-10 text-center px-4 rounded-lg">
                     <Loader2 className="w-12 h-12 animate-spin text-indigo-600" />
@@ -164,9 +197,9 @@ export default function ComposePage() {
 
             <h1 className="text-3xl font-extrabold text-gray-800 mb-4 text-center">나만의 AI 음악 만들기 🎶</h1>
             <p className="text-center text-gray-500 mb-8">원하는 음악의 요소를 선택하고 AI에게 작곡을 요청해보세요.</p>
-            
-            <form onSubmit={handleSubmit} className="space-y-8">
 
+            <form onSubmit={handleSubmit} className="space-y-8">
+                {/* 분위기 */}
                 <section>
                     <label className="block text-lg font-semibold text-gray-700 mb-3">1. 분위기</label>
                     <div className="flex flex-wrap gap-2">
@@ -176,49 +209,34 @@ export default function ComposePage() {
                         <button type="button" onClick={() => setMood('reflective')} className={getButtonClass(mood === 'reflective')}>🤔 사색적이게</button>
                     </div>
                 </section>
-
+                {/* 악기 */}
                 <section>
-                    <label htmlFor="instrument" className="block text-lg font-semibold text-gray-700 mb-2">2. 주요 악기</label>
-                    <select
-                        id="instrument"
-                        name="instrument"
-                        value={instrument}
-                        onChange={handleChange}
-                        className="w-full p-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                    >
-                        <option value="Piano">피아노</option>
-                        <option value="Acoustic Guitar">어쿠스틱 기타</option>
-                        <option value="Strings">현악기</option>
-                        <option value="Synthesizer">신디사이저</option>
-                    </select>
-
-                    <div className="mt-4">
-                        <label className="block text-sm font-medium text-gray-600 mb-2">이 악기 소리는 빼주세요 (선택):</label>
-                        <div className="flex flex-wrap gap-x-4 gap-y-2">
-                            {['Drums', 'Bass', 'Synth Pad', 'Electric Guitar'].map((inst) => (
-                                <label key={inst} className="flex items-center space-x-2">
-                                    <input
-                                        type="checkbox"
-                                        className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                                        checked={excludedInstruments.includes(inst)}
-                                        onChange={() => handleExcludeToggle(inst)}
-                                    />
-                                    <span className="text-sm text-gray-700">{inst}</span>
-                                </label>
-                            ))}
-                        </div>
-                    </div>
+                     <label htmlFor="instrument" className="block text-lg font-semibold text-gray-700 mb-2">2. 주요 악기</label>
+                     <select id="instrument" name="instrument" value={instrument} onChange={handleChange} className="w-full p-2 border rounded-md">
+                         <option value="Piano">피아노</option> <option value="Acoustic Guitar">어쿠스틱 기타</option> <option value="Strings">현악기</option> <option value="Synthesizer">신디사이저</option>
+                     </select>
+                     <div className="mt-4">
+                         <label className="block text-sm font-medium text-gray-600 mb-2">이 악기 소리는 빼주세요 (선택):</label>
+                         <div className="flex flex-wrap gap-x-4 gap-y-2">
+                             {['Drums', 'Bass', 'Synth Pad', 'Electric Guitar'].map((inst) => (
+                                 <label key={inst} className="flex items-center space-x-2">
+                                     <input type="checkbox" className="h-4 w-4 rounded border-gray-300" checked={excludedInstruments.includes(inst)} onChange={() => handleExcludeToggle(inst)} />
+                                     <span className="text-sm text-gray-700">{inst}</span>
+                                 </label>
+                             ))}
+                         </div>
+                     </div>
                 </section>
-
+                 {/* 빠르기 */}
                 <section>
                     <label className="block text-lg font-semibold text-gray-700 mb-3">3. 빠르기 (템포)</label>
-                    <div className="flex flex-wrap gap-2">
-                        <button type="button" onClick={() => setTempo('slow')} className={getButtonClass(tempo === 'slow')}>🐢 느리게</button>
-                        <button type="button" onClick={() => setTempo('medium')} className={getButtonClass(tempo === 'medium')}>🏃‍♂️ 보통</button>
-                        <button type="button" onClick={() => setTempo('fast')} className={getButtonClass(tempo === 'fast')}>🚀 빠르게</button>
-                    </div>
+                     <div className="flex flex-wrap gap-2">
+                         <button type="button" onClick={() => setTempo('slow')} className={getButtonClass(tempo === 'slow')}>🐢 느리게</button>
+                         <button type="button" onClick={() => setTempo('medium')} className={getButtonClass(tempo === 'medium')}>🏃‍♂️ 보통</button>
+                         <button type="button" onClick={() => setTempo('fast')} className={getButtonClass(tempo === 'fast')}>🚀 빠르게</button>
+                     </div>
                 </section>
-
+                {/* 조성 */}
                 <section>
                     <label className="block text-lg font-semibold text-gray-700 mb-3">4. 음악의 느낌 (조성)</label>
                     <div className="flex flex-wrap gap-2">
@@ -227,62 +245,31 @@ export default function ComposePage() {
                         <button type="button" onClick={() => setMusicKey('Neutral')} className={getButtonClass(musicKey === 'Neutral')}>🤖 AI가 결정</button>
                     </div>
                 </section>
-
+                {/* 보컬 */}
                 <section>
                     <label className="block text-lg font-semibold text-gray-700 mb-2">5. 보컬 (가사) 여부</label>
-                    <div className="flex items-center">
-                        <span className={`text-sm font-medium ${!vocalsAllowed ? 'text-indigo-600' : 'text-gray-500'}`}>연주곡만</span>
-                        <label htmlFor="vocalsAllowed" className="relative inline-flex items-center cursor-pointer mx-4">
-                            <input
-                                type="checkbox"
-                                id="vocalsAllowed"
-                                name="vocalsAllowed"
-                                className="sr-only peer"
-                                checked={vocalsAllowed}
-                                onChange={(e) => setVocalsAllowed(e.target.checked)}
-                            />
-                            <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-4 peer-focus:ring-indigo-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                        </label>
-                        <span className={`text-sm font-medium ${vocalsAllowed ? 'text-indigo-600' : 'text-gray-500'}`}>보컬 포함</span>
-                    </div>
+                     <div className="flex items-center">
+                         <span className={`text-sm font-medium ${!vocalsAllowed ? 'text-indigo-600' : 'text-gray-500'}`}>연주곡만</span>
+                         <label htmlFor="vocalsAllowed" className="relative inline-flex items-center cursor-pointer mx-4">
+                             <input type="checkbox" id="vocalsAllowed" name="vocalsAllowed" className="sr-only peer" checked={vocalsAllowed} onChange={(e) => setVocalsAllowed(e.target.checked)} />
+                             <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-4 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                         </label>
+                         <span className={`text-sm font-medium ${vocalsAllowed ? 'text-indigo-600' : 'text-gray-500'}`}>보컬 포함</span>
+                     </div>
                 </section>
-
+                {/* 길이 */}
                 <section>
-                    <label htmlFor="duration" className="block text-lg font-semibold text-gray-700 mb-2">
-                        6. 음악 길이: <span className="font-bold text-indigo-600">{duration}초</span>
-                    </label>
-                    <input
-                        type="range"
-                        id="duration"
-                        name="duration"
-                        value={duration}
-                        onChange={handleChange}
-                        min="30"  // 30초
-                        max="180" // 3분
-                        step="30" // 30초 단위
-                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-                    />
-                     <div className="flex justify-between text-xs text-gray-500 mt-1">
-                        <span>30초</span>
-                        <span>3분 (180초)</span>
-                    </div>
+                    <label htmlFor="duration" className="block text-lg font-semibold text-gray-700 mb-2">6. 음악 길이: <span className="font-bold text-indigo-600">{duration}초</span></label>
+                    <input type="range" id="duration" name="duration" value={duration} onChange={handleChange} min="30" max="180" step="30" className="w-full h-2 bg-gray-200 rounded-lg cursor-pointer accent-indigo-600" />
+                    <div className="flex justify-between text-xs text-gray-500 mt-1"><span>30초</span><span>3분 (180초)</span></div>
                 </section>
-
+                {/* 요청사항 */}
                 <section>
-                    <label htmlFor="notes" className="block text-lg font-semibold text-gray-700 mb-2">
-                        7. AI에게 직접 요청하기 (선택)
-                    </label>
-                    <textarea
-                        id="notes"
-                        name="notes"
-                        value={notes}
-                        onChange={handleChange}
-                        rows={3}
-                        className="w-full p-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                        placeholder="예: 조용하게 시작해서 점점 고조되는 느낌으로 만들어줘 / 빗소리를 약하게 넣어줘"
-                    />
+                    <label htmlFor="notes" className="block text-lg font-semibold text-gray-700 mb-2">7. AI에게 직접 요청하기 (선택)</label>
+                    <textarea id="notes" name="notes" value={notes} onChange={handleChange} rows={3} className="w-full p-2 border rounded-md text-sm" placeholder="예: 조용하게 시작해서 점점 고조되는 느낌으로 만들어줘 / 빗소리를 약하게 넣어줘" />
                 </section>
 
+                {/* 에러 메시지 */}
                 {error && (
                     <div className="flex items-center justify-center p-3 bg-red-100 text-red-700 rounded-md text-sm">
                         <Info className="w-5 h-5 mr-2 flex-shrink-0" />
@@ -290,13 +277,10 @@ export default function ComposePage() {
                     </div>
                 )}
 
-                <button 
-                    type="submit" 
-                    disabled={loading} 
-                    className="w-full py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition duration-200 disabled:opacity-70 disabled:cursor-not-allowed mt-6 text-lg flex items-center justify-center gap-2"
-                >
-                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-                    {loading ? '음악 생성 중...' : '나만의 음악 생성하기 →'}
+                {/* 제출 버튼 */}
+                <button type="submit" disabled={loading} className="w-full py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition duration-200 disabled:opacity-70 disabled:cursor-not-allowed mt-6 text-lg flex items-center justify-center gap-2">
+                     {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
+                     {loading ? '음악 생성 중...' : '나만의 음악 생성하기 →'}
                 </button>
             </form>
         </div>

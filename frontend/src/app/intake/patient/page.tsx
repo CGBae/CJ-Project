@@ -107,7 +107,7 @@ export default function PatientIntakePage() {
 
       // 4. [4단계] 상담 페이지로 이동 (session_id만 전달)
       // (경로는 프로젝트에 맞게 수정)
-      router.push(`/chat/${data.session_id}`);
+      router.push(`/counsel?session=${data.session_id}`);
     } catch (err: unknown) {
       console.error('Intake submission failed:', err);
       let errorMessage = '알 수 없는 오류가 발생했습니다.';
