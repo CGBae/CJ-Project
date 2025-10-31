@@ -90,6 +90,9 @@ export default function CounselorSettingsPage() {
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
 
+    const [showDeactivateModal, setShowDeactivateModal] = useState(false);
+    const [isDeactivating, setIsDeactivating] = useState(false);
+
     // 공통 알림 메시지
     const showMessage = (type: 'success' | 'error', message: string) => {
         if (type === 'success') {
@@ -104,6 +107,33 @@ export default function CounselorSettingsPage() {
             setError(null);
         }, 5000);
     };
+
+    const handleDeactivate = async () => {
+        setIsDeactivating(true);
+        // 글로벌 메시지 초기화
+        setError(null);
+        setSuccess(null); 
+        
+        try {
+            // apiCall 헬퍼를 사용해 /user/deactivate 엔드포인트 호출
+            await apiCall('/user/deactivate', 'DELETE');
+            
+            // 토큰 제거
+            localStorage.removeItem('accessToken');
+            
+            alert('계정 탈퇴가 완료되었습니다. 이용해 주셔서 감사합니다.');
+            window.location.href = '/login'; // 로그인 페이지로 리디렉션
+
+        } catch (err: unknown) {
+            if (err instanceof Error) {
+                // 글로벌 오류 메시지 표시
+                showMessage('error', `계정 탈퇴 오류: ${err.message}. 다시 시도해주세요.`);
+            }
+        } finally {
+            setIsDeactivating(false);
+            setShowDeactivateModal(false);
+        }
+    };
     
     // --- 탭 콘텐츠 렌더링 함수 ---
 
@@ -116,8 +146,41 @@ export default function CounselorSettingsPage() {
     );
     
     const renderDeactivateTab = () => (
-        <Alert type="info" message="상담사 계정 탈퇴 기능은 현재 준비 중입니다." />
-    );
+    <div className="space-y-6 max-w-lg mx-auto p-8 bg-white border border-gray-200 rounded-xl shadow-lg">
+        <h3 className="text-xl font-semibold border-b pb-2 text-red-600">계정 탈퇴</h3>
+        <div className="p-6 bg-red-50 border border-red-200 rounded-xl shadow-inner space-y-4">
+            <div className="flex items-start">
+                <AlertTriangle className="w-6 h-6 text-red-500 mr-3 mt-1 flex-shrink-0" />
+                <p className="text-red-700 font-medium">
+                    계정을 탈퇴하면 모든 사용자 데이터(프로필 정보, 환자 연결 기록 등)가 영구적으로 삭제됩니다. 
+                    탈퇴 후에는 데이터를 복구할 수 없습니다. 신중하게 결정해 주세요.
+                </p>
+            </div>
+            <button
+                onClick={() => setShowDeactivateModal(true)}
+                className="w-full flex justify-center items-center px-4 py-3 text-sm font-medium rounded-lg shadow-md text-white bg-red-600 hover:bg-red-700 transition disabled:bg-gray-400"
+            >
+                <XCircle className="w-5 h-5 mr-2" />
+                계정 영구 탈퇴하기
+            </button>
+        </div>
+
+        {/* 이 함수가 렌더링될 때 showDeactivateModal이 true면 모달을 띄움 */}
+        {showDeactivateModal && (
+            <ConfirmationModal
+                title="계정 탈퇴 확인"
+                message="정말로 계정을 영구적으로 탈퇴하시겠습니까? 이 작업은 되돌릴 수 없습니다."
+                onConfirm={handleDeactivate}
+                onCancel={() => setShowDeactivateModal(false)}
+                isProcessing={isDeactivating}
+            />
+        )}
+
+        {/* 글로벌 알림 메시지가 이미 상단에 있으므로 
+          여기서 별도 에러 메시지를 표시할 필요는 없습니다.
+        */}
+    </div>
+);
 
     return (
         <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
@@ -390,3 +453,50 @@ const Alert: React.FC<AlertProps> = ({ type, message, onClose }) => {
         </div>
     );
 };
+
+interface ConfirmationModalProps {
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    onCancel: () => void;
+    isProcessing: boolean;
+}
+
+const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ title, message, onConfirm, onCancel, isProcessing }) => (
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
+        <div className="bg-white rounded-xl shadow-2xl p-6 sm:p-8 max-w-md w-full animate-in zoom-in-90 duration-200">
+            <div className="flex items-start">
+                <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
+                    <AlertTriangle className="h-6 w-6 text-red-600" aria-hidden="true" />
+                </div>
+                <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                    <h3 className="text-lg leading-6 font-bold text-gray-900" id="modal-title">
+                        {title}
+                    </h3>
+                    <div className="mt-2">
+                        <p className="text-sm text-gray-600">
+                            {message}
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div className="mt-6 flex flex-col sm:flex-row-reverse sm:gap-3 gap-2">
+                <button
+                    onClick={onConfirm}
+                    disabled={isProcessing}
+                    className="w-full sm:w-auto flex justify-center items-center px-4 py-2 text-sm font-medium rounded-lg text-white bg-red-600 hover:bg-red-700 transition disabled:bg-red-400"
+                >
+                    {isProcessing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                    {isProcessing ? '처리 중...' : '확인 및 탈퇴'}
+                </button>
+                <button
+                    onClick={onCancel}
+                    disabled={isProcessing}
+                    className="w-full sm:w-auto px-4 py-2 text-sm font-medium rounded-lg text-gray-700 bg-gray-200 hover:bg-gray-300 transition disabled:opacity-50"
+                >
+                    취소
+                </button>
+            </div>
+        </div>
+    </div>
+);
