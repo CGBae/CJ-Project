@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from pydantic import BaseModel, Field, EmailStr
 from datetime import datetime 
 from enum import Enum
@@ -65,6 +65,12 @@ class UserCreate(BaseModel):
     password: str = Field(..., min_length=8)
     name: str
     role: str = Field(..., pattern="^(patient|therapist)$", description="Role must be 'patient' or 'therapist'")
+    
+class CounselorCreatePatientRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=8)
+    name: str
+    age: Optional[int] = None
 
 class UserPublic(BaseModel):
     """
@@ -77,6 +83,7 @@ class UserPublic(BaseModel):
     social_provider: Optional[str] = None
     role: str
     name: Optional[str] = None
+    age: Optional[int] = None
 
     class Config:
         # SQLAlchemy 2.0 (Mapped) 모델을 Pydantic으로 자동 변환
@@ -96,7 +103,7 @@ class MusicTrackInfo(BaseModel):
     id: int # Track 모델의 id
     title: str # 프론트엔드에서 사용할 제목 (music.py에서 생성 필요)
     prompt: str # 프론트엔드에서 사용할 프롬프트 (music.py에서 생성 필요)
-    audioUrl: str # 프론트엔드에서 사용하는 필드명 (music.py의 track_url을 매핑)
+    track_url: str = Field(..., serialization_alias="audioUrl")
     # 필요하다면 Track 모델의 다른 필드도 추가 가능 (예: created_at: datetime)
 
     class Config:
@@ -119,8 +126,8 @@ class ProfileUpdate(BaseModel):
     """
     사용자 프로필 업데이트 (/user/profile) 요청 스키마
     """
-    name: Optional[str] = None
-    age: Optional[int] = None
+    name: str = Field(..., min_length=1, description="이름은 비워둘 수 없습니다.")
+    age: Optional[int] = Field(None, gt=0, lt=150, description="나이는 1세 이상 150세 미만이어야 합니다.")
 
 # --- 연결 관리 ---
 class ConnectionDetail(BaseModel):
@@ -131,6 +138,9 @@ class ConnectionDetail(BaseModel):
     therapist_id: int
     therapist_name: str
     status: str # 'PENDING', 'ACCEPTED', 'REJECTED'
+    
+    class Config:
+        from_attributes = True
 
 class ConnectionResponse(str, Enum):
     """
@@ -156,3 +166,12 @@ class KakaoLoginResponse(BaseModel):
     status: str # "success" (로그인) 또는 "register_required" (회원가입)
     access_token: Optional[str] = None
     temp_token: Optional[str] = None
+    
+class FoundPatientResponse(BaseModel):
+    id: int
+    name: str
+    email: str
+    connection_status: Literal['available', 'pending', 'connected_to_self', 'connected_to_other']
+
+    class Config:
+        from_attributes = True
