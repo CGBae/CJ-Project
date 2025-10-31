@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field, EmailStr
 from datetime import datetime 
+from enum import Enum
 
 # 공통
 class SessionCreateResp(BaseModel):
@@ -62,6 +63,8 @@ class UserCreate(BaseModel):
     email: EmailStr 
     # Field를 사용하여 최소 8자리의 비밀번호를 강제합니다.
     password: str = Field(..., min_length=8)
+    name: str
+    role: str = Field(..., pattern="^(patient|therapist)$", description="Role must be 'patient' or 'therapist'")
 
 class UserPublic(BaseModel):
     """
@@ -73,6 +76,7 @@ class UserPublic(BaseModel):
     email: Optional[EmailStr] = None # 소셜 로그인은 이메일이 없을 수 있음
     social_provider: Optional[str] = None
     role: str
+    name: Optional[str] = None
 
     class Config:
         # SQLAlchemy 2.0 (Mapped) 모델을 Pydantic으로 자동 변환
@@ -97,3 +101,58 @@ class MusicTrackInfo(BaseModel):
 
     class Config:
         from_attributes = True # SQLAlchemy 모델 -> Pydantic 자동 변환
+        
+class UserProfile(BaseModel):
+    """
+    사용자 프로필 조회 (/user/profile) 응답 스키마
+    """
+    id: int
+    name: Optional[str] = None
+    age: Optional[int] = None
+    email: Optional[EmailStr] = None
+    role: str
+
+    class Config:
+        from_attributes = True
+
+class ProfileUpdate(BaseModel):
+    """
+    사용자 프로필 업데이트 (/user/profile) 요청 스키마
+    """
+    name: Optional[str] = None
+    age: Optional[int] = None
+
+# --- 연결 관리 ---
+class ConnectionDetail(BaseModel):
+    """
+    연결 요청 상세 정보 스키마 (option 페이지의 '연결요청' 탭)
+    """
+    connection_id: int
+    therapist_id: int
+    therapist_name: str
+    status: str # 'PENDING', 'ACCEPTED', 'REJECTED'
+
+class ConnectionResponse(str, Enum):
+    """
+    연결 요청에 대한 환자의 응답 유형
+    """
+    accept = "ACCEPTED"
+    reject = "REJECTED"
+
+class ConnectionRespondReq(BaseModel):
+    """
+    연결 요청에 응답 (/connection/respond) 요청 스키마
+    """
+    connection_id: int
+    response: ConnectionResponse # "ACCEPTED" 또는 "REJECTED"
+    
+class SocialRegisterRequest(BaseModel):
+    temp_token: str # 카카오 정보가 담긴 임시 토큰
+    role: str = "patient" # 사용자가 선택한 역할
+    name: str
+
+# 💡 [선택적 수정] /auth/kakao가 두 가지 응답을 보낼 수 있음을 명시
+class KakaoLoginResponse(BaseModel):
+    status: str # "success" (로그인) 또는 "register_required" (회원가입)
+    access_token: Optional[str] = None
+    temp_token: Optional[str] = None

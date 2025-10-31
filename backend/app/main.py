@@ -9,7 +9,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
-from app.api.routers import patient, therapist, chat, music, auth, sessions
+from app.api.routers import patient, therapist, chat, music, auth, sessions, user, connection
 from fastapi.staticfiles import StaticFiles
 
 app = FastAPI(title="TheraMusic API")
@@ -40,6 +40,8 @@ app.include_router(therapist.router)
 app.include_router(music.router)
 app.include_router(auth.router)
 app.include_router(sessions.router)
+app.include_router(user.router)
+app.include_router(connection.router)
 
 
 @app.get("/health")

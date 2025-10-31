@@ -1,6 +1,6 @@
 'use client'; 
 
-import React, { useState, FormEvent, useEffect } from 'react';
+import React, { useState, FormEvent, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
     CounselorIntakeData,
@@ -8,15 +8,139 @@ import {
     MUSIC_GENRE_OPTIONS
 } from '@/types/intake';
 // 'getPatients'와 'Patient' 타입을 import 합니다.
-import { getPatients, addPatient, linkSessionToPatient, addMusicToPatient, Patient } from '@/lib/utils/patients';
+import { getPatients, linkSessionToPatient, addMusicToPatient, Patient, findPatientForConnection, requestConnection, addPatient as registerNewPatient } from '@/lib/utils/patients';
 import { MusicTrack } from '@/lib/utils/music';
-import { Info, Loader2 } from 'lucide-react';
+import { Info, Loader2, Link, UserPlus } from 'lucide-react';
+
+interface ConnectionRequestProps {
+    therapistId: string; // 현재 상담사 ID
+    onConnectionSuccess: () => void; // 성공 시 콜백
+}
+
+const ConnectionRequest: React.FC<ConnectionRequestProps> = ({ therapistId, onConnectionSuccess }) => {
+    const [patientIdInput, setPatientIdInput] = useState(''); 
+    const [patientInfo, setPatientInfo] = useState<{ name: string; age: number | string } | null>(null);
+    const [status, setStatus] = useState<'idle' | 'checking' | 'requesting' | 'error' | 'success'>('idle');
+    const [message, setMessage] = useState<string | null>(null);
+
+    // 환자 ID 입력이 변경될 때마다 환자 정보를 확인하는 함수
+    const handlePatientCheck = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const id = e.target.value;
+        setPatientIdInput(id);
+        setPatientInfo(null);
+        setMessage(null);
+        setStatus('idle');
+        
+        if (id.trim()) {
+            setStatus('checking');
+            const result = findPatientForConnection(id.trim());
+            
+            if (result.patient) {
+                setPatientInfo({ name: result.patient.name, age: result.patient.age });
+                setMessage(null);
+                setStatus('idle');
+            } else {
+                setPatientInfo(null);
+                setMessage(result.error || `환자 ID '${id}'를 찾을 수 없습니다.`);
+                setStatus('error');
+            }
+        }
+    };
+
+    const handleRequestConnection = async () => {
+        const id = patientIdInput.trim();
+        if (!id || status === 'error' || !patientInfo) {
+            setMessage("유효한 환자 ID를 입력하고 환자 정보를 확인해주세요.");
+            return;
+        }
+
+        setStatus('requesting');
+        setMessage(null);
+
+        try {
+            // 💡 실제 유틸리티 함수 호출: 환자에게 연결 요청 상태 기록
+            const response = requestConnection(id, therapistId);
+            
+            if (response.success) {
+                setStatus('success');
+                setMessage(`환자 ${patientInfo.name}님에게 연결 요청을 성공적으로 보냈습니다. 환자가 수락해야 세션을 진행할 수 있습니다.`);
+                setPatientIdInput('');
+                setPatientInfo(null);
+                onConnectionSuccess(); // 상위 컴포넌트에 성공 알림 (환자 목록 새로고침)
+            } else {
+                setStatus('error');
+                setMessage(response.error || "연결 요청 중 오류가 발생했습니다.");
+            }
+        } catch (err) {
+            setStatus('error');
+            setMessage(`처리 오류: ${(err as Error).message}`);
+        }
+    };
+
+    return (
+        <div className="space-y-4">
+            <p className="text-sm text-gray-600">환자 ID를 입력하여 **이미 가입된 환자**에게 연결을 요청합니다.</p>
+            <div className="flex flex-col sm:flex-row gap-4 items-end">
+                <div className="flex-grow">
+                    <label htmlFor="patientIdInput" className="block text-md font-medium text-gray-700 mb-1">환자 ID (필수)</label>
+                    <input
+                        type="text"
+                        id="patientIdInput"
+                        value={patientIdInput}
+                        onChange={handlePatientCheck}
+                        className={`w-full p-2 border rounded-md focus:ring-green-500 focus:border-green-500 ${status === 'error' ? 'border-red-500' : ''}`}
+                        placeholder="예: p_user_001"
+                        required
+                        disabled={status === 'requesting'}
+                    />
+                </div>
+                <button
+                    type="button"
+                    onClick={handleRequestConnection}
+                    disabled={status === 'requesting' || !patientIdInput.trim() || !patientInfo}
+                    className="w-full sm:w-auto px-6 py-2 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition duration-200 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                    {status === 'requesting' ? (
+                        <>
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                            요청 중...
+                        </>
+                    ) : (
+                        <>
+                            <Link className="w-5 h-5" />
+                            연결 요청하기
+                        </>
+                    )}
+                </button>
+            </div>
+
+            {/* 환자 정보 확인 및 오류 메시지 출력 */}
+            {(patientIdInput.trim() || message) && (
+                <div className={`p-3 mt-2 rounded-md text-sm border ${status === 'error' ? 'border-red-500 bg-red-50' : status === 'success' ? 'border-green-500 bg-green-50' : 'border-gray-300 bg-white'}`}>
+                    {status === 'checking' ? (
+                        <p className="font-medium text-gray-500 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> 환자 정보 확인 중...</p>
+                    ) : patientInfo ? (
+                        <p className="font-medium text-green-700 flex items-center gap-2">
+                            <Info className="w-4 h-4 text-green-500 flex-shrink-0" />
+                            **확인**: 환자 **{patientInfo.name}** ({patientInfo.age}세). 이제 요청할 수 있습니다.
+                        </p>
+                    ) : (
+                        <p className="font-medium text-red-700 flex items-center gap-2">
+                            <Info className="w-4 h-4 text-red-500 flex-shrink-0" />
+                            {message || "해당 ID의 환자를 찾을 수 없거나 이미 연결/요청 대기 중입니다."}
+                        </p>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
 
 export default function CounselorIntakePage() {
     const [formData, setFormData] = useState<CounselorIntakeData>(initialCounselorIntakeData);
     
     // 폼 모드 (기존/신규) 및 환자 정보 상태
-    const [intakeMode, setIntakeMode] = useState<'existing' | 'new'>('existing');
+    const [intakeMode, setIntakeMode] = useState<'existing'| 'request_connection' | 'new_registration'>('existing');
     
     // '기존' 환자 선택용
     const [allPatients, setAllPatients] = useState<Patient[]>([]);
@@ -31,16 +155,22 @@ export default function CounselorIntakePage() {
     const [error, setError] = useState<string | null>(null);
     const router = useRouter();
     const [vocalsAllowed, setVocalsAllowed] = useState(false);
+
+    const currentTherapistId = 'therapist_id_001'; 
+
+    // 페이지 로드 시 '가짜 DB'에서 환자 목록을 불러옵니다.
+    const loadPatients = useCallback(() => {
+        const patients = getPatients();
+        setAllPatients(patients.filter(p => !p.isPendingConnection && p.connectedTherapistId === currentTherapistId)); // 연결된 환자만 표시
+        if (patients.length > 0 && !selectedPatientId) {
+            setSelectedPatientId(patients.find(p => !p.isPendingConnection && p.connectedTherapistId === currentTherapistId)?.id || '');
+        }
+    }, [selectedPatientId, currentTherapistId]);
     
     // 페이지 로드 시 '가짜 DB'에서 환자 목록을 불러옵니다.
     useEffect(() => {
-        const patients = getPatients();
-        setAllPatients(patients);
-        // 목록의 첫 번째 환자를 기본값으로 선택
-        if (patients.length > 0) {
-            setSelectedPatientId(patients[0].id);
-        }
-    }, []);
+        loadPatients();
+    }, [loadPatients]);
 
     // Input/Select/Range/Checkbox 처리 핸들러
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -75,6 +205,12 @@ export default function CounselorIntakePage() {
     // 폼 제출 로직 (두 가지 모드 분기 처리)
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
+
+        if (intakeMode === 'request_connection') {
+             setError("연결 요청은 해당 섹션의 '연결 요청하기' 버튼을 사용해야 합니다.");
+             return;
+        }
+
         setLoading(true);
         setError(null);
 
@@ -92,23 +228,30 @@ export default function CounselorIntakePage() {
             patientIdToUse = selectedPatientId;
             const patient = allPatients.find(p => p.id === selectedPatientId);
             patientNameForTrack = patient ? patient.name : '환자';
-        } else {
-            // "신규 환자" 모드
+        } else if (intakeMode === 'new_registration') {
+            // "신규 환자 등록" 모드 (새 환자 레코드 생성 후 처방)
             if (!newPatientId.trim() || !newPatientName.trim() || newPatientAge === '') {
                  setError('새 환자의 ID, 이름, 나이를 모두 입력해주세요.');
                  setLoading(false);
                  return;
             }
             // '가짜 DB'에 새 환자 추가 시도
-            const result = addPatient(newPatientId.trim(), newPatientName, Number(newPatientAge));
+            const result = registerNewPatient(newPatientId.trim(), newPatientName, Number(newPatientAge));
             
             if (!result.success) { // ID 중복 등 에러 처리
-                setError(result.error || '환자 생성 실패');
-                setLoading(false);
-                return;
+                 setError(result.error || '환자 생성 실패');
+                 setLoading(false);
+                 return;
             }
             patientIdToUse = result.patient!.id;
             patientNameForTrack = result.patient!.name;
+            // 🚨 신규 등록된 환자는 자동으로 현재 상담사에게 연결되었다고 가정합니다.
+            result.patient!.connectedTherapistId = currentTherapistId;
+
+        } else {
+             setError('잘못된 환자 모드입니다.');
+             setLoading(false);
+             return;
         }
         // ------------------
 
@@ -219,10 +362,10 @@ export default function CounselorIntakePage() {
                 
                 {/* 환자 선택/등록 UI */}
                 <section className="p-6 border rounded-lg shadow-sm bg-gray-50">
-                    <h2 className="text-xl font-bold mb-4 text-indigo-700 border-b pb-2">환자 선택</h2>
+                    <h2 className="text-xl font-bold mb-4 text-indigo-700 border-b pb-2">환자 선택/등록/연결</h2>
                     
                     {/* 모드 선택 라디오 버튼 */}
-                    <div className="flex gap-6 mb-4">
+                    <div className="flex flex-wrap gap-6 mb-6">
                         <label className="flex items-center">
                             <input
                                 type="radio"
@@ -232,18 +375,18 @@ export default function CounselorIntakePage() {
                                 onChange={() => setIntakeMode('existing')}
                                 className="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"
                             />
-                            <span className="ml-2 text-md font-medium text-gray-700">기존 환자 선택</span>
+                            <span className="ml-2 text-md font-medium text-gray-700">기존 환자 선택 (처방)</span>
                         </label>
                         <label className="flex items-center">
                             <input
                                 type="radio"
                                 name="intakeMode"
-                                value="new"
-                                checked={intakeMode === 'new'}
-                                onChange={() => setIntakeMode('new')}
-                                className="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"
+                                value="new_registration"
+                                checked={intakeMode === 'new_registration'}
+                                onChange={() => setIntakeMode('new_registration')}
+                                className="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-yellow-500"
                             />
-                            <span className="ml-2 text-md font-medium text-gray-700">신규 환자 등록</span>
+                            <span className="ml-2 text-md font-medium text-gray-700">신규 환자 등록 및 처방</span>
                         </label>
                     </div>
 
@@ -258,40 +401,48 @@ export default function CounselorIntakePage() {
                                 className="w-full p-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500"
                                 required={intakeMode === 'existing'}
                             >
-                                <option value="" disabled>-- 환자를 선택하세요 --</option>
+                                <option value="" disabled>-- 연결된 환자를 선택하세요 --</option>
                                 {allPatients.map(patient => (
                                     <option key={patient.id} value={patient.id}>
                                         {patient.name} (ID: {patient.id})
                                     </option>
                                 ))}
                             </select>
+                            <p className="text-sm text-gray-500 mt-2">선택된 환자에게 아래의 음악 처방이 제출됩니다. (연결 요청을 수락한 환자만 표시됩니다)</p>
                         </div>
                     )}
 
+                    {intakeMode === 'request_connection' && (
+                        <ConnectionRequest 
+                            therapistId={currentTherapistId} 
+                            onConnectionSuccess={loadPatients} // 요청 성공 시 환자 목록을 새로고침
+                        />
+                    )}
+
                     {/* "신규 환자" 선택 시 UI */}
-                    {intakeMode === 'new' && (
+                    {intakeMode === 'new_registration' && (
                         <div className="space-y-4">
-                            <p className="text-sm text-gray-600">새로운 환자의 정보를 입력하세요. 이 정보로 새 환자 레코드가 생성됩니다.</p>
+                            <p className="text-sm text-gray-600 flex items-center gap-2"><UserPlus className="w-4 h-4 text-yellow-600"/>새로운 환자의 레코드를 생성하고 즉시 음악 처방을 진행합니다.</p>
                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                 <div>
                                     <label htmlFor="newPatientId" className="block text-md font-medium text-gray-700 mb-1">환자 ID (필수)</label>
                                     <input
                                         type="text" id="newPatientId" value={newPatientId} onChange={(e) => setNewPatientId(e.target.value)}
-                                        className="w-full p-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500" placeholder="예: patient123" required={intakeMode === 'new'}
+                                        className="w-full p-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500" placeholder="예: patient123" required={intakeMode === 'new_registration'}
                                     />
                                 </div>
                                 <div>
                                     <label htmlFor="newPatientName" className="block text-md font-medium text-gray-700 mb-1">환자 이름</label>
                                     <input
                                         type="text" id="newPatientName" value={newPatientName} onChange={(e) => setNewPatientName(e.target.value)}
-                                        className="w-full p-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500" placeholder="홍길동" required={intakeMode === 'new'}
+                                        className="w-full p-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500" placeholder="홍길동" required={intakeMode === 'new_registration'}
                                     />
                                 </div>
                                 <div>
                                     <label htmlFor="newPatientAge" className="block text-md font-medium text-gray-700 mb-1">나이</label>
                                     <input
                                         type="number" id="newPatientAge" value={newPatientAge} onChange={(e) => setNewPatientAge(e.target.value === '' ? '' : Number(e.target.value))}
-                                        className="w-full p-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500" placeholder="30" min="0" required={intakeMode === 'new'}
+                                        className="w-full p-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500" placeholder="30" min="0" required={intakeMode === 'new_registration'}
                                     />
                                 </div>
                             </div>
@@ -299,176 +450,181 @@ export default function CounselorIntakePage() {
                     )}
                 </section>
 
-                {/* 섹션 1: 환자 주관적 상태 (VAS, 0-10점 척도) */}
-                <section className="p-6 border rounded-lg shadow-sm">
-                    <h2 className="text-xl font-bold mb-5 text-indigo-700 border-b pb-2">환자 상태 척도 기록 (참고용)</h2>
-                    
-                    <div className="mb-6">
-                        <label htmlFor="currentAnxietyLevel" className="block text-md font-medium text-gray-700 mb-2 text-center">
-                            현재 **불안** 수준: <span className="font-bold text-lg text-red-600">{formData.currentAnxietyLevel}점 ({getAnxietyLabel(formData.currentAnxietyLevel)})</span>
-                        </label>
-                        <input type="range" id="currentAnxietyLevel" name="currentAnxietyLevel" value={formData.currentAnxietyLevel} onChange={handleChange} min="0" max="10" step="1" className="w-full h-2 bg-red-100 rounded-lg appearance-none cursor-pointer accent-red-500" />
-                        <div className="flex justify-between text-xs text-gray-500 mt-1"><span>0: 전혀 불안하지 않음</span><span>10: 극심한 불안</span></div>
-                    </div>
-
-                    <div className="mb-6">
-                        <label htmlFor="currentMoodLevel" className="block text-md font-medium text-gray-700 mb-2 text-center">
-                            현재 **기분** 수준: <span className="font-bold text-lg text-blue-600">{formData.currentMoodLevel}점 ({getMoodLabel(formData.currentMoodLevel)})</span>
-                        </label>
-                        <input type="range" id="currentMoodLevel" name="currentMoodLevel" value={formData.currentMoodLevel} onChange={handleChange} min="0" max="10" step="1" className="w-full h-2 bg-blue-100 rounded-lg appearance-none cursor-pointer accent-blue-500" />
-                        <div className="flex justify-between text-xs text-gray-500 mt-1"><span>0: 매우 긍정적/행복함</span><span>10: 매우 부정적/우울함</span></div>
-                    </div>
-
-                    <div>
-                        <label htmlFor="currentPainLevel" className="block text-md font-medium text-gray-700 mb-2 text-center">
-                            현재 **통증** 수준: <span className="font-bold text-lg text-green-600">{formData.currentPainLevel}점 ({getPainLabel(formData.currentPainLevel)})</span>
-                        </label>
-                        <input type="range" id="currentPainLevel" name="currentPainLevel" value={formData.currentPainLevel} onChange={handleChange} min="0" max="10" step="1" className="w-full h-2 bg-green-100 rounded-lg appearance-none cursor-pointer accent-green-500" />
-                        <div className="flex justify-between text-xs text-gray-500 mt-1"><span>0: 통증 없음</span><span>10: 상상할 수 없는 최악의 통증</span></div>
-                    </div>
-                </section>
-
-                {/* 섹션 2: 전문 작곡 파라미터 (심화 요소) */}
-                <section className="p-6 border rounded-lg bg-yellow-50 shadow-md">
-                    <h2 className="text-xl font-bold mb-4 text-yellow-800 border-b border-yellow-200 pb-2">🎼 전문 작곡 파라미터 설정</h2>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                        <div>
-                            <label htmlFor="targetBPM_input" className="block text-sm font-medium text-gray-700 mb-1">목표 BPM (40~160)</label>
-                            <input type="number" id="targetBPM_input" name="targetBPM" value={formData.targetBPM === 'Neutral' ? '' : formData.targetBPM} onChange={handleChange} min="40" max="160" step="5" className="w-full p-2 border rounded-md" placeholder="숫자 입력 또는 Neutral 선택" disabled={formData.targetBPM === 'Neutral'}/>
-                            <select id="targetBPM_select" name="targetBPM" value={formData.targetBPM} onChange={handleChange} className="w-full p-2 border rounded-md mt-2 text-sm">
-                                <option value="" disabled>--- BPM 값 직접 입력 시 ---</option>
-                                <option value="Neutral">Neutral (AI가 결정)</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label htmlFor="musicDuration" className="block text-sm font-medium text-gray-700 mb-1">음악 길이 (초, 60~300)</label>
-                            <input type="number" id="musicDuration" name="musicDuration" value={formData.musicDuration} onChange={handleChange} min="60" max="300" step="30" className="w-full p-2 border rounded-md" />
-                        </div>
-                    </div>
-
-                    <div className="mb-4">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">🎤 보컬(가사) 포함 여부</label>
-                        <div className="flex items-center">
-                            <span className={`text-sm font-medium ${!vocalsAllowed ? 'text-indigo-600' : 'text-gray-500'}`}>연주곡만</span>
-                            <label htmlFor="vocalsAllowed" className="relative inline-flex items-center cursor-pointer mx-4">
-                                <input
-                                    type="checkbox"
-                                    id="vocalsAllowed"
-                                    name="vocalsAllowed"
-                                    className="sr-only peer"
-                                    checked={vocalsAllowed}
-                                    onChange={(e) => setVocalsAllowed(e.target.checked)}
-                                />
-                                <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-4 peer-focus:ring-indigo-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                            </label>
-                            <span className={`text-sm font-medium ${vocalsAllowed ? 'text-indigo-600' : 'text-gray-500'}`}>보컬 포함</span>
-                        </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                        <div>
-                            <label htmlFor="musicKeyPreference" className="block text-sm font-medium text-gray-700 mb-1">음계/조성</label>
-                            <select id="musicKeyPreference" name="musicKeyPreference" value={formData.musicKeyPreference} onChange={handleChange} className="w-full p-2 border rounded-md text-sm">
-                                <option value="Neutral">Neutral (AI가 결정)</option>
-                                <option value="Major">Major (밝음)</option>
-                                <option value="Minor">Minor (차분함)</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label htmlFor="harmonicDissonance" className="block text-sm font-medium text-gray-700 mb-1">불협화음 수준</label>
-                            <select id="harmonicDissonance" name="harmonicDissonance" value={formData.harmonicDissonance} onChange={handleChange} className="w-full p-2 border rounded-md text-sm">
-                                <option value="Neutral">Neutral (AI가 결정)</option>
-                                <option value="None">없음</option>
-                                <option value="Low">낮음</option>
-                                <option value="Medium">중간</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label htmlFor="rhythmComplexity" className="block text-sm font-medium text-gray-700 mb-1">리듬 복잡도</label>
-                            <select id="rhythmComplexity" name="rhythmComplexity" value={formData.rhythmComplexity} onChange={handleChange} className="w-full p-2 border rounded-md text-sm">
-                                <option value="Neutral">Neutral (AI가 결정)</option>
-                                <option value="Simple">단순</option>
-                                <option value="Medium">보통</option>
-                                <option value="Complex">복잡</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div>
-                            <label htmlFor="melodyContour" className="block text-sm font-medium text-gray-700 mb-1">선율 윤곽</label>
-                            <select id="melodyContour" name="melodyContour" value={formData.melodyContour} onChange={handleChange} className="w-full p-2 border rounded-md text-sm">
-                                <option value="Neutral">Neutral (AI가 결정)</option>
-                                <option value="Descending">하행 (이완)</option>
-                                <option value="Ascending">상행 (활력)</option>
-                                <option value="Wavy">파형</option>
-                                <option value="Flat">평탄</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label htmlFor="textureDensity" className="block text-sm font-medium text-gray-700 mb-1">음악적 밀도</label>
-                            <select id="textureDensity" name="textureDensity" value={formData.textureDensity} onChange={handleChange} className="w-full p-2 border rounded-md text-sm">
-                                <option value="Neutral">Neutral (AI가 결정)</option>
-                                <option value="Sparse">성김 (단순)</option>
-                                <option value="Medium">보통</option>
-                                <option value="Dense">조밀 (복잡)</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label htmlFor="mainInstrument" className="block text-sm font-medium text-gray-700 mb-1">주요 악기 지정</label>
-                            <select id="mainInstrument" name="mainInstrument" value={formData.mainInstrument} onChange={handleChange} className="w-full p-2 border rounded-md text-sm">
-                                <option value="Piano">Piano</option>
-                                <option value="Synthesizer">Synthesizer</option>
-                                <option value="Acoustic Guitar">Acoustic Guitar</option>
-                                <option value="Strings">Strings</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div className="mt-4">
-                        <label htmlFor="compositionalNotes" className="block text-sm font-medium text-gray-700 mb-1">AI 작곡 엔진 구체적 지침 (선택)</label>
-                        <textarea id="compositionalNotes" name="compositionalNotes" value={formData.compositionalNotes} onChange={handleChange} rows={3} placeholder="예: 잔잔한 피아노 아르페지오 위주로, 타악기 배제" className="w-full p-2 border rounded-md text-sm" />
-                    </div>
-                </section>
-
-                {/* 섹션 3: 음악 선호도 (버튼 선택형) */}
-                <section className="p-6 border rounded-lg bg-gray-50 shadow-sm">
-                    <h2 className="text-xl font-bold mb-4 text-indigo-700 border-b pb-2">환자 음악 선호도</h2>
-                    <div className="mb-6">
-                        <label className="block text-sm font-medium text-gray-700 mb-3">✅ **선호** 음악 장르 (AI 참고용)</label>
-                        <div className="flex flex-wrap gap-2">
-                            {MUSIC_GENRE_OPTIONS.map((genre) => (
-                                <button key={`pref-${genre}`} type="button" onClick={() => handleGenreToggle(genre, 'preferred')} className={getButtonClass(genre, 'preferred')}>{genre}</button>
-                            ))}
-                        </div>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-3">❌ **비선호** 음악 장르 (AI 참고용)</label>
-                        <div className="flex flex-wrap gap-2">
-                            {MUSIC_GENRE_OPTIONS.map((genre) => (
-                                <button key={`dislike-${genre}`} type="button" onClick={() => handleGenreToggle(genre, 'disliked')} className={getButtonClass(genre, 'disliked')}>{genre}</button>
-                            ))}
-                        </div>
-                        {formData.preferredMusicGenres.some(g => formData.dislikedMusicGenres.includes(g)) && (
-                             <p className="text-xs text-red-500 mt-2 font-medium">※ 경고: 선호와 비선호 장르에 겹치는 항목이 있습니다.</p>
-                        )}
-                    </div>
-                </section>
-                
-                {error && (
-                    <div className="flex items-center justify-center p-3 bg-red-100 text-red-700 rounded-md text-sm">
+                {intakeMode === 'request_connection' ? (
+                     <div className="flex items-center justify-center p-4 bg-green-100 text-green-700 rounded-md text-base">
                         <Info className="w-5 h-5 mr-2 flex-shrink-0" />
-                        <p className="font-medium">{error}</p>
+                        <p className="font-medium">연결 요청 모드입니다. 위 연결 요청하기 버튼을 사용하거나, 처방을 위해 모드를 전환해주세요.</p>
                     </div>
-                )}
+                ) : (
+                    <>
+                        {/* 섹션 1, 2, 3은 이전과 동일하므로 생략 */}
 
-                <button
-                    type="submit"
-                    disabled={loading}
-                    className="w-full py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition duration-200 disabled:opacity-70 disabled:cursor-not-allowed mt-6 text-lg flex items-center justify-center gap-2"
-                >
-                    {loading && <Loader2 className="w-5 h-5 animate-spin" />}
-                    {loading ? '음악 생성 중...' : '처방 제출 및 음악 생성 →'}
-                </button>
+                        {/* 섹션 1: 환자 주관적 상태 (VAS, 0-10점 척도) */}
+                        <section className="p-6 border rounded-lg shadow-sm">
+                            <h2 className="text-xl font-bold mb-5 text-indigo-700 border-b pb-2">환자 상태 척도 기록 (참고용)</h2>
+                            <div className="mb-6">
+                                <label htmlFor="currentAnxietyLevel" className="block text-md font-medium text-gray-700 mb-2 text-center">
+                                    현재 **불안** 수준: <span className="font-bold text-lg text-red-600">{formData.currentAnxietyLevel}점 ({getAnxietyLabel(formData.currentAnxietyLevel)})</span>
+                                </label>
+                                <input type="range" id="currentAnxietyLevel" name="currentAnxietyLevel" value={formData.currentAnxietyLevel} onChange={handleChange} min="0" max="10" step="1" className="w-full h-2 bg-red-100 rounded-lg appearance-none cursor-pointer accent-red-500" />
+                                <div className="flex justify-between text-xs text-gray-500 mt-1"><span>0: 전혀 불안하지 않음</span><span>10: 극심한 불안</span></div>
+                            </div>
+                            <div className="mb-6">
+                                <label htmlFor="currentMoodLevel" className="block text-md font-medium text-gray-700 mb-2 text-center">
+                                    현재 **기분** 수준: <span className="font-bold text-lg text-blue-600">{formData.currentMoodLevel}점 ({getMoodLabel(formData.currentMoodLevel)})</span>
+                                </label>
+                                <input type="range" id="currentMoodLevel" name="currentMoodLevel" value={formData.currentMoodLevel} onChange={handleChange} min="0" max="10" step="1" className="w-full h-2 bg-blue-100 rounded-lg appearance-none cursor-pointer accent-blue-500" />
+                                <div className="flex justify-between text-xs text-gray-500 mt-1"><span>0: 매우 긍정적/행복함</span><span>10: 매우 부정적/우울함</span></div>
+                            </div>
+                            <div>
+                                <label htmlFor="currentPainLevel" className="block text-md font-medium text-gray-700 mb-2 text-center">
+                                    현재 **통증** 수준: <span className="font-bold text-lg text-green-600">{formData.currentPainLevel}점 ({getPainLabel(formData.currentPainLevel)})</span>
+                                </label>
+                                <input type="range" id="currentPainLevel" name="currentPainLevel" value={formData.currentPainLevel} onChange={handleChange} min="0" max="10" step="1" className="w-full h-2 bg-green-100 rounded-lg appearance-none cursor-pointer accent-green-500" />
+                                <div className="flex justify-between text-xs text-gray-500 mt-1"><span>0: 통증 없음</span><span>10: 상상할 수 없는 최악의 통증</span></div>
+                            </div>
+                        </section>
+
+                        {/* 섹션 2: 전문 작곡 파라미터 (심화 요소) */}
+                        <section className="p-6 border rounded-lg bg-yellow-50 shadow-md">
+                            <h2 className="text-xl font-bold mb-4 text-yellow-800 border-b border-yellow-200 pb-2">🎼 전문 작곡 파라미터 설정</h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <label htmlFor="targetBPM_input" className="block text-sm font-medium text-gray-700 mb-1">목표 BPM (40~160)</label>
+                                    <input type="number" id="targetBPM_input" name="targetBPM" value={formData.targetBPM === 'Neutral' ? '' : formData.targetBPM} onChange={handleChange} min="40" max="160" step="5" className="w-full p-2 border rounded-md" placeholder="숫자 입력 또는 Neutral 선택" disabled={formData.targetBPM === 'Neutral'}/>
+                                    <select id="targetBPM_select" name="targetBPM" value={formData.targetBPM} onChange={handleChange} className="w-full p-2 border rounded-md mt-2 text-sm">
+                                        <option value="" disabled>--- BPM 값 직접 입력 시 ---</option>
+                                        <option value="Neutral">Neutral (AI가 결정)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label htmlFor="musicDuration" className="block text-sm font-medium text-gray-700 mb-1">음악 길이 (초, 60~300)</label>
+                                    <input type="number" id="musicDuration" name="musicDuration" value={formData.musicDuration} onChange={handleChange} min="60" max="300" step="30" className="w-full p-2 border rounded-md" />
+                                </div>
+                            </div>
+                            <div className="mb-4">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">🎤 보컬(가사) 포함 여부</label>
+                                <div className="flex items-center">
+                                    <span className={`text-sm font-medium ${!vocalsAllowed ? 'text-indigo-600' : 'text-gray-500'}`}>연주곡만</span>
+                                    <label htmlFor="vocalsAllowed" className="relative inline-flex items-center cursor-pointer mx-4">
+                                        <input
+                                            type="checkbox"
+                                            id="vocalsAllowed"
+                                            name="vocalsAllowed"
+                                            className="sr-only peer"
+                                            checked={vocalsAllowed}
+                                            onChange={(e) => setVocalsAllowed(e.target.checked)}
+                                        />
+                                        <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-4 peer-focus:ring-indigo-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                                    </label>
+                                    <span className={`text-sm font-medium ${vocalsAllowed ? 'text-indigo-600' : 'text-gray-500'}`}>보컬 포함</span>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                                <div>
+                                    <label htmlFor="musicKeyPreference" className="block text-sm font-medium text-gray-700 mb-1">음계/조성</label>
+                                    <select id="musicKeyPreference" name="musicKeyPreference" value={formData.musicKeyPreference} onChange={handleChange} className="w-full p-2 border rounded-md text-sm">
+                                        <option value="Neutral">Neutral (AI가 결정)</option>
+                                        <option value="Major">Major (밝음)</option>
+                                        <option value="Minor">Minor (차분함)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label htmlFor="harmonicDissonance" className="block text-sm font-medium text-gray-700 mb-1">불협화음 수준</label>
+                                    <select id="harmonicDissonance" name="harmonicDissonance" value={formData.harmonicDissonance} onChange={handleChange} className="w-full p-2 border rounded-md text-sm">
+                                        <option value="Neutral">Neutral (AI가 결정)</option>
+                                        <option value="None">없음</option>
+                                        <option value="Low">낮음</option>
+                                        <option value="Medium">중간</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label htmlFor="rhythmComplexity" className="block text-sm font-medium text-gray-700 mb-1">리듬 복잡도</label>
+                                    <select id="rhythmComplexity" name="rhythmComplexity" value={formData.rhythmComplexity} onChange={handleChange} className="w-full p-2 border rounded-md text-sm">
+                                        <option value="Neutral">Neutral (AI가 결정)</option>
+                                        <option value="Simple">단순</option>
+                                        <option value="Medium">보통</option>
+                                        <option value="Complex">복잡</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label htmlFor="melodyContour" className="block text-sm font-medium text-gray-700 mb-1">선율 윤곽</label>
+                                    <select id="melodyContour" name="melodyContour" value={formData.melodyContour} onChange={handleChange} className="w-full p-2 border rounded-md text-sm">
+                                        <option value="Neutral">Neutral (AI가 결정)</option>
+                                        <option value="Descending">하행 (이완)</option>
+                                        <option value="Ascending">상행 (활력)</option>
+                                        <option value="Wavy">파형</option>
+                                        <option value="Flat">평탄</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label htmlFor="textureDensity" className="block text-sm font-medium text-gray-700 mb-1">음악적 밀도</label>
+                                    <select id="textureDensity" name="textureDensity" value={formData.textureDensity} onChange={handleChange} className="w-full p-2 border rounded-md text-sm">
+                                        <option value="Neutral">Neutral (AI가 결정)</option>
+                                        <option value="Sparse">성김 (단순)</option>
+                                        <option value="Medium">보통</option>
+                                        <option value="Dense">조밀 (복잡)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label htmlFor="mainInstrument" className="block text-sm font-medium text-gray-700 mb-1">주요 악기 지정</label>
+                                    <select id="mainInstrument" name="mainInstrument" value={formData.mainInstrument} onChange={handleChange} className="w-full p-2 border rounded-md text-sm">
+                                        <option value="Piano">Piano</option>
+                                        <option value="Synthesizer">Synthesizer</option>
+                                        <option value="Acoustic Guitar">Acoustic Guitar</option>
+                                        <option value="Strings">Strings</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="mt-4">
+                                <label htmlFor="compositionalNotes" className="block text-sm font-medium text-gray-700 mb-1">AI 작곡 엔진 구체적 지침 (선택)</label>
+                                <textarea id="compositionalNotes" name="compositionalNotes" value={formData.compositionalNotes} onChange={handleChange} rows={3} placeholder="예: 잔잔한 피아노 아르페지오 위주로, 타악기 배제" className="w-full p-2 border rounded-md text-sm" />
+                            </div>
+                        </section>
+
+                        {/* 섹션 3: 음악 선호도 (버튼 선택형) */}
+                        <section className="p-6 border rounded-lg bg-gray-50 shadow-sm">
+                            <h2 className="text-xl font-bold mb-4 text-indigo-700 border-b pb-2">환자 음악 선호도</h2>
+                            <div className="mb-6">
+                                <label className="block text-sm font-medium text-gray-700 mb-3">✅ **선호** 음악 장르 (AI 참고용)</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {MUSIC_GENRE_OPTIONS.map((genre) => (
+                                        <button key={`pref-${genre}`} type="button" onClick={() => handleGenreToggle(genre, 'preferred')} className={getButtonClass(genre, 'preferred')}>{genre}</button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-3">❌ **비선호** 음악 장르 (AI 참고용)</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {MUSIC_GENRE_OPTIONS.map((genre) => (
+                                        <button key={`dislike-${genre}`} type="button" onClick={() => handleGenreToggle(genre, 'disliked')} className={getButtonClass(genre, 'disliked')}>{genre}</button>
+                                    ))}
+                                </div>
+                                {formData.preferredMusicGenres.some(g => formData.dislikedMusicGenres.includes(g)) && (
+                                     <p className="text-xs text-red-500 mt-2 font-medium">※ 경고: 선호와 비선호 장르에 겹치는 항목이 있습니다.</p>
+                                )}
+                            </div>
+                        </section>
+                        
+                        {error && (
+                            <div className="flex items-center justify-center p-3 bg-red-100 text-red-700 rounded-md text-sm">
+                                <Info className="w-5 h-5 mr-2 flex-shrink-0" />
+                                <p className="font-medium">{error}</p>
+                            </div>
+                        )}
+
+                        <button
+                            type="submit"
+                            disabled={loading || (intakeMode === 'existing' && !selectedPatientId)}
+                            className="w-full py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition duration-200 disabled:opacity-70 disabled:cursor-not-allowed mt-6 text-lg flex items-center justify-center gap-2"
+                        >
+                            {loading && <Loader2 className="w-5 h-5 animate-spin" />}
+                            {loading ? '음악 생성 중...' : '처방 제출 및 음악 생성 →'}
+                        </button>
+                    </>
+                )}
             </form>
         </div>
     );

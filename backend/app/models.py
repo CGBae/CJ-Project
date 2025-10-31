@@ -8,6 +8,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 from sqlalchemy.sql import func
+from sqlalchemy.sql.expression import text
 
 import sys
 import os
@@ -27,6 +28,8 @@ class User(Base):
     email: Mapped[Optional[str]] = mapped_column(String, unique=True, index=True, nullable=True)
     password_hash: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     role: Mapped[str] = mapped_column(String, default="therapist", nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    age: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[Optional["datetime"]] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -34,7 +37,61 @@ class User(Base):
     social_id: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=True)
 
     sessions: Mapped[list["Session"]] = relationship(back_populates="creator")
+    
+    therapist_connections: Mapped[list["Connection"]] = relationship(
+        "Connection", foreign_keys="Connection.therapist_id", back_populates="therapist"
+    )
+    patient_connections: Mapped[list["Connection"]] = relationship(
+        "Connection", foreign_keys="Connection.patient_id", back_populates="patient"
+    )
 
+ConnectionStatus = Literal["PENDING", "ACCEPTED", "REJECTED", "TERMINATED"]
+
+class Connection(Base):
+    """
+    치료사와 환자 간의 연결 관계 및 상태를 관리하는 테이블.
+    M:N 관계를 구현하며, 연결 요청 및 수락 과정을 지원합니다.
+    """
+    __tablename__ = "connections"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('PENDING','ACCEPTED','REJECTED','TERMINATED')",
+            name="ck_connections_status",
+        ),
+        Index("idx_connections_therapist", "therapist_id"),
+        Index("idx_connections_patient", "patient_id"),
+        # 중복 연결 방지를 위해 치료사-환자 쌍에 고유 인덱스 (선택 사항)
+        # Index("uq_therapist_patient", "therapist_id", "patient_id", unique=True, postgresql_where=text("status = 'ACCEPTED'")),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
+
+    # 치료사 ID (연결 요청을 보낸/관리를 담당할 치료사)
+    therapist_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    # 환자 ID (연결 요청을 받은/관리를 받을 환자)
+    patient_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    
+    # 연결 상태: PENDING(요청 대기), ACCEPTED(수락/연결됨), REJECTED(거절), TERMINATED(종료)
+    status: Mapped[str] = mapped_column(String, default="PENDING", nullable=False)
+    
+    # 요청 일시 및 수락/종료 일시
+    requested_at: Mapped["datetime"] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    accepted_at: Mapped[Optional["datetime"]] = mapped_column(DateTime(timezone=True), nullable=True)
+    terminated_at: Mapped[Optional["datetime"]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # 관계 설정
+    therapist: Mapped["User"] = relationship(
+        "User", foreign_keys=[therapist_id], back_populates="therapist_connections"
+    )
+    patient: Mapped["User"] = relationship(
+        "User", foreign_keys=[patient_id], back_populates="patient_connections"
+    )
 
 Status = Literal["QUEUED", "PROCESSING", "READY", "FAILED"]
 

@@ -2,7 +2,7 @@
 'use client';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 
 export default function Header() {
   const [isAuthed, setIsAuthed] = useState(false);
@@ -11,6 +11,7 @@ export default function Header() {
   const isBypass = process.env.NEXT_PUBLIC_AUTH_BYPASS === 'true';
   const BACKEND_URL = 'http://localhost:8000';
   const router = useRouter();
+  const pathname = usePathname();
 
   const checkAuth = () => {
     setIsLoading(true);
@@ -80,6 +81,25 @@ export default function Header() {
     window.dispatchEvent(new Event('storageChanged'));
     router.push('/login');
   };
+
+  useEffect(() => {
+        // 로딩 중이거나, 로그인 안 했으면 아무것도 안 함
+        if (isLoading || !isAuthed) {
+            return;
+        }
+
+        // 💡 현재 경로가 홈('/')일 때만 리다이렉트 실행
+        if (pathname === '/') {
+            if (role === 'counselor') {
+                router.push('/dashboard/counselor');
+            } else if (role === 'patient') {
+                router.push('/dashboard/patient');
+            }
+        }
+        
+    // 💡 4. 의존성 배열에 필요한 값 추가
+    }, [isLoading, isAuthed, role, pathname, router]);
+    
   return (
     <header className="border-b bg-white">
       <div className="max-w-6xl mx-auto flex items-center justify-between h-14 px-4">
@@ -101,6 +121,7 @@ export default function Header() {
                   <Link href="/counsel" className="hover:underline">상담</Link>
                   <Link href="/compose" className="hover:underline">작곡체험</Link>
                   <Link href="/music" className="hover:underline">음악</Link>
+                  <Link href="/option" className="hover:underline">설정</Link>
                 </>
               )}
 
