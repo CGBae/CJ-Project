@@ -79,7 +79,7 @@ export default function LoginPage() {
             window.dispatchEvent(new Event('storageChanged'));
 
             // 3. 다음 경로로 이동
-            router.push(nextUrl);
+            router.push('/');
 
         } catch (err) {
             console.error("Login error:", err);

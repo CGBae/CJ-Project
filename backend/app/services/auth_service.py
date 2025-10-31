@@ -39,6 +39,43 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
+# 💡 [핵심 추가] 1. 임시 회원가입 토큰 생성 함수
+def create_temp_register_token(data: dict):
+    """카카오 신규 유저 정보(이메일, ID, 이름)를 담은 10분짜리 임시 토큰 생성"""
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + timedelta(minutes=10) # 10분 후 만료
+    to_encode.update({"exp": expire, "scope": "register"}) # 👈 스코프(용도) 지정
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+# 💡 [핵심 추가] 2. 임시 토큰 검증 함수
+async def verify_temp_register_token(token: str) -> dict:
+    """임시 토큰을 검증하고 사용자 정보를 반환"""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="임시 토큰이 유효하지 않거나 만료되었습니다.",
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("scope") != "register": # 👈 용도(scope) 확인
+            raise credentials_exception
+        
+        # 카카오 정보 추출
+        email = payload.get("email")
+        kakao_id = payload.get("kakao_id")
+        name = payload.get("name") # 👈 이름 정보 추가 (auth.py에서 넣어줘야 함)
+
+        if kakao_id is None:
+            raise credentials_exception
+        return {"email": email, "kakao_id": kakao_id, "name": name}
+        
+    except JWTError:
+        raise credentials_exception
+
+
+
+
+
 async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)):
     """
     API 요청 헤더의 토큰을 검증하고 DB에서 현재 사용자를 찾아 반환하는 의존성.
