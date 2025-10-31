@@ -1,119 +1,55 @@
-// src/components/header.tsx
 'use client';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import { useAuth } from '@/lib/contexts/AuthContext'; // 💡 1. useAuth 훅 임포트
 
 export default function Header() {
-  const [isAuthed, setIsAuthed] = useState(false);
-  const [role, setRole] = useState<'patient' | 'counselor' | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const isBypass = process.env.NEXT_PUBLIC_AUTH_BYPASS === 'true';
-  const BACKEND_URL = 'http://localhost:8000';
+  // 💡 2. Context에서 상태와 함수를 가져옴 (모든 로직 삭제)
+  const { isAuthed, role, isLoading, logout, checkAuth } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
-  const checkAuth = () => {
-    setIsLoading(true);
-    if (isBypass) {
-      setIsAuthed(true);
-      setRole('patient');
-      setIsLoading(false);
-      return;
-    }
-
-    const token = localStorage.getItem('accessToken');
-
-    if (!token) {
-      setIsAuthed(false);
-      setRole(null);
-      setIsLoading(false);
-      return;
-    }
-
-    fetch(`${BACKEND_URL}/auth/me`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    })
-      .then(async (r) => {
-        if (r.ok) {
-          const data = await r.json();
-          setIsAuthed(true);
-          setRole(data.role || 'patient');
-        } else {
-          setIsAuthed(false);
-          setRole(null);
-          localStorage.removeItem('accessToken');
-        }
-      })
-      .catch((e) => {
-        console.error("Authentication check failed:", e);
-        setIsAuthed(false);
-        setRole(null);
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
-  };
-
-  // 💡 [수정] useEffect가 이벤트를 리스닝하도록 변경
+  // 💡 3. 'storageChanged' 이벤트 리스닝 (로그인/로그아웃 즉시 반영)
   useEffect(() => {
-    // 페이지 로드 시 즉시 1회 실행
-    checkAuth();
-
-    // 'storageChanged' 이벤트(로그인/로그아웃 신호)를 리스닝
-    window.addEventListener('storageChanged', checkAuth);
-
-    // 컴포넌트 언마운트 시 리스너 정리 (메모리 누수 방지)
-    return () => {
-      window.removeEventListener('storageChanged', checkAuth);
-    };
-  }, [isBypass]); // 의존성 배열에서 loggedInStatus 제거
-
-  const handleRoleToggle = () => {
-    setRole((prev) => (prev === 'patient' ? 'counselor' : 'patient'));
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('accessToken');
-    setIsAuthed(false);
-    setRole(null);
-    // 💡 [수정] 로그아웃 시에도 이벤트를 발생시킴
-    window.dispatchEvent(new Event('storageChanged'));
-    router.push('/login');
-  };
-
-  useEffect(() => {
-        // 로딩 중이거나, 로그인 안 했으면 아무것도 안 함
-        if (isLoading || !isAuthed) {
-            return;
-        }
-
-        // 💡 현재 경로가 홈('/')일 때만 리다이렉트 실행
-        if (pathname === '/') {
-            if (role === 'counselor') {
-                router.push('/dashboard/counselor');
-            } else if (role === 'patient') {
-                router.push('/dashboard/patient');
-            }
-        }
-        
-    // 💡 4. 의존성 배열에 필요한 값 추가
-    }, [isLoading, isAuthed, role, pathname, router]);
+    checkAuth(); // 페이지 로드 시 첫 인증 실행
     
+    const handleStorageChange = () => checkAuth();
+    window.addEventListener('storageChanged', handleStorageChange);
+    return () => {
+      window.removeEventListener('storageChanged', handleStorageChange);
+    };
+  }, [checkAuth]); // 💡 checkAuth를 의존성에 추가
+
+  // 💡 4. 역할 기반 리다이렉트 (교통정리)
+  useEffect(() => {
+    if (isLoading || !isAuthed) return;
+    if (pathname === '/') {
+      if (role === 'therapist') {
+        router.push('/dashboard/counselor');
+      } else if (role === 'patient') {
+        router.push('/dashboard/patient');
+      }
+    }
+  }, [isLoading, isAuthed, role, pathname, router]);
+  
+  // 💡 5. 로그아웃 핸들러 (Context 함수 호출)
+  const handleLogout = () => {
+    logout();
+  };
+
   return (
     <header className="border-b bg-white">
       <div className="max-w-6xl mx-auto flex items-center justify-between h-14 px-4">
         <Link href="/" className="font-semibold text-lg">
           TheraMusic
         </Link>
-
-
         <nav className="flex items-center gap-3">
-          {isLoading ? ( // ⬅️ [4. 로딩 중일 때 로딩 표시]
+          {isLoading ? (
             <div className="w-20 h-4 bg-gray-200 animate-pulse rounded"></div>
           ) : isAuthed ? (
             <>
-              {/* 역할별 메뉴 */}
+              {/* 역할별 메뉴 (Context의 role 사용) */}
               {role === 'patient' && (
                 <>
                   <Link href="/dashboard/patient" className="hover:underline">환자대시보드</Link>
@@ -121,30 +57,21 @@ export default function Header() {
                   <Link href="/counsel" className="hover:underline">상담</Link>
                   <Link href="/compose" className="hover:underline">작곡체험</Link>
                   <Link href="/music" className="hover:underline">음악</Link>
-                  <Link href="/option" className="hover:underline">설정</Link>
+                  <Link href="/patientoption" className="hover:underline">설정</Link>
                 </>
               )}
-
-              {role === 'counselor' && (
+              {role === 'therapist' && (
                 <>
                   <Link href="/dashboard/counselor" className="hover:underline">상담가대시보드</Link>
                   <Link href="/intake/counselor" className="hover:underline">환자 접수</Link>
                   <Link href="/counselor" className="hover:underline">환자 관리</Link>
+                  <Link href="/counseloroption" className="hover:underline">설정</Link>
                 </>
               )}
-
-              {/* 역할 전환 버튼 */}
+              {/* 역할 전환 버튼 삭제됨 */}
               <button
-                onClick={handleRoleToggle}
-                className="ml-2 px-3 py-1 text-sm border rounded hover:bg-gray-100"
-              >
-                {role === 'patient' ? '상담가 ver' : '환자 ver'}
-              </button>
-
-              {/* 로그아웃 */}
-              <button
-                type="button" // <a> 태그 대신 <button> 사용
-                onClick={handleLogout} // onClick 핸들러 연결
+                type="button"
+                onClick={handleLogout}
                 className="text-red-600 hover:underline ml-2 cursor-pointer"
               >
                 로그아웃

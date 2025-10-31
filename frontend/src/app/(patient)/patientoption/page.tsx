@@ -1,6 +1,9 @@
+// patient/page.tsx
+
 'use client';
 
-import React, { useState, useEffect, useCallback, FormEvent } from 'react';
+// 💡 [수정] 'FormEvent'가 사용되지 않아서 import에서 제거했습니다.
+import React, { useState, useEffect, useCallback } from 'react';
 import { Settings, User, Zap, MessageCircle, XCircle, Loader2, Edit, Check, AlertTriangle } from 'lucide-react';
 
 // API 통신을 위한 기본 URL
@@ -13,7 +16,7 @@ type Tab = 'profile' | 'connection' | 'settings' | 'deactivate';
 interface UserProfile {
     id: number;
     name: string | null;
-    age: number | null;
+    age: number | null; // 💡 'age'가 'dob' (생년월일, date)는 아닌지 백엔드 모델 확인 필요
     email: string | null;
     role: string;
 }
@@ -28,17 +31,15 @@ interface ConnectionDetail {
 
 /**
  * API 요청을 수행하는 범용 헬퍼 함수
- * 모든 API 호출은 이 함수를 통해 토큰을 자동으로 첨부하고 백엔드 라우터에 연결됩니다.
  */
 const apiCall = async (endpoint: string, method: string = 'GET', body?: unknown) => {
     const accessToken = localStorage.getItem('accessToken');
     if (!accessToken) {
-        // 토큰이 없으면 로그인 페이지로 이동 유도
         throw new Error('인증 토큰이 없습니다. 다시 로그인해 주세요.');
     }
 
     const headers: HeadersInit = {
-        'Authorization': `Bearer ${accessToken}`, // 👈 JWT 토큰 첨부
+        'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
     };
 
@@ -47,29 +48,26 @@ const apiCall = async (endpoint: string, method: string = 'GET', body?: unknown)
         headers,
     };
 
-    // body가 명시적으로 undefined가 아닐 때만 직렬화하여 전송
     if (body !== undefined) {
         config.body = JSON.stringify(body);
     }
 
-    // Exponential Backoff을 포함한 fetch 로직
     const maxRetries = 3;
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
         try {
-            const response = await fetch(`${API_BASE_URL}${endpoint}`, config); // 👈 라우터 엔드포인트에 요청
+            const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
             
             if (response.status === 401) {
-                // 토큰 만료 또는 인증 실패
                 throw new Error('인증 실패. 세션이 만료되었습니다.');
             }
             if (response.status === 204) {
-                return null; // No Content (탈퇴 성공 등)
+                return null;
             }
             
             if (!response.ok) {
-                const errorData = await response.json();
+                const errorData = await response.json().catch(() => ({})); // 👈 JSON 파싱 실패 대비
                 throw new Error(errorData.detail || `API 오류: ${response.status}`);
             }
 
@@ -79,13 +77,12 @@ const apiCall = async (endpoint: string, method: string = 'GET', body?: unknown)
         } catch (error) {
             lastError = error as Error;
             if (attempt < maxRetries - 1) {
-                // 1s, 2s 딜레이
                 const delay = Math.pow(2, attempt) * 1000;
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
         }
     }
-    throw lastError; // 최대 재시도 후에도 실패하면 최종 에러 던지기
+    throw lastError;
 };
 
 
@@ -113,25 +110,28 @@ export default function PatientOptionPage() {
     // --- 데이터 로딩 함수 ---
 
     const fetchUserProfile = useCallback(async () => {
-        // 👈 프로필 조회 (GET /user/profile)
         try {
             const data: UserProfile = await apiCall('/user/profile'); 
             setProfile(data);
             setEditName(data.name || '');
             setEditAge(data.age ? String(data.age) : '');
-        } catch (err: any) {
-            setError(`프로필 로딩 오류: ${err.message}`);
+        // 💡 [수정] err: any 대신 err: unknown을 사용하고 타입을 확인합니다.
+        } catch (err: unknown) {
+            if (err instanceof Error) {
+                setError(`프로필 로딩 오류: ${err.message}`);
+            }
         }
     }, []);
 
     const fetchPendingConnections = useCallback(async () => {
-        // 👈 연결 요청 목록 조회 (GET /connection/my_requests)
         try {
             const data: ConnectionDetail[] = await apiCall('/connection/my_requests');
-            // PENDING 상태인 요청만 필터링
             setConnections(data.filter(c => c.status === 'PENDING'));
-        } catch (err: any) {
-            setError(`연결 요청 로딩 오류: ${err.message}`);
+        // 💡 [수정] err: any 대신 err: unknown을 사용하고 타입을 확인합니다.
+        } catch (err: unknown) {
+            if (err instanceof Error) {
+                setError(`연결 요청 로딩 오류: ${err.message}`);
+            }
         }
     }, []);
 
@@ -154,30 +154,25 @@ export default function PatientOptionPage() {
             setError('이름은 필수 입력 항목입니다.');
             return;
         }
-
         const ageValue = editAge.trim() ? parseInt(editAge.trim(), 10) : null;
         if (ageValue !== null && (isNaN(ageValue) || ageValue <= 0 || ageValue > 150)) {
             setError('유효하지 않은 나이입니다.');
             return;
         }
-
         setIsUpdating(true);
         setError(null);
-
         try {
-            const updatePayload = {
-                name: editName.trim(),
-                age: ageValue,
-            };
-            
-            // 👈 프로필 업데이트 (PUT /user/profile)
+            const updatePayload = { name: editName.trim(), age: ageValue };
             const updatedProfile: UserProfile = await apiCall('/user/profile', 'PUT', updatePayload);
-            setProfile(updatedProfile); // 서버로부터 받은 최신 정보로 상태 업데이트
+            setProfile(updatedProfile);
             setEditName(updatedProfile.name || '');
             setEditAge(updatedProfile.age ? String(updatedProfile.age) : '');
-            setIsEditing(false); // 성공 시 편집 모드 종료
-        } catch (err: any) {
-            setError(`프로필 업데이트 오류: ${err.message}`);
+            setIsEditing(false);
+        // 💡 [수정] err: any 대신 err: unknown을 사용하고 타입을 확인합니다.
+        } catch (err: unknown) {
+            if (err instanceof Error) {
+                setError(`프로필 업데이트 오류: ${err.message}`);
+            }
         } finally {
             setIsUpdating(false);
         }
@@ -186,24 +181,18 @@ export default function PatientOptionPage() {
     // [2] 연결 요청 응답 처리
     const handleConnectionRespond = async (connectionId: number, responseType: 'accept' | 'reject') => {
         const responseValue = responseType === 'accept' ? 'ACCEPTED' : 'REJECTED';
-        
-        // UI에서 즉시 해당 요청 제거 (UX 향상)
         setConnections(prev => prev.filter(c => c.connection_id !== connectionId));
-        
         try {
-            // 👈 연결 응답 (POST /connection/respond)
             await apiCall('/connection/respond', 'POST', {
                 connection_id: connectionId,
                 response: responseValue,
             });
-
-            // 성공하면 목록을 다시 로드하여 상태 확인
             await fetchPendingConnections();
-
-        } catch (err: any) {
-            // 실패 시 사용자에게 알림
-            setError(`연결 응답 처리 오류: ${err.message}`);
-            // (선택적) 목록을 다시 로드하여 롤백
+        // 💡 [수정] err: any 대신 err: unknown을 사용하고 타입을 확인합니다.
+        } catch (err: unknown) {
+            if (err instanceof Error) {
+                setError(`연결 응답 처리 오류: ${err.message}`);
+            }
             await fetchPendingConnections();
         }
     };
@@ -213,18 +202,16 @@ export default function PatientOptionPage() {
         setIsDeactivating(true);
         setError(null);
         try {
-            // 👈 계정 탈퇴 (DELETE /user/deactivate)
-            // 204 No Content를 반환할 것으로 예상
             await apiCall('/user/deactivate', 'DELETE');
-
-            // 성공 시 처리: 로컬 스토리지 정리 및 로그인 페이지로 리다이렉트
             localStorage.removeItem('accessToken');
-            localStorage.removeItem('role'); 
+            // localStorage.removeItem('role'); // (role은 /auth/me에서 받아오므로 불필요)
             alert('계정 탈퇴가 완료되었습니다. 이용해 주셔서 감사합니다.');
             window.location.href = '/login'; 
-
-        } catch (err: any) {
-            setError(`계정 탈퇴 오류: ${err.message}. 다시 시도해주세요.`);
+        // 💡 [수정] err: any 대신 err: unknown을 사용하고 타입을 확인합니다.
+        } catch (err: unknown) {
+            if (err instanceof Error) {
+                setError(`계정 탈퇴 오류: ${err.message}. 다시 시도해주세요.`);
+            }
         } finally {
             setIsDeactivating(false);
             setShowDeactivateModal(false);
@@ -259,8 +246,7 @@ export default function PatientOptionPage() {
                                 type="number" 
                                 value={editAge} 
                                 onChange={(e) => setEditAge(e.target.value)}
-                                min="1"
-                                max="150"
+                                min="1" max="150"
                                 className="border rounded-md px-2 py-1 w-24 focus:ring-indigo-500 focus:border-indigo-500"
                             /> : 
                             profile && profile.age !== null ? String(profile.age) : 'N/A'}
@@ -291,8 +277,10 @@ export default function PatientOptionPage() {
                         <button
                             onClick={() => {
                                 setIsEditing(false);
+                                // 💡 [수정] profile이 null일 가능성을 확인합니다.
                                 setEditName(profile?.name || '');
-                                setEditAge(profile?.age !== null ? String(profile.age) : '');
+                                // 💡 [수정] profile이 null일 때 .age 접근을 방지합니다.
+                                setEditAge(profile && profile.age !== null ? String(profile.age) : '');
                                 setError(null);
                             }}
                             className="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg shadow-md hover:bg-gray-400 transition"
@@ -334,7 +322,9 @@ export default function PatientOptionPage() {
                     ))}
                 </div>
             )}
-            {error && <Alert type="error" message={error} />}
+            {/* 💡 [수정] 탭 전환 시 에러 초기화가 필요할 수 있으나, 일단 유지
+                {error && <Alert type="error" message={error} />} 
+            */}
         </div>
     );
 
@@ -366,7 +356,9 @@ export default function PatientOptionPage() {
                     isProcessing={isDeactivating}
                 />
             )}
-            {error && <Alert type="error" message={error} />}
+            {/* 💡 [수정] 탭 전환 시 에러 초기화가 필요할 수 있으나, 일단 유지
+                {error && <Alert type="error" message={error} />} 
+            */}
         </div>
     );
 
@@ -382,7 +374,7 @@ export default function PatientOptionPage() {
     }
 
     if (error && !isLoading && !profile) {
-        // 전역 로딩 오류 발생 시 (프로필 로드 실패 등)
+        // 전역 로딩 오류 발생 시
         return (
             <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-red-50">
                 <AlertTriangle className="w-12 h-12 text-red-600 mb-4" />
@@ -425,7 +417,7 @@ export default function PatientOptionPage() {
                         tab="connection" 
                         activeTab={activeTab} 
                         onClick={setActiveTab}
-                        badgeCount={connections.length} // PENDING 상태인 요청만 카운트
+                        badgeCount={connections.length}
                     />
                     <TabButton 
                         icon={Settings} 
@@ -520,10 +512,10 @@ const ConnectionRequestCard: React.FC<ConnectionRequestCardProps> = ({ connectio
 
     const handleAction = async (responseType: 'accept' | 'reject') => {
         setIsResponding(true);
-        // 응답은 메인 컴포넌트에서 처리
         await onRespond(connection.connection_id, responseType);
-        // 메인 컴포넌트에서 목록을 다시 로드하므로 여기서 로딩을 풀 필요는 없음
-        // (만약 에러가 발생하면 메인 컴포넌트가 다시 로드하여 카드가 다시 나타날 것)
+        // 응답 후, isResponding을 false로 설정할 필요가 있을 수 있으나,
+        // 메인 컴포넌트에서 목록을 다시 로드하므로 카드가 사라지는 것이 일반적입니다.
+        // 만약 에러가 발생하여 카드가 다시 나타나면 isResponding은 false로 초기화됩니다.
     };
 
     return (
@@ -609,4 +601,3 @@ const Alert: React.FC<AlertProps> = ({ type, message }) => {
         </div>
     );
 };
-

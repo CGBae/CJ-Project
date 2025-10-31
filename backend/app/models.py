@@ -28,7 +28,7 @@ class User(Base):
     email: Mapped[Optional[str]] = mapped_column(String, unique=True, index=True, nullable=True)
     password_hash: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     role: Mapped[str] = mapped_column(String, default="therapist", nullable=False)
-    name: Mapped[str] = mapped_column(String, nullable=False)
+    name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     age: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[Optional["datetime"]] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

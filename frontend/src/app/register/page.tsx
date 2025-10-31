@@ -14,7 +14,7 @@ export default function RegisterPage() {
     const [confirmPassword, setConfirmPassword] = useState('');
     
     // 역할 선택 상태
-    const [role, setRole] = useState<'patient' | 'counselor'>('patient');
+    const [role, setRole] = useState<'patient' | 'therapist'>('patient');
     
     // 소셜 가입 모드 상태
     const [isSocialRegister, setIsSocialRegister] = useState(false);
@@ -164,9 +164,9 @@ export default function RegisterPage() {
                     </button>
                     <button
                         type="button"
-                        onClick={() => setRole('counselor')}
+                        onClick={() => setRole('therapist')}
                         className={`flex-1 py-3 px-4 text-sm font-medium rounded-r-lg border -ml-px ${
-                            role === 'counselor' ? 'bg-indigo-600 text-white border-indigo-600 z-10' : 'bg-white text-gray-700 hover:bg-gray-50'
+                            role === 'therapist' ? 'bg-indigo-600 text-white border-indigo-600 z-10' : 'bg-white text-gray-700 hover:bg-gray-50'
                         }`}
                         disabled={loading}
                     >
