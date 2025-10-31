@@ -1,11 +1,13 @@
 from __future__ import annotations
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status,Query
 from sqlalchemy import insert, update, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models import User, Session, TherapistManualInputs, SessionPrompt, Connection
+from typing import List
+from app.models import User, Session, TherapistManualInputs, SessionPrompt, Connection, Track, SessionPatientIntake
 from app.services.auth_service import get_current_user
-from app.schemas import TherapistPromptReq, SessionCreateResp, PromptResp, TherapistManualInput, FoundPatientResponse
+from app.schemas import TherapistPromptReq, SessionCreateResp, PromptResp, TherapistManualInput, FoundPatientResponse, UserPublic, SessionInfo, MusicTrackInfo
 from app.db import get_db
+from sqlalchemy.orm import joinedload
 from app.services.openai_client import generate_prompt_from_guideline
 from app.services.prompt_from_guideline import build_extra_requirements_for_therapist
 
@@ -206,3 +208,152 @@ async def request_connection_to_patient(
         raise HTTPException(status_code=500, detail=f"연결 요청 중 오류 발생: {e}")
 
     return {"message": "Connection request sent successfully."}
+
+# 💡 3. [핵심 API 추가] "내 환자 목록" 조회
+@router.get("/my-patients", response_model=List[UserPublic])
+async def get_my_assigned_patients(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user) # 현재 로그인한 상담사
+):
+    """(신규) 현재 로그인한 상담사에게 '수락(ACCEPTED)'된 환자 목록을 반환합니다."""
+    
+    if current_user.role != "therapist":
+        raise HTTPException(status_code=403, detail="상담사만 이용 가능한 기능입니다.")
+
+    # 1. 'Connection' 테이블에서 현재 상담사와 'ACCEPTED' 상태인 환자 ID 목록 조회
+    patient_id_query = (
+        select(Connection.patient_id)
+        .where(
+            Connection.therapist_id == current_user.id,
+            Connection.status == "ACCEPTED" # 👈 수락된 환자만
+        )
+    )
+    result = await db.execute(patient_id_query)
+    patient_ids = result.scalars().all()
+
+    if not patient_ids:
+        return [] # 배정된 환자가 없으면 빈 리스트 반환
+
+    # 2. 찾은 환자 ID 목록으로 'User' 테이블에서 환자 정보 조회
+    patients_query = (
+        select(User)
+        .where(
+            User.id.in_(patient_ids),
+            User.role == "patient" # 역할이 환자인지 확인
+        )
+    )
+    patients_result = await db.execute(patients_query)
+    patients = patients_result.scalars().all()
+    
+    return patients # UserPublic 스키마(id, name, email, role 등) 리스트 반환
+
+# --- 💡 4. [핵심 API 1] 상담사가 특정 환자 정보 조회 ---
+async def check_counselor_patient_access(
+    patient_id: int,
+    counselor_id: int,
+    db: AsyncSession
+):
+    """(헬퍼 함수) 상담사가 해당 환자에게 접근 권한(ACCEPTED)이 있는지 확인"""
+    q = select(Connection).where(
+        Connection.therapist_id == counselor_id,
+        Connection.patient_id == patient_id,
+        Connection.status == "ACCEPTED"
+    )
+    connection = (await db.execute(q)).scalar_one_or_none()
+    if not connection:
+        raise HTTPException(status_code=403, detail="이 환자에 대한 접근 권한이 없습니다.")
+
+@router.get("/patient/{patient_id}", response_model=UserPublic)
+async def get_patient_details_by_counselor(
+    patient_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """상담사가 자신에게 배정된 특정 환자의 기본 정보를 조회합니다."""
+    if current_user.role != "therapist":
+        raise HTTPException(status_code=403, detail="상담사 전용 기능입니다.")
+        
+    # 1. 이 환자에게 접근 권한이 있는지 확인
+    await check_counselor_patient_access(patient_id, current_user.id, db)
+    
+    # 2. 환자 정보 조회
+    patient = await db.get(User, patient_id)
+    if not patient or patient.role != "patient":
+        raise HTTPException(status_code=404, detail="환자 정보를 찾을 수 없습니다.")
+        
+    return patient
+
+# --- 💡 5. [핵심 API 2] 상담사가 특정 환자의 세션 목록 조회 ---
+@router.get("/patient/{patient_id}/sessions", response_model=List[SessionInfo])
+async def get_patient_sessions_by_counselor(
+    patient_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """상담사가 특정 환자의 '대화가 있는' 세션 목록을 조회합니다."""
+    if current_user.role != "therapist":
+        raise HTTPException(status_code=403, detail="상담사 전용 기능입니다.")
+    
+    await check_counselor_patient_access(patient_id, current_user.id, db)
+    
+    query = (
+        select(Session)
+        .join(SessionPatientIntake, Session.id == SessionPatientIntake.session_id)
+        .where(
+            Session.created_by == patient_id, # 환자가 생성한 세션
+            SessionPatientIntake.has_dialog == True # 대화가 있는 세션만
+        )
+        .order_by(Session.created_at.desc())
+    )
+    result = await db.execute(query)
+    sessions = result.scalars().all()
+    return sessions
+
+# --- 💡 6. [핵심 API 3] 상담사가 특정 환자의 음악 목록 조회 ---
+@router.get("/patient/{patient_id}/music", response_model=List[MusicTrackInfo])
+async def get_patient_music_by_counselor(
+    patient_id: int,
+    limit: int | None = Query(None, ge=1), # limit 없이 전체 조회
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """상담사가 특정 환자의 전체 음악 목록을 조회합니다."""
+    if current_user.role != "therapist":
+        raise HTTPException(status_code=403, detail="상담사 전용 기능입니다.")
+        
+    await check_counselor_patient_access(patient_id, current_user.id, db)
+    
+    query = (
+        select(Track)
+        .options(joinedload(Track.session))
+        .join(Session, Track.session_id == Session.id)
+        .where(Session.created_by == patient_id) # 환자가 생성한 세션의 트랙
+        .order_by(Track.created_at.desc())
+    )
+    if limit is not None:
+        query = query.limit(limit)
+        
+    result = await db.execute(query)
+    tracks = result.scalars().unique().all()
+    
+    # (music.py의 /my API와 동일한 로직으로 MusicTrackInfo 생성)
+    response_tracks = []
+    for track in tracks:
+        session_prompt_data = track.session.prompt or {}
+        session_prompt_text = "프롬프트 정보 없음"
+        if isinstance(session_prompt_data, dict) and "text" in session_prompt_data:
+            value = session_prompt_data["text"]
+            if isinstance(value, str):
+                session_prompt_text = value
+            else:
+                session_prompt_text = "프롬프트 형식 오류"
+        elif session_prompt_data is not None:
+             session_prompt_text = "프롬프트 형식 오류 (DB)"
+             
+        response_tracks.append(MusicTrackInfo(
+            id=track.id,
+            title=f"AI 생성 트랙 (세션 {track.session_id})",
+            prompt=session_prompt_text,
+            track_url=track.track_url
+        ))
+    return response_tracks

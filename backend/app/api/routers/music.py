@@ -119,7 +119,7 @@ async def get_my_music(
             id=track.id,
             title=f"AI 생성 트랙 (세션 {track.session_id})", # 임시 제목
             prompt=session_prompt_text, # 추출된 프롬프트 또는 오류 메시지
-            audioUrl=track.track_url # 필드명 확인
+            track_url=track.track_url # 필드명 확인
         ))
 
     return response_tracks
