@@ -175,3 +175,15 @@ class FoundPatientResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+# 💡 [핵심 추가 1] 상담사 통계 API 응답 스키마
+class CounselorStats(BaseModel):
+    total_patients: int
+    total_music_tracks: int
+
+# 💡 [핵심 추가 2] 상담사 최근 음악 API 응답 스키마
+class RecentMusicTrack(BaseModel):
+    music_id: int | str
+    music_title: str
+    patient_id: int | str
+    patient_name: str | None

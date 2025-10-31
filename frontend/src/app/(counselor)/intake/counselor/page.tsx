@@ -1,3 +1,5 @@
+// intake/counselor/page.tsx
+
 'use client'; 
 
 import React, { useState, FormEvent, useEffect, useCallback } from 'react';
@@ -8,9 +10,9 @@ import {
     MUSIC_GENRE_OPTIONS
 } from '@/types/intake';
 // 'getPatients'와 'Patient' 타입을 import 합니다.
-import { getPatients, linkSessionToPatient, addMusicToPatient, Patient, findPatientForConnection, requestConnection, addPatient as registerNewPatient } from '@/lib/utils/patients';
+import { linkSessionToPatient, addMusicToPatient, Patient, findPatientForConnection, requestConnection } from '@/lib/utils/patients';
 import { MusicTrack } from '@/lib/utils/music';
-import { Info, Loader2, Link, UserPlus } from 'lucide-react';
+import { Info, Loader2, Link } from 'lucide-react';
 
 interface ConnectionRequestProps {
     therapistId: string; // 현재 상담사 ID
@@ -140,32 +142,68 @@ export default function CounselorIntakePage() {
     const [formData, setFormData] = useState<CounselorIntakeData>(initialCounselorIntakeData);
     
     // 폼 모드 (기존/신규) 및 환자 정보 상태
-    const [intakeMode, setIntakeMode] = useState<'existing'| 'request_connection' | 'new_registration'>('existing');
+    const [intakeMode, setIntakeMode] = useState<'existing'| 'request_connection'>('existing');
     
     // '기존' 환자 선택용
     const [allPatients, setAllPatients] = useState<Patient[]>([]);
     const [selectedPatientId, setSelectedPatientId] = useState<string>('');
-
-    // '신규' 환자 입력용
-    const [newPatientId, setNewPatientId] = useState('');
-    const [newPatientName, setNewPatientName] = useState('');
-    const [newPatientAge, setNewPatientAge] = useState<number | ''>('');
     
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [isPatientListLoading, setIsPatientListLoading] = useState(true); 
+    const [patientListError, setPatientListError] = useState<string | null>(null);
     const router = useRouter();
     const [vocalsAllowed, setVocalsAllowed] = useState(false);
 
     const currentTherapistId = 'therapist_id_001'; 
 
-    // 페이지 로드 시 '가짜 DB'에서 환자 목록을 불러옵니다.
-    const loadPatients = useCallback(() => {
-        const patients = getPatients();
-        setAllPatients(patients.filter(p => !p.isPendingConnection && p.connectedTherapistId === currentTherapistId)); // 연결된 환자만 표시
-        if (patients.length > 0 && !selectedPatientId) {
-            setSelectedPatientId(patients.find(p => !p.isPendingConnection && p.connectedTherapistId === currentTherapistId)?.id || '');
+    const loadPatients = useCallback(async () => {
+    setIsPatientListLoading(true); // 로딩 시작
+    setPatientListError(null);
+
+    try {
+        const token = localStorage.getItem('accessToken');
+
+        if (!token) {
+            // 토큰이 없으면 로그인 페이지로 보내거나 에러 처리
+            throw new Error('로그인 정보(토큰)를 찾을 수 없습니다. 다시 로그인해주세요.');
         }
-    }, [selectedPatientId, currentTherapistId]);
+        // 1. therapist.py의 /my-patients API 호출
+        //    (handleSubmit에서 사용 중인 localhost:8000 주소 기준)
+        const response = await fetch('http://localhost:8000/therapist/my-patients', {
+            headers: {
+                // 👈 헤더 추가
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (!response.ok) {
+            if (response.status === 401) {
+                 throw new Error('인증에 실패했습니다. 토큰이 만료되었을 수 있습니다.');
+            }
+            throw new Error('환자 목록을 불러오는데 실패했습니다.');
+        }
+
+        // 2. Patient[] 타입으로 JSON 파싱
+        //    therapist.py의 UserPublic 스키마가 Patient 타입과 호환되어야 함
+        const patients: Patient[] = await response.json(); 
+
+        // 3. 상태 업데이트 (필터링은 이미 백엔드에서 완료됨)
+        setAllPatients(patients); 
+
+        // 4. 첫 번째 환자를 기본값으로 선택
+        if (patients.length > 0 && !selectedPatientId) {
+            setSelectedPatientId(patients[0].id || '');
+        }
+
+    } catch (err) {
+        console.error(err);
+        setPatientListError(err instanceof Error ? err.message : '알 수 없는 오류');
+    } finally {
+        setIsPatientListLoading(false); // 로딩 종료
+    }
+// currentTherapistId는 백엔드 세션에서 처리하므로 의존성에서 제거
+}, [selectedPatientId]);
     
     // 페이지 로드 시 '가짜 DB'에서 환자 목록을 불러옵니다.
     useEffect(() => {
@@ -214,8 +252,8 @@ export default function CounselorIntakePage() {
         setLoading(true);
         setError(null);
 
-        let patientIdToUse: string;
-        let patientNameForTrack: string;
+        let patientIdToUse: string = '';
+        let patientNameForTrack: string = '환자';
 
         // --- 환자 ID 결정 ---
         if (intakeMode === 'existing') {
@@ -228,30 +266,6 @@ export default function CounselorIntakePage() {
             patientIdToUse = selectedPatientId;
             const patient = allPatients.find(p => p.id === selectedPatientId);
             patientNameForTrack = patient ? patient.name : '환자';
-        } else if (intakeMode === 'new_registration') {
-            // "신규 환자 등록" 모드 (새 환자 레코드 생성 후 처방)
-            if (!newPatientId.trim() || !newPatientName.trim() || newPatientAge === '') {
-                 setError('새 환자의 ID, 이름, 나이를 모두 입력해주세요.');
-                 setLoading(false);
-                 return;
-            }
-            // '가짜 DB'에 새 환자 추가 시도
-            const result = registerNewPatient(newPatientId.trim(), newPatientName, Number(newPatientAge));
-            
-            if (!result.success) { // ID 중복 등 에러 처리
-                 setError(result.error || '환자 생성 실패');
-                 setLoading(false);
-                 return;
-            }
-            patientIdToUse = result.patient!.id;
-            patientNameForTrack = result.patient!.name;
-            // 🚨 신규 등록된 환자는 자동으로 현재 상담사에게 연결되었다고 가정합니다.
-            result.patient!.connectedTherapistId = currentTherapistId;
-
-        } else {
-             setError('잘못된 환자 모드입니다.');
-             setLoading(false);
-             return;
         }
         // ------------------
 
@@ -377,17 +391,6 @@ export default function CounselorIntakePage() {
                             />
                             <span className="ml-2 text-md font-medium text-gray-700">기존 환자 선택 (처방)</span>
                         </label>
-                        <label className="flex items-center">
-                            <input
-                                type="radio"
-                                name="intakeMode"
-                                value="new_registration"
-                                checked={intakeMode === 'new_registration'}
-                                onChange={() => setIntakeMode('new_registration')}
-                                className="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-yellow-500"
-                            />
-                            <span className="ml-2 text-md font-medium text-gray-700">신규 환자 등록 및 처방</span>
-                        </label>
                     </div>
 
                     {/* "기존 환자" 선택 시 UI */}
@@ -401,13 +404,22 @@ export default function CounselorIntakePage() {
                                 className="w-full p-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500"
                                 required={intakeMode === 'existing'}
                             >
-                                <option value="" disabled>-- 연결된 환자를 선택하세요 --</option>
-                                {allPatients.map(patient => (
+                                <option value="" disabled>
+                                    {isPatientListLoading ? '환자 목록 로딩 중...' : '-- 연결된 환자를 선택하세요 --'}
+                                </option>
+
+                                {/* 에러가 없고, 로딩이 완료되었고, 환자가 있을 때만 목록 표시 */}
+                                {!isPatientListLoading && !patientListError && allPatients.map(patient => (
                                     <option key={patient.id} value={patient.id}>
-                                        {patient.name} (ID: {patient.id})
+                                        {/* therapist.py의 UserPublic는 name만 있으므로 name만 표시 (필요시 ID도 표시) */}
+                                        {patient.name} (ID: {patient.id}) 
                                     </option>
                                 ))}
                             </select>
+
+                            {patientListError && (
+                                <p className="text-sm text-red-600 mt-2">{patientListError}</p>
+                            )}
                             <p className="text-sm text-gray-500 mt-2">선택된 환자에게 아래의 음악 처방이 제출됩니다. (연결 요청을 수락한 환자만 표시됩니다)</p>
                         </div>
                     )}
@@ -419,35 +431,6 @@ export default function CounselorIntakePage() {
                         />
                     )}
 
-                    {/* "신규 환자" 선택 시 UI */}
-                    {intakeMode === 'new_registration' && (
-                        <div className="space-y-4">
-                            <p className="text-sm text-gray-600 flex items-center gap-2"><UserPlus className="w-4 h-4 text-yellow-600"/>새로운 환자의 레코드를 생성하고 즉시 음악 처방을 진행합니다.</p>
-                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                <div>
-                                    <label htmlFor="newPatientId" className="block text-md font-medium text-gray-700 mb-1">환자 ID (필수)</label>
-                                    <input
-                                        type="text" id="newPatientId" value={newPatientId} onChange={(e) => setNewPatientId(e.target.value)}
-                                        className="w-full p-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500" placeholder="예: patient123" required={intakeMode === 'new_registration'}
-                                    />
-                                </div>
-                                <div>
-                                    <label htmlFor="newPatientName" className="block text-md font-medium text-gray-700 mb-1">환자 이름</label>
-                                    <input
-                                        type="text" id="newPatientName" value={newPatientName} onChange={(e) => setNewPatientName(e.target.value)}
-                                        className="w-full p-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500" placeholder="홍길동" required={intakeMode === 'new_registration'}
-                                    />
-                                </div>
-                                <div>
-                                    <label htmlFor="newPatientAge" className="block text-md font-medium text-gray-700 mb-1">나이</label>
-                                    <input
-                                        type="number" id="newPatientAge" value={newPatientAge} onChange={(e) => setNewPatientAge(e.target.value === '' ? '' : Number(e.target.value))}
-                                        className="w-full p-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500" placeholder="30" min="0" required={intakeMode === 'new_registration'}
-                                    />
-                                </div>
-                            </div>
-                        </div>
-                    )}
                 </section>
 
                 {intakeMode === 'request_connection' ? (

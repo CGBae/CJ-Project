@@ -1,11 +1,15 @@
 from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status,Query
-from sqlalchemy import insert, update, select
+from sqlalchemy import insert, update, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from app.models import User, Session, TherapistManualInputs, SessionPrompt, Connection, Track, SessionPatientIntake
 from app.services.auth_service import get_current_user
-from app.schemas import TherapistPromptReq, SessionCreateResp, PromptResp, TherapistManualInput, FoundPatientResponse, UserPublic, SessionInfo, MusicTrackInfo
+from app.schemas import (
+    TherapistPromptReq, SessionCreateResp, PromptResp, TherapistManualInput, 
+    FoundPatientResponse, UserPublic, SessionInfo, MusicTrackInfo,
+    CounselorStats, RecentMusicTrack # 👈 여기 추가
+)
 from app.db import get_db
 from sqlalchemy.orm import joinedload
 from app.services.openai_client import generate_prompt_from_guideline
@@ -355,5 +359,94 @@ async def get_patient_music_by_counselor(
             title=f"AI 생성 트랙 (세션 {track.session_id})",
             prompt=session_prompt_text,
             track_url=track.track_url
+        ))
+    return response_tracks
+
+# --- 💡 [핵심 API 추가 1] 상담사 통계 ---
+@router.get("/stats", response_model=CounselorStats)
+async def get_counselor_stats(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """(신규) 현재 상담사의 통계 (담당 환자 수, 총 음악 수)를 반환합니다."""
+    if current_user.role != "therapist":
+        raise HTTPException(status_code=403, detail="상담사 전용 기능입니다.")
+
+    # 1. 담당 환자 ID 목록 조회
+    patient_id_q = select(Connection.patient_id).where(
+        Connection.therapist_id == current_user.id,
+        Connection.status == "ACCEPTED"
+    )
+    patient_ids_result = await db.execute(patient_id_q)
+    patient_ids = patient_ids_result.scalars().all()
+
+    total_patients = len(patient_ids)
+    total_music = 0
+
+    if patient_ids:
+        # 2. 환자 ID 목록을 기반으로 생성된 음악(Track) 수 계산
+        music_count_q = select(func.count(Track.id)).join(
+            Session, Track.session_id == Session.id
+        ).where(
+            Session.created_by.in_(patient_ids) # 👈 환자들이 생성한 세션에 속한 트랙
+        )
+        music_count_result = await db.execute(music_count_q)
+        total_music = music_count_result.scalar_one()
+
+    return CounselorStats(total_patients=total_patients, total_music_tracks=total_music)
+
+
+# --- 💡 [핵심 API 추가 2] 상담사 대시보드용 최근 음악 ---
+@router.get("/recent-music", response_model=List[RecentMusicTrack])
+async def get_recent_music_for_counselor(
+    limit: int = Query(3, ge=1, le=10),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """(신규) 현재 상담사에게 배정된 환자들이 생성한 음악 트랙 목록을 최신순으로 반환합니다."""
+    if current_user.role != "therapist":
+        raise HTTPException(status_code=403, detail="상담사 전용 기능입니다.")
+
+    # 1. 담당 환자 ID 목록 조회
+    patient_id_q = select(Connection.patient_id).where(
+        Connection.therapist_id == current_user.id,
+        Connection.status == "ACCEPTED"
+    )
+    patient_ids_result = await db.execute(patient_id_q)
+    patient_ids = patient_ids_result.scalars().all()
+
+    if not patient_ids:
+        return [] # 환자가 없으면 빈 리스트 반환
+
+    # 2. 환자 ID로 최근 트랙 조회 (세션 및 생성자(User) 정보 포함)
+    tracks_q = (
+        select(Track)
+        .join(Session, Track.session_id == Session.id)
+        .join(User, Session.created_by == User.id) # 👈 환자 정보(User) 조인
+        .options(
+            joinedload(Track.session).joinedload(Session.creator) # 👈 Session.creator (User) 정보 미리 로드
+        )
+        .where(Session.created_by.in_(patient_ids))
+        .order_by(Track.created_at.desc())
+        .limit(limit)
+    )
+    tracks_result = await db.execute(tracks_q)
+    tracks = tracks_result.scalars().unique().all()
+    
+    # 3. 프론트엔드 형식(RecentMusicTrack)에 맞게 데이터 가공
+    response_tracks = []
+    for track in tracks:
+        session_prompt_data = track.session.prompt or {}
+        session_prompt_text = "프롬프트 정보 없음"
+        if isinstance(session_prompt_data, dict) and "text" in session_prompt_data:
+            value = session_prompt_data["text"]
+            if isinstance(value, str): session_prompt_text = value
+            else: session_prompt_text = "프롬프트 형식 오류"
+        
+        response_tracks.append(RecentMusicTrack(
+            music_id=track.id,
+            music_title=f"AI 트랙 (세션 {track.session_id})", # (프롬프트에서 제목 추출 필요시 로직 추가)
+            patient_id=track.session.created_by,
+            patient_name=track.session.creator.name or track.session.creator.email
         ))
     return response_tracks

@@ -1,22 +1,32 @@
-// 파일 경로: /src/app/dashboard/counselor/page.tsx
-
 'use client';
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-// 💡 중앙 DB에서 환자 데이터를 가져옵니다.
-import { getPatients, Patient } from '@/lib/utils/patients';
-// 💡 대시보드에 필요한 아이콘들을 가져옵니다.
-import { Users, Music, Calendar, Plus, ArrowRight } from 'lucide-react';
+// 💡 1. '가짜 DB' import 제거
+// import { getPatients, Patient } from '@/lib/utils/patients';
+import { Users, Music, Plus, ArrowRight, Loader2, AlertTriangle, UserCheck } from 'lucide-react';
+import { useAuth } from '@/lib/contexts/AuthContext'; // 💡 2. AuthContext 훅 임포트
 
-// === 대시보드 통계 카드 컴포넌트 ===
+// --- 💡 3. 백엔드 API 응답 타입 정의 ---
+interface CounselorStats {
+    total_patients: number;
+    total_music_tracks: number;
+}
+
+interface RecentMusicTrack {
+    music_id: number | string;
+    music_title: string;
+    patient_id: number | string;
+    patient_name: string | null;
+}
+
+// === 대시보드 통계 카드 컴포넌트 === (변경 없음)
 interface StatCardProps {
     title: string;
     value: string | number;
     icon: React.ReactNode;
     color: string;
 }
-
 const StatCard: React.FC<StatCardProps> = ({ title, value, icon, color }) => (
     <div className="bg-white p-5 rounded-xl border shadow-sm flex items-center gap-4">
         <div className={`p-3 rounded-full ${color}`}>
@@ -33,120 +43,158 @@ const StatCard: React.FC<StatCardProps> = ({ title, value, icon, color }) => (
 // === 상담가 대시보드 페이지 ===
 export default function CounselorDashboardPage() {
     const router = useRouter();
-    // 💡 여러 종류의 데이터를 관리할 상태들
-    const [stats, setStats] = useState({ totalPatients: 0, totalMusic: 0 });
-    const [todaySchedule, setTodaySchedule] = useState<{ time: string; patientName: string; patientId: string }[]>([]);
-    const [recentMusic, setRecentMusic] = useState<(Patient & { musicTitle: string; musicId: string })[]>([]);
+    const { isAuthed } = useAuth(); // 💡 4. 인증 상태 확인
 
+    // 💡 5. [수정] 실제 데이터를 위한 상태
+    const [stats, setStats] = useState<CounselorStats>({ total_patients: 0, total_music_tracks: 0 });
+    const [recentMusic, setRecentMusic] = useState<RecentMusicTrack[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    // 💡 6. [핵심 수정] '가짜 DB' 대신 실제 API 호출
     useEffect(() => {
-        // 페이지 로드 시 데이터를 불러오고 가공합니다.
-        const patients = getPatients();
-        
-        // 1. 통계 계산
-        const totalPatients = patients.length;
-        const totalMusic = patients.reduce((sum, p) => sum + p.generatedMusic.length, 0);
-        setStats({ totalPatients, totalMusic });
+        // AuthContext가 로딩 중이거나, 로그인 전이면 API 호출 안 함
+        if (!isAuthed) return;
 
-        // 2. 가짜 '오늘의 상담 일정' 데이터 생성
-        setTodaySchedule([
-            { time: '10:00', patientName: '김현우 (기존 환자)', patientId: 'p001' },
-            { time: '14:30', patientName: '이수민 (기존 환자)', patientId: 'p002' },
-        ]);
+        const fetchData = async () => {
+            setLoading(true);
+            setError(null);
+            const token = localStorage.getItem('accessToken');
+            if (!token) {
+                setError('인증 토큰이 없습니다. 다시 로그인해 주세요.');
+                setLoading(false);
+                return;
+            }
 
-        // 3. '최근 생성된 음악' 데이터 가공 (최신 3개)
-        const allMusic = patients.flatMap(p => 
-            p.generatedMusic.map(m => ({ ...p, musicTitle: m.title, musicId: m.id }))
-        ).sort((a, b) => b.musicId.localeCompare(a.musicId)) // 최신순 정렬 (ID 기준)
-         .slice(0, 3);
-        setRecentMusic(allMusic);
+            try {
+                // 🚨 [필수] 백엔드에 이 API 2개가 구현되어 있어야 합니다.
+                // API 요청들을 병렬로 실행
+                const [statsRes, musicRes] = await Promise.all([
+                    fetch('http://localhost:8000/therapist/stats', { // 👈 1. 통계 API
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    }),
+                    fetch('http://localhost:8000/therapist/recent-music?limit=3', { // 👈 2. 최근 음악 API
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    })
+                ]);
 
-    }, []);
+                // 공통 에러 처리
+                if (statsRes.status === 401 || musicRes.status === 401) throw new Error('인증 실패');
+                if (!statsRes.ok) throw new Error('통계 정보 로딩 실패');
+                if (!musicRes.ok) throw new Error('최근 음악 로딩 실패');
+
+                const statsData: CounselorStats = await statsRes.json();
+                const musicData: RecentMusicTrack[] = await musicRes.json();
+
+                setStats(statsData);
+                setRecentMusic(musicData);
+
+            } catch (err: unknown) { // 💡 'any' 대신 'unknown' 사용
+                setError(err instanceof Error ? err.message : "알 수 없는 오류");
+                if (err instanceof Error && err.message === '인증 실패') {
+                    localStorage.removeItem('accessToken');
+                    router.push('/login?next=/dashboard/patient');
+                }
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchData();
+    }, [isAuthed, router]); // 💡 isAuthed가 true가 되면 실행
+
+    // --- 렌더링 로직 ---
+
+    if (loading) {
+        return (
+            <div className="flex justify-center items-center h-[calc(100vh-200px)]">
+                <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+                <p className="ml-2">대시보드 로딩 중...</p>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="flex flex-col items-center justify-center h-[calc(100vh-200px)] text-center p-4">
+                <AlertTriangle className="w-12 h-12 text-red-600 mb-4" />
+                <h1 className="text-2xl font-bold mb-4 text-red-600">오류 발생</h1>
+                <p className="text-gray-600 mb-6">{error}</p>
+            </div>
+        );
+    }
 
     return (
         <div className="max-w-5xl mx-auto p-6 bg-gray-50 min-h-screen space-y-8">
-            {/* 1. 페이지 헤더 */}
+            {/* 1. 페이지 헤더 (환자 등록 버튼 -> 환자 관리 버튼으로 변경) */}
             <header className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">상담가 대시보드</h1>
-                    <p className="text-gray-600 mt-1">오늘의 현황을 한눈에 파악하세요.</p>
+                    <p className="text-gray-600 mt-1">배정된 환자 현황을 확인하세요.</p>
                 </div>
+                {/* 💡 [수정] '환자 관리' 페이지로 바로 가는 버튼 */}
                 <button
-                    onClick={() => router.push('/intake/counselor')}
+                    onClick={() => router.push('/counselor')}
                     className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700 transition-colors text-sm font-medium self-start sm:self-center"
                 >
-                    <Plus className="w-5 h-5" />
-                    신규 환자 등록
+                    <UserCheck className="w-5 h-5" />
+                    환자 관리 바로가기
                 </button>
             </header>
 
             <main className="space-y-8">
-                {/* 2. 통계 카드 섹션 */}
+                {/* 2. 통계 카드 섹션 (데이터 연동) */}
                 <section className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    <StatCard 
-                        title="총 환자 수" 
-                        value={`${stats.totalPatients}명`} 
+                    <StatCard
+                        title="담당 환자 수"
+                        value={`${stats.total_patients}명`}
                         icon={<Users className="w-6 h-6 text-indigo-800" />}
                         color="bg-indigo-100"
                     />
-                    <StatCard 
-                        title="총 생성된 음악" 
-                        value={`${stats.totalMusic}곡`}
+                    <StatCard
+                        title="총 생성된 음악"
+                        value={`${stats.total_music_tracks}곡`}
                         icon={<Music className="w-6 h-6 text-green-800" />}
                         color="bg-green-100"
                     />
                 </section>
 
-                {/* 3. 오늘의 일정 & 최근 활동 섹션 (좌우 분할) */}
-                <section className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    {/* 오늘의 상담 일정 */}
-                    <div className="bg-white p-5 rounded-xl border shadow-sm">
-                        <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2 mb-4">
-                            <Calendar className="w-5 h-5 text-gray-500"/>
-                            오늘의 상담 일정
-                        </h2>
-                        <ul className="space-y-3">
-                            {todaySchedule.map(item => (
-                                <li key={item.patientId} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                                    <div>
-                                        <span className="font-bold text-indigo-600 mr-3">{item.time}</span>
-                                        <span className="font-medium text-gray-700">{item.patientName}</span>
-                                    </div>
-                                    <button onClick={() => router.push(`/counselor/${item.patientId}`)} className="text-xs text-gray-500 hover:underline">
-                                        상세보기
-                                    </button>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                    {/* 최근 생성된 음악 */}
-                    <div className="bg-white p-5 rounded-xl border shadow-sm">
-                        <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2 mb-4">
-                            <Music className="w-5 h-5 text-gray-500"/>
-                            최근 생성된 음악
-                        </h2>
+                {/* 3. 💡 [수정] '최근 생성된 음악' 섹션 (상담 일정 섹션 제거) */}
+                <section className="bg-white p-5 rounded-xl border shadow-sm">
+                    <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2 mb-4">
+                        <Music className="w-5 h-5 text-gray-500" />
+                        환자들의 최근 생성 음악
+                    </h2>
+
+                    {recentMusic.length === 0 ? (
+                        <div className="text-center p-6 text-gray-500">
+                            최근 생성된 음악이 없습니다.
+                        </div>
+                    ) : (
                         <ul className="space-y-3">
                             {recentMusic.map(item => (
-                                <li key={item.musicId} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                <li key={item.music_id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                                     <div className="min-w-0 flex-1">
-                                        <p className="font-medium text-gray-700 truncate">{item.musicTitle}</p>
-                                        <p className="text-xs text-gray-500">환자: {item.name}</p>
+                                        <p className="font-medium text-gray-700 truncate">{item.music_title}</p>
+                                        <p className="text-xs text-gray-500">환자: {item.patient_name || '이름 없음'}</p>
                                     </div>
-                                    <button onClick={() => router.push(`/counselor/${item.id}`)} className="text-xs text-gray-500 hover:underline ml-3">
-                                        환자 정보
+                                    <button onClick={() => router.push(`/counselor/${item.patient_id}`)} className="text-xs text-indigo-600 hover:underline ml-3 flex-shrink-0">
+                                        환자 정보 보기 <ArrowRight className="w-3 h-3 inline" />
                                     </button>
                                 </li>
                             ))}
                         </ul>
-                    </div>
+                    )}
                 </section>
-                
-                {/* 4. 전체 환자 목록으로 이동 버튼 */}
+
+                {/* 4. 💡 [아이디어] 환자 연결/등록 페이지로 바로 가는 버튼 (헤더와 중복이지만 강조용) */}
                 <section className="text-center pt-4">
                     <button
-                        onClick={() => router.push('/counselor')}
+                        onClick={() => router.push('/counseloroption')} // 👈 설정 페이지의 '환자 연결' 탭으로
                         className="inline-flex items-center gap-2 px-6 py-3 bg-white text-gray-800 font-semibold border border-gray-300 rounded-lg shadow-sm hover:bg-gray-100 transition duration-200"
                     >
-                        전체 환자 목록 보기 <ArrowRight className="w-5 h-5" />
+                        <Plus className="w-5 h-5" />
+                        신규 환자 검색 및 연결
                     </button>
                 </section>
             </main>

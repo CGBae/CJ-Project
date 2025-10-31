@@ -139,7 +139,7 @@ export default function CounselorDashboardPage() {
                 <h1 className="text-3xl font-bold text-gray-900">환자 관리 대시보드</h1>
                 {/* 💡 13. '환자 연결' 기능이 있는 설정(option) 페이지로 연결 */}
                 <button
-                    onClick={() => router.push('/option')} // 👈 경로 수정
+                    onClick={() => router.push('/counseloroption')} // 👈 경로 수정
                     className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700 transition-colors text-sm font-medium"
                 >
                     <Plus className="w-5 h-5" />
