@@ -1,0 +1,37 @@
+# 1. Docker 이미지 기본값 설정
+# (젠킨스의 'Global Tool' 설정과 달리, Docker 이미지를 바로 가져와 씀)
+default:
+  image: node:22.18.0 # 기본으로 Node.js 18 버전 이미지를 사용
+
+# 2. 파이프라인의 전체 순서(단계) 정의
+stages:
+  - build   # 1단계: 빌드
+  - test    # 2단계: 테스트
+
+# 3. 'build' 단계에서 실행할 작업
+build-frontend:
+  stage: build
+  # 이 작업(Job)은 'frontend' 폴더에서 실행
+  before_script:
+    - cd frontend
+  script:
+    - echo "Frontend 빌드를 시작합니다..."
+    - npm install
+    - npm run build
+  # 빌드 결과물(artifacts)을 다음 단계를 위해 저장
+  artifacts:
+    paths:
+      - frontend/.next/ # Next.js 빌드 결과 폴더 (프레임워크에 맞게 수정)
+
+# 4. 'test' 단계에서 실행할 작업
+test-backend:
+  # 이 작업은 Node가 아닌 Python 이미지가 필요
+  image: python:3.13.7
+  stage: test
+  # 이 작업(Job)은 'backend' 폴더에서 실행
+  before_script:
+    - cd backend
+  script:
+    - echo "Backend 종속성을 설치합니다..."
+    - pip install -r requirements.txt
+    # - pytest (테스트 코드가 있다면)
