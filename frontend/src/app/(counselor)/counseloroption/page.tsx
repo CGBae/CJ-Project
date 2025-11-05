@@ -1,10 +1,8 @@
-// counseloroption/page.tsx
-
 'use client';
 
 import React, { useState, FormEvent, useCallback, useEffect } from 'react';
-// 💡 [수정] 'Info' 아이콘 임포트 추가
-import { Settings, UserPlus, Loader2, User, XCircle, AlertTriangle, CheckCircle, Info, Search, Link2, Trash2 } from 'lucide-react';
+// 💡 [수정] 사용하지 않는 아이콘(UserPlus, Trash2) 제거, 필요한 아이콘(Link2, Search) 확인
+import { Settings, Loader2, User, XCircle, AlertTriangle, CheckCircle, Info, Search, Link2 } from 'lucide-react';
 
 // API 통신을 위한 기본 URL (사용자 확인: prefix 없음)
 const API_BASE_URL = 'http://localhost:8000';
@@ -27,7 +25,7 @@ interface ApiErrorResponse {
 interface FoundPatient {
     id: number;
     name: string;
-    email: string;
+    email: string | null; // 💡 이메일이 null일 수 있음 (카카오)
     connection_status: 'available' | 'pending' | 'connected_to_self' | 'connected_to_other';
 }
 
@@ -74,7 +72,6 @@ const apiCall = async <T = unknown>(endpoint: string, method: string = 'GET', bo
     }
     
     if (response.status === 204) {
-        // No Content (탈퇴 성공 등)
         return null as T; 
     }
 
@@ -89,7 +86,8 @@ export default function CounselorSettingsPage() {
     const [activeTab, setActiveTab] = useState<Tab>('general');
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
-
+    
+    // 💡 [수정] 계정 탈퇴 관련 상태 (PatientOptionPage에서 복사)
     const [showDeactivateModal, setShowDeactivateModal] = useState(false);
     const [isDeactivating, setIsDeactivating] = useState(false);
 
@@ -102,31 +100,28 @@ export default function CounselorSettingsPage() {
             setError(message);
             setSuccess(null);
         }
+        // 5초 후 메시지 자동 숨김 (선택 사항)
+        /*
         setTimeout(() => {
             setSuccess(null);
             setError(null);
         }, 5000);
+        */
     };
-
+    
+    // 💡 [추가] 계정 탈퇴 핸들러 (PatientOptionPage에서 복사)
     const handleDeactivate = async () => {
         setIsDeactivating(true);
-        // 글로벌 메시지 초기화
         setError(null);
         setSuccess(null); 
         
         try {
-            // apiCall 헬퍼를 사용해 /user/deactivate 엔드포인트 호출
-            await apiCall('/user/deactivate', 'DELETE');
-            
-            // 토큰 제거
+            await apiCall('/auth/me', 'DELETE'); // 👈 /auth/me DELETE 호출 (예시)
             localStorage.removeItem('accessToken');
-            
             alert('계정 탈퇴가 완료되었습니다. 이용해 주셔서 감사합니다.');
-            window.location.href = '/login'; // 로그인 페이지로 리디렉션
-
+            window.location.href = '/login'; 
         } catch (err: unknown) {
             if (err instanceof Error) {
-                // 글로벌 오류 메시지 표시
                 showMessage('error', `계정 탈퇴 오류: ${err.message}. 다시 시도해주세요.`);
             }
         } finally {
@@ -134,7 +129,7 @@ export default function CounselorSettingsPage() {
             setShowDeactivateModal(false);
         }
     };
-    
+
     // --- 탭 콘텐츠 렌더링 함수 ---
 
     const renderGeneralSettingsTab = () => (
@@ -142,45 +137,42 @@ export default function CounselorSettingsPage() {
     );
 
     const renderMyProfileTab = () => (
-        <Alert type="info" message="상담사 프로필 수정 기능은 현재 준비 중입니다." />
+        // 💡 [수정] Alert 컴포넌트의 props 확인
+        <Alert type="info" message="상담사 프로필 수정 기능은 현재 준비 중입니다." onClose={() => {}} />
     );
     
+    // 💡 [수정] 계정 탈퇴 탭 렌더링 (PatientOptionPage에서 복사)
     const renderDeactivateTab = () => (
-    <div className="space-y-6 max-w-lg mx-auto p-8 bg-white border border-gray-200 rounded-xl shadow-lg">
-        <h3 className="text-xl font-semibold border-b pb-2 text-red-600">계정 탈퇴</h3>
-        <div className="p-6 bg-red-50 border border-red-200 rounded-xl shadow-inner space-y-4">
-            <div className="flex items-start">
-                <AlertTriangle className="w-6 h-6 text-red-500 mr-3 mt-1 flex-shrink-0" />
-                <p className="text-red-700 font-medium">
-                    계정을 탈퇴하면 모든 사용자 데이터(프로필 정보, 환자 연결 기록 등)가 영구적으로 삭제됩니다. 
-                    탈퇴 후에는 데이터를 복구할 수 없습니다. 신중하게 결정해 주세요.
-                </p>
+        <div className="space-y-6 max-w-lg mx-auto p-8 bg-white border border-gray-200 rounded-xl shadow-lg">
+            <h3 className="text-xl font-semibold border-b pb-2 text-red-600">계정 탈퇴</h3>
+            <div className="p-6 bg-red-50 border border-red-200 rounded-xl shadow-inner space-y-4">
+                <div className="flex items-start">
+                    <AlertTriangle className="w-6 h-6 text-red-500 mr-3 mt-1 flex-shrink-0" />
+                    <p className="text-red-700 font-medium">
+                        계정을 탈퇴하면 모든 사용자 데이터(프로필 정보, 환자 연결 기록 등)가 영구적으로 삭제됩니다. 
+                        탈퇴 후에는 데이터를 복구할 수 없습니다. 신중하게 결정해 주세요.
+                    </p>
+                </div>
+                <button
+                    onClick={() => setShowDeactivateModal(true)}
+                    className="w-full flex justify-center items-center px-4 py-3 text-sm font-medium rounded-lg shadow-md text-white bg-red-600 hover:bg-red-700 transition disabled:bg-gray-400"
+                >
+                    <XCircle className="w-5 h-5 mr-2" />
+                    계정 영구 탈퇴하기
+                </button>
             </div>
-            <button
-                onClick={() => setShowDeactivateModal(true)}
-                className="w-full flex justify-center items-center px-4 py-3 text-sm font-medium rounded-lg shadow-md text-white bg-red-600 hover:bg-red-700 transition disabled:bg-gray-400"
-            >
-                <XCircle className="w-5 h-5 mr-2" />
-                계정 영구 탈퇴하기
-            </button>
+
+            {showDeactivateModal && (
+                <ConfirmationModal
+                    title="계정 탈퇴 확인"
+                    message="정말로 계정을 영구적으로 탈퇴하시겠습니까? 이 작업은 되돌릴 수 없습니다."
+                    onConfirm={handleDeactivate}
+                    onCancel={() => setShowDeactivateModal(false)}
+                    isProcessing={isDeactivating}
+                />
+            )}
         </div>
-
-        {/* 이 함수가 렌더링될 때 showDeactivateModal이 true면 모달을 띄움 */}
-        {showDeactivateModal && (
-            <ConfirmationModal
-                title="계정 탈퇴 확인"
-                message="정말로 계정을 영구적으로 탈퇴하시겠습니까? 이 작업은 되돌릴 수 없습니다."
-                onConfirm={handleDeactivate}
-                onCancel={() => setShowDeactivateModal(false)}
-                isProcessing={isDeactivating}
-            />
-        )}
-
-        {/* 글로벌 알림 메시지가 이미 상단에 있으므로 
-          여기서 별도 에러 메시지를 표시할 필요는 없습니다.
-        */}
-    </div>
-);
+    );
 
     return (
         <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
@@ -192,9 +184,9 @@ export default function CounselorSettingsPage() {
                 {/* 탭 네비게이션 */}
                 <div className="flex border-b border-gray-200 mb-8 overflow-x-auto whitespace-nowrap">
                     <TabButton 
-                        icon={Settings} // 아이콘 변경
-                        label="일반 설정" // 라벨 변경
-                        tab="general" // 탭 ID 변경
+                        icon={Settings}
+                        label="환자 연결 관리" // 💡 라벨 변경
+                        tab="general" 
                         activeTab={activeTab} 
                         onClick={setActiveTab}
                     />
@@ -230,12 +222,14 @@ export default function CounselorSettingsPage() {
     );
 }
 
+// --- 💡 [핵심 수정] 환자 연결 관리 컴포넌트 ---
 interface PatientConnectionManagerProps {
     showGlobalMessage: (type: 'success' | 'error', message: string) => void;
 }
 
 const PatientConnectionManager: React.FC<PatientConnectionManagerProps> = ({ showGlobalMessage }) => {
-    const [email, setEmail] = useState('');
+    // 💡 1. 'email' -> 'searchQuery'로 state 이름 변경
+    const [searchQuery, setSearchQuery] = useState(''); 
     const [foundPatient, setFoundPatient] = useState<FoundPatient | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [searchError, setSearchError] = useState<string | null>(null);
@@ -255,23 +249,22 @@ const PatientConnectionManager: React.FC<PatientConnectionManagerProps> = ({ sho
         setIsLoading(true);
 
         try {
-            const payload = { email };
-            // 💡 백엔드 /counselor/find-patient API 호출
+            // 💡 2. payload의 key를 'email' -> 'query'로 변경
+            const payload = { query: searchQuery }; 
             const result = await apiCall<FoundPatient>('/therapist/find-patient', 'POST', payload);
             
             setFoundPatient(result);
             if(result.connection_status === 'available') {
-                setSearchSuccess(`환자 '${result.name}' (${result.email}) 님을 찾았습니다. 연결 요청을 보낼 수 있습니다.`);
+                setSearchSuccess(`환자 '${result.name}' (${result.email || 'ID:'+result.id}) 님을 찾았습니다. 연결 요청을 보낼 수 있습니다.`);
             } else {
-                // 이미 연결되었거나 대기 중인 상태에 대한 피드백
-                let infoMessage = `환자 '${result.name}' (${result.email}) 님을 찾았습니다. `;
+                let infoMessage = `환자 '${result.name}' (${result.email || 'ID:'+result.id}) 님을 찾았습니다. `;
                 if (result.connection_status === 'pending') infoMessage += "이미 연결 요청이 전송되어 대기 중입니다.";
                 if (result.connection_status === 'connected_to_self') infoMessage += "이미 담당 환자로 등록되어 있습니다.";
                 if (result.connection_status === 'connected_to_other') infoMessage += "이미 다른 상담사와 연결되어 있습니다.";
-                setSearchError(infoMessage); // 정보성 메시지이지만 오류 상태로 처리하여 버튼 비활성화
+                setSearchError(infoMessage);
             }
 
-        } catch (err: unknown) { // 💡 'any' 대신 'unknown' 사용
+        } catch (err: unknown) { 
             if (err instanceof Error) {
                 setSearchError(`검색 실패: ${err.message}`);
             } else {
@@ -282,25 +275,21 @@ const PatientConnectionManager: React.FC<PatientConnectionManagerProps> = ({ sho
         }
     };
 
-    // 연결 요청 핸들러
+    // 연결 요청 핸들러 (변경 없음)
     const handleRequestConnection = async () => {
         if (!foundPatient) return;
-
         setIsLoading(true);
-        resetSearchState(); // 메시지 초기화
+        resetSearchState();
 
         try {
             const payload = { patient_id: foundPatient.id };
-            // 💡 백엔드 /counselor/request-connection API 호출
             const result = await apiCall<{ detail: string }>('/therapist/request-connection', 'POST', payload);
             
-            // 글로벌 성공 메시지 표시
             showGlobalMessage('success', `환자 '${foundPatient.name}' 님에게 연결 요청을 성공적으로 보냈습니다.`);
-            setEmail(''); // 입력 필드 초기화
+            setSearchQuery(''); // 💡 3. 'email' -> 'searchQuery'로 변경
             
-        } catch (err: unknown) { // 💡 'any' 대신 'unknown' 사용
+        } catch (err: unknown) { 
              if (err instanceof Error) {
-                // 글로벌 오류 메시지 표시
                 showGlobalMessage('error', `연결 요청 실패: ${err.message}`);
             } else {
                 showGlobalMessage('error', '알 수 없는 오류가 발생했습니다.');
@@ -315,21 +304,22 @@ const PatientConnectionManager: React.FC<PatientConnectionManagerProps> = ({ sho
             <h3 className="text-xl font-semibold border-b pb-2 text-gray-700">담당 환자 연결</h3>
             
             <p className="text-sm text-gray-500">
-                환자가 가입 시 사용한 **이메일**로 계정을 검색한 후, 연결 요청을 보내주세요.
-                환자가 수락하면 환자 관리가 가능해집니다.
+                {/* 💡 4. 안내 문구 수정 */}
+                환자가 가입 시 사용한 **이메일** 또는 환자의 **고유 ID**로 계정을 검색한 후, 연결 요청을 보내주세요.
             </p>
 
             {/* 1. 환자 검색 폼 */}
             <form onSubmit={handleSearch} className="flex items-end gap-3">
                 <div className="flex-grow">
-                    <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">환자 이메일</label>
+                    {/* 💡 5. 라벨 및 ID 수정 */}
+                    <label htmlFor="searchQuery" className="block text-sm font-medium text-gray-700 mb-1">환자 이메일 또는 고유 ID</label>
                     <input
-                        type="email"
-                        id="email"
-                        value={email}
+                        type="text" // 👈 email -> text
+                        id="searchQuery"
+                        value={searchQuery}
                         onChange={(e) => {
-                            setEmail(e.target.value);
-                            resetSearchState(); // 이메일 변경 시 검색 결과 초기화
+                            setSearchQuery(e.target.value);
+                            resetSearchState(); 
                         }}
                         required
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
@@ -337,32 +327,25 @@ const PatientConnectionManager: React.FC<PatientConnectionManagerProps> = ({ sho
                 </div>
                 <button
                     type="submit"
-                    disabled={isLoading || !email.trim()}
+                    disabled={isLoading || !searchQuery.trim()} // 👈 email.trim() -> searchQuery.trim()
                     className="px-4 py-2 h-10 flex justify-center items-center text-sm font-medium rounded-lg shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 transition-colors"
                 >
                     {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Search className="w-5 h-5" />}
                 </button>
             </form>
 
-            {/* 2. 검색 결과 및 연결 요청 버튼 */}
-            {/* 로딩 중 (검색 중) */}
+            {/* 2. 검색 결과 및 연결 요청 버튼 (변경 없음) */}
             {isLoading && !foundPatient && (
                 <div className="text-center p-4 text-gray-500">
                     <Loader2 className="w-5 h-5 animate-spin inline-block" />
                 </div>
             )}
-
-            {/* 검색 성공 */}
             {searchSuccess && (
                 <Alert type="success" message={searchSuccess} />
             )}
-
-            {/* 검색 실패 또는 정보 */}
             {searchError && (
-                 <Alert type="error" message={searchError} />
+                <Alert type="error" message={searchError} />
             )}
-
-            {/* 연결 요청 버튼 (검색 성공 및 연결 가능 시) */}
             {foundPatient && foundPatient.connection_status === 'available' && (
                 <button
                     type="button"
@@ -380,7 +363,7 @@ const PatientConnectionManager: React.FC<PatientConnectionManagerProps> = ({ sho
 
 
 // =================================
-// 보조 컴포넌트
+// 보조 컴포넌트 (변경 없음)
 // =================================
 
 // 탭 버튼 컴포넌트
@@ -433,7 +416,6 @@ const Alert: React.FC<AlertProps> = ({ type, message, onClose }) => {
         case 'info':
         default:
             bgColor = 'bg-blue-100 border-blue-400 text-blue-700';
-            // 💡 [수정] AlertTriangle 대신 Info 아이콘 사용
             Icon = Info; 
             break;
     }
@@ -454,6 +436,7 @@ const Alert: React.FC<AlertProps> = ({ type, message, onClose }) => {
     );
 };
 
+// 확인 모달 컴포넌트
 interface ConfirmationModalProps {
     title: string;
     message: string;

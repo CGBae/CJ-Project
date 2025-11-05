@@ -1,0 +1,66 @@
+# ansible/deploy.yml
+# 이것이 Ansible의 '작업 목록(Playbook)'입니다.
+# GitLab CI/CD가 이 파일을 실행시킵니다.
+
+- hosts: all  # 'hosts.ini'에 있는 모든 서버에 대해 실행
+  become: true # 💡 [중요] 모든 명령을 'sudo' (관리자 권한)로 실행
+  
+  vars:
+    # 💡 변수: 프로젝트 경로를 미리 지정 (나중에 서버에 맞게 수정)
+    project_path: /home/ubuntu/cjproject 
+    
+  tasks:
+    # --- 1. 공통 작업 (Git) ---
+    - name: 1. Update source code from Git
+      git:
+        repo: https://github.com/CGBae/CJ-Project.git # 👈 깃랩 주소로 변경 필요
+        dest: "{{ project_path }}"
+        version: Git_CICD # 👈 배포할 브랜치
+        force: yes # 덮어쓰기
+      become_user: ubuntu # 💡 'sudo'가 아닌 'ubuntu' 사용자로 git pull 실행
+      
+    # --- 2. 백엔드 배포 ---
+    - name: 2. Install Backend Python dependencies
+      pip:
+        requirements: "{{ project_path }}/backend/requirements.txt"
+        virtualenv: "{{ project_path }}/backend/venv" # 👈 서버의 venv 경로
+        
+    - name: 3. Run Backend DB Migrations
+      command:
+        cmd: "alembic upgrade head"
+        chdir: "{{ project_path }}/backend" # 👈 alembic.ini가 있는 폴더
+      environment:
+        # 💡 GitLab CI/CD 변수에서 DB URL을 가져와 주입
+        DATABASE_URL: "{{ lookup('env', 'DATABASE_URL') }}" 
+      become_user: ubuntu
+
+    - name: 4. Restart Backend Server (Gunicorn/FastAPI)
+      # 💡 'my-fastapi-app'은 서버에 등록된 systemd 서비스 이름 (VM 준비 시 설정 필요)
+      systemd:
+        name: my-fastapi-app
+        state: restarted
+        daemon_reload: yes
+
+    # --- 3. 프론트엔드 배포 ---
+    - name: 5. Install Frontend dependencies
+      command:
+        cmd: "npm install --production"
+        chdir: "{{ project_path }}/frontend"
+      become_user: ubuntu
+
+    - name: 6. Build Frontend (Next.js)
+      command:
+        cmd: "npm run build"
+        chdir: "{{ project_path }}/frontend"
+      environment:
+        # 💡 GitLab CI/CD 변수에서 API 주소 등을 가져와 주입
+        NEXT_PUBLIC_API_BASE_URL: "{{ lookup('env', 'NEXT_PUBLIC_API_BASE_URL') }}"
+        NEXT_PUBLIC_KAKAO_REST_KEY: "{{ lookup('env', 'NEXT_PUBLIC_KAKAO_REST_KEY') }}"
+        NEXT_PUBLIC_KAKAO_REDIRECT_URI: "{{ lookup('env', 'NEXT_PUBLIC_KAKAO_REDIRECT_URI') }}"
+      become_user: ubuntu
+
+    - name: 7. Restart Frontend Server (PM2)
+      # 💡 'frontend-app'은 PM2에 등록된 앱 이름 (VM 준비 시 설정 필요)
+      command:
+        cmd: "pm2 restart frontend-app"
+      become_user: ubuntu
