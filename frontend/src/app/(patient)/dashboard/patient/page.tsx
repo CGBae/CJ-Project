@@ -26,6 +26,7 @@ interface UserProfile {
   id: number; // 또는 string
   email: string; // 또는 name 등 사용자 식별 정보
   role: string;
+  name?: string | null;
   // 필요한 다른 정보
 }
 
@@ -188,7 +189,7 @@ export default function PatientDashboardPage() {
     <div className="max-w-3xl mx-auto p-6 space-y-10">
       {/* user.email 대신 user.name 등이 있다면 사용 */}
       <h1 className="text-3xl font-bold text-gray-900">
-        {user.email || '사용자'}님, 안녕하세요!
+        {user.name || user.email || '사용자'}님, 안녕하세요!
       </h1>
       
       <section>

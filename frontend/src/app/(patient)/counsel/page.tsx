@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState, FormEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2, Send, Music, Volume2, Trash2} from 'lucide-react';
-// '가짜 DB' import는 제거된 상태로 가정
+// 💡 '가짜 DB' import는 사용하지 않으므로 제거 (또는 주석 처리)
 // import { addTrackToPlaylist, getPlaylist, MusicTrack } from '@/lib/utils/music';
 // import { addMusicToPatient, getPatientById } from '@/lib/utils/patients';
 
@@ -35,11 +35,13 @@ export default function CounselPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    // 💡 1. [핵심] input 요소에 대한 ref 생성
+    const inputRef = useRef<HTMLInputElement | null>(null);
 
     // URL에서 session ID와 patient ID를 가져옵니다.
     const sessionId = searchParams.get('session');
     const patientId = searchParams.get('patientId');
-
+    
     const [patientName, setPatientName] = useState<string | null>(null);
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
@@ -47,7 +49,7 @@ export default function CounselPage() {
     const [isGeneratingMusic, setIsGeneratingMusic] = useState(false); // 음악 생성 로딩
     const [musicGenerationStep, setMusicGenerationStep] = useState('');
     const [error, setError] = useState<string | null>(null);
-    const [isInitialLoading, setIsInitialLoading] = useState(true); // 페이지 첫 로딩 (기록 조회) 상태 추가
+    const [isInitialLoading, setIsInitialLoading] = useState(true);
 
     // 페이지 로드 시, 세션 ID로 과거 대화 기록을 불러옵니다.
     useEffect(() => {
@@ -58,29 +60,27 @@ export default function CounselPage() {
                 return;
             }
 
-            // 환자 이름 설정 (UI 표시용 - 실제 API 호출로 변경 필요)
+            // (환자 이름 로딩은 /auth/me 등을 통해 가져오는 로직으로 변경 필요)
             // if (patientId) {
-            //     const patient = getPatientById(patientId);
+            //     const patient = getPatientById(patientId); // 👈 가짜 DB
             //     if (patient) setPatientName(patient.name);
             // }
 
             try {
-                // ✅ [수정] Authorization 헤더 추가!
+                // 💡 [수정] Authorization 헤더 추가
                 const token = localStorage.getItem('accessToken');
-                if (!token) { // 토큰 없으면 바로 에러 처리
-                    throw new Error("로그인이 필요합니다.");
-                }
+                if (!token) throw new Error("로그인이 필요합니다.");
 
                 const response = await fetch(`http://localhost:8000/chat/history/${sessionId}`, {
-                     headers: { 'Authorization': `Bearer ${token}` } // 👈 헤더 추가됨
+                    headers: { 'Authorization': `Bearer ${token}` } // 👈 헤더 추가
                 });
-
+                
                 if (response.status === 401) throw new Error("인증 실패(기록 조회)");
                 if (!response.ok) {
                     throw new Error("과거 대화 기록을 불러오는 데 실패했습니다.");
                 }
                 const data = await response.json();
-
+                
                 if (data.history.length > 0) {
                     setMessages(data.history);
                 } else {
@@ -88,10 +88,10 @@ export default function CounselPage() {
                         { id: 'initial-greeting', role: 'assistant', content: `${patientName || '사용자'}님, 안녕하세요! AI 상담을 시작하겠습니다.` }
                     ]);
                 }
-            } catch (err) {
+            } catch (err: unknown) {
                  const errorMessage = err instanceof Error ? err.message : '초기화 중 오류 발생';
                  setError(errorMessage);
-                 if (errorMessage.includes('인증 실패') || errorMessage.includes('로그인')) {
+                 if (errorMessage.includes('인증') || errorMessage.includes('로그인')) {
                      localStorage.removeItem('accessToken');
                      router.push('/login?next=/counsel?session='+sessionId);
                  }
@@ -103,13 +103,18 @@ export default function CounselPage() {
         loadSessionHistory();
     }, [sessionId, patientId, patientName, router]); // router 추가
 
-    // 새 메시지가 추가될 때마다 스크롤을 맨 아래로 이동 (변경 없음)
+    // 💡 2. [수정] 새 메시지가 추가되거나, AI 응답 로딩이 시작될 때 스크롤
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages]);
-
+        // 로딩이 끝났고 (둘 다 false), 첫 페이지 로딩도 아닐 때
+        if (!isLoading && !isGeneratingMusic && !isInitialLoading) {
+            // 💡 setTimeout(..., 0)으로 React 렌더링이 확실히 끝난 후 포커스 실행
+            setTimeout(() => {
+                inputRef.current?.focus();
+            }, 0);
+        }
+    }, [isLoading, isGeneratingMusic, isInitialLoading]);
     /**
-     * "음악 생성" 버튼 클릭 핸들러 (Authorization 헤더 추가됨 - 변경 없음)
+     * "음악 생성" 버튼 클릭 핸들러 (Authorization 헤더 추가됨)
      */
     const handleGenerateMusicClick = async () => {
         if (!sessionId) { return; }
@@ -133,7 +138,10 @@ export default function CounselPage() {
                 body: JSON.stringify({ session_id: Number(sessionId), guideline_json: "{}" }),
             });
             if (analyzeResponse.status === 401) throw new Error('인증 실패(분석)');
-            if (!analyzeResponse.ok) { /* ... 에러 처리 ... */ throw new Error("분석 실패"); }
+            if (!analyzeResponse.ok) {
+                const errorData = await analyzeResponse.json();
+                throw new Error(errorData.detail || "대화 분석 실패");
+            }
             const { prompt_text } = await analyzeResponse.json();
             finalPrompt = prompt_text;
 
@@ -145,14 +153,22 @@ export default function CounselPage() {
                 body: JSON.stringify({ session_id: Number(sessionId), music_length_ms: 180000, force_instrumental: true }),
             });
             if (musicResponse.status === 401) throw new Error('인증 실패(음악생성)');
-            if (!musicResponse.ok) { /* ... 에러 처리 ... */ throw new Error("음악 생성 실패"); }
+            if (!musicResponse.ok) {
+                const errorData = await musicResponse.json();
+                throw new Error(errorData.detail || "음악 생성 실패");
+            }
             const result = await musicResponse.json();
             if (!result.track_url) throw new Error("음악 생성 결과 URL 없음");
+
+            // 💡 3. [수정] '가짜 DB' 로직 제거
+            // const newTrack: MusicTrack = { ... };
+            // addTrackToPlaylist(newTrack); 
+            // if (patientId) { addMusicToPatient(patientId, newTrack); }
 
             alert("음악 생성이 완료되었습니다! 플레이리스트로 이동합니다.");
             router.push('/music');
 
-        } catch (err) { /* ... 에러 처리 (변경 없음) ... */
+        } catch (err: unknown) {
              console.error('Music generation process failed:', err);
              const errorMessage = err instanceof Error ? err.message : '음악 생성 중 오류 발생';
              setError(errorMessage);
@@ -163,11 +179,13 @@ export default function CounselPage() {
         } finally {
             setIsGeneratingMusic(false);
             setMusicGenerationStep("");
+            // 💡 4. [핵심] 음악 생성 후에도 포커스 복원
+            inputRef.current?.focus();
         }
     };
-
+    
     /**
-     * 채팅 메시지 전송 핸들러 (Authorization 헤더 추가됨 - 변경 없음)
+     * 채팅 메시지 전송 핸들러
      */
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
@@ -195,12 +213,12 @@ export default function CounselPage() {
                 const errorData = await response.json();
                 throw new Error(errorData.detail || "서버 응답 오류");
             }
-
+            
             const data = await response.json();
             const assistantMessage: Message = { id: Date.now().toString() + '-ai', role: 'assistant', content: data.assistant };
             setMessages(currentMsgs => [...currentMsgs, assistantMessage]);
-
-        } catch (err) { /* ... 에러 처리 (변경 없음) ... */
+            
+        } catch (err: unknown) {
              console.error('Chat API Error:', err);
              const errorMessage = err instanceof Error ? err.message : '알 수 없는 오류';
              setError(errorMessage);
@@ -211,6 +229,8 @@ export default function CounselPage() {
              }
         } finally {
             setIsLoading(false);
+            // 💡 5. [핵심] AI 응답 완료 후(성공/실패 무관) input에 다시 포커스
+            inputRef.current?.focus();
         }
     };
 
@@ -218,8 +238,8 @@ export default function CounselPage() {
 
     return (
         <div className="flex flex-col h-screen max-w-2xl mx-auto bg-white shadow-2xl relative">
-
-            {/* ✅ [수정] 음악 생성 시에만 전체 로딩 오버레이 */}
+            
+            {/* [수정] 음악 생성 시에만 전체 로딩 오버레이 */}
             {isGeneratingMusic && (
                 <div className="absolute inset-0 bg-white bg-opacity-80 flex flex-col justify-center items-center z-10 text-center px-4">
                     <Loader2 className="w-12 h-12 animate-spin text-indigo-600" />
@@ -228,7 +248,7 @@ export default function CounselPage() {
                 </div>
             )}
 
-            {/* 헤더 (변경 없음) */}
+            {/* 헤더 */}
             <header className="p-4 bg-indigo-600 text-white text-xl font-bold text-center">
                 AI 심리 상담 {patientName ? `(${patientName}님)` : ''}
             </header>
@@ -252,7 +272,7 @@ export default function CounselPage() {
                     ))
                 )}
 
-                {/* ✅ [수정] 채팅 응답 로딩 시 작은 로더 표시 */}
+                {/* [수정] 채팅 응답 로딩 시 작은 로더 표시 */}
                 {isLoading && !isInitialLoading && (
                     <div className="flex justify-start">
                         <div className="p-3 bg-white rounded-2xl border shadow-md inline-flex items-center">
@@ -265,14 +285,14 @@ export default function CounselPage() {
                 <div ref={messagesEndRef} />
             </main>
 
-            {/* 에러 메시지 (변경 없음) */}
+            {/* 에러 메시지 */}
             {error && (
                 <div className="p-4 border-t text-center text-red-600 bg-red-50">
                     <p>오류: {error}</p>
                 </div>
             )}
 
-            {/* 푸터 (변경 없음) */}
+            {/* 푸터 */}
             <footer className="border-t bg-white p-4 space-y-3">
                 <div className="flex justify-between items-center">
                     <button
@@ -283,19 +303,20 @@ export default function CounselPage() {
                         <Music className="h-5 w-5 mr-2" />
                         지금까지의 대화로 음악 만들기
                     </button>
-                    {/* 플레이리스트 버튼 (개수 표시 로직 필요) */}
                     <button
                         onClick={() => router.push('/music')}
                         className="flex-shrink-0 ml-3 text-sm text-indigo-600 hover:text-indigo-800 transition-colors flex items-center gap-1"
                         aria-label="플레이리스트 보기"
                     >
                         <Volume2 className="h-4 w-4"/>
-                        {/* ({playlist.length}) */}
+                        {/* (플레이리스트 개수 표시 로직 필요) */}
                     </button>
                 </div>
-
+                
                 <form onSubmit={handleSubmit} className="flex items-center space-x-3">
                     <input
+                        // 💡 6. [핵심] ref 연결
+                        ref={inputRef} 
                         className="flex-1 p-3 border rounded-full focus:ring-2 focus:ring-indigo-500 transition"
                         value={input}
                         placeholder={isInitialLoading ? "상담 정보 로딩 중..." : (sessionId ? "메시지를 입력하세요..." : "세션 ID가 없습니다.")}
