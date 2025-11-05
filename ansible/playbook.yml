@@ -1,0 +1,36 @@
+- hosts: all  # inventory 파일의 모든 서버에 대해
+  become: yes   # sudo 권한으로 실행
+  tasks:
+    - name: apt 패키지 업데이트
+      apt: update_cache=yes
+
+    - name: git, python3-pip, nodejs, npm 설치 (서버에 없다면)
+      apt:
+        name: ["git", "python3-pip", "nodejs", "npm"]
+        state: present
+
+    - name: 1. 프로젝트 폴더로 이동하여 최신 코드 받기 (git pull)
+      git:
+        repo: https://gitlab.com/CGBae/CJ-Project.git # ◀ 깃랩 레포 주소
+        dest: /home/ubuntu/CJ-Project                 # ◀ 서버의 프로젝트 경로
+        version: main                                  # ◀ 배포할 브랜치
+        force: yes
+
+    - name: 2. 백엔드 의존성 설치 (pip)
+      pip:
+        requirements: /home/ubuntu/CJ-Project/backend/requirements.txt
+
+    - name: 3. 프론트엔드 의존성 설치 (npm install)
+      npm:
+        path: /home/ubuntu/CJ-Project/frontend
+
+    - name: 4. 프론트엔드 빌드 (npm run build)
+      command: npm run build
+      args:
+        chdir: /home/ubuntu/CJ-Project/frontend # 이 폴더에서 명령어 실행
+
+    - name: 5. 애플리케이션 재시작 (예: pm2)
+      command: pm2 restart all
+      args:
+        chdir: /home/ubuntu/CJ-Project
+      ignore_errors: yes # pm2가 없거나 실패해도 일단 넘어감

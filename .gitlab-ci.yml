@@ -7,6 +7,9 @@ default:
 stages:
   - build   # 1단계: 빌드
   - test    # 2단계: 테스트
+  - plan
+  - apply
+  - deploy  # 3. 배포
 
 # 3. 'build' 단계에서 실행할 작업
 build-frontend:
@@ -35,4 +38,59 @@ test-backend:
     - echo "Backend 종속성을 설치합니다..."
     - pip install -r requirements.txt
     # - pytest (테스트 코드가 있다면)
+
+terraform-plan:
+  stage: plan
+  image: hashicorp/terraform:latest # Terraform 공식 이미지
+  before_script:
+    - cd terraform
+    - terraform init
+  script:
+    - terraform validate
+    - terraform plan -out=tfplan
+  artifacts:
+    paths:
+      - terraform/tfplan # 다음 스테이지에서 사용할 수 있게 '설계도'를 저장
+
+# 4. (추가) Terraform 인프라 구축(Apply)
+terraform-apply:
+  stage: apply
+  image: hashicorp/terraform:latest
+  dependencies:
+    - terraform-plan # 'plan' 스테이지의 'tfplan' 파일 가져오기
+  before_script:
+    - cd terraform
+    - terraform init
+  script:
+    # 1. 'plan'에서 만든 설계도대로 실제 VM 생성
+    - terraform apply -auto-approve tfplan
+    # 2. (핵심) 생성된 VM의 IP를 'inventory.ini' 파일로 저장
+    - terraform output -raw server_ip > inventory.ini
+  artifacts:
+    paths:
+      - terraform/inventory.ini # Ansible이 사용할 '동적 인벤토리' 파일 저장
+  rules:
+    # 'main' 브랜치에 푸시할 때만 실제 인프라 변경 실행
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+deploy-to-server:
+  stage: deploy
+  image: python:3.10
+
+  dependencies:
+    - terraform-apply
+  
+  before_script:
+    - pip install ansible
+    # GitLab CI/CD 변수에 저장된 SSH 키를 등록
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh && '[[ -f /.dockerenv ]] && echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config'
+
+  script:
+    - echo "Ansible 배포 시작..."
+    - ansible-playbook -i terraform/inventory.ini ansible/playbook.yml
     
+  rules:
+    # main 브랜치에 푸시할 때만 배포 실행
+    - if: '$CI_COMMIT_BRANCH == "main"'
