@@ -1,0 +1,88 @@
+# .github/workflows/frontend-ci-cd.yml
+
+name: Frontend CI/CD
+
+# 1. 실행 조건: main 브랜치에 push될 때
+on:
+  push:
+    branches:
+      - Git_CICD  # (백엔드와 동일한 브랜치 사용)
+    # 💡 frontend/ 폴더가 변경될 때만 실행
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-ci-cd.yml'
+
+jobs:
+  build-and-deploy:
+    # 2. 실행 환경
+    runs-on: ubuntu-latest
+
+    steps:
+      # 3. 소스 코드 가져오기
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 4. Node.js 환경 설정 (예: 18.x 버전)
+      - name: Set up Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          # 💡 작업 디렉토리를 frontend/ 로 지정
+          cache-dependency-path: frontend/package-lock.json
+
+      # 5. 프론트엔드 의존성 설치
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: npm install
+
+      # 6. (필수) 환경 변수 파일 생성
+      #    GitHub Secrets에 저장된 키를 사용해 .env.local 파일을 생성합니다.
+      - name: Create .env file
+        working-directory: ./frontend
+        run: |
+          echo "NEXT_PUBLIC_API_BASE_URL=${{ secrets.NEXT_PUBLIC_API_BASE_URL }}" >> .env.local
+          echo "NEXT_PUBLIC_KAKAO_REST_KEY=${{ secrets.NEXT_PUBLIC_KAKAO_REST_KEY }}" >> .env.local
+          echo "NEXT_PUBLIC_KAKAO_REDIRECT_URI=${{ secrets.NEXT_PUBLIC_KAKAO_REDIRECT_URI }}" >> .env.local
+          echo "NEXT_PUBLIC_AUTH_BYPASS=false" >> .env.local
+          echo "--- .env.local created ---"
+          cat .env.local # (확인용 로그)
+          
+      # 7. (필수) Next.js 프로젝트 빌드
+      - name: Build Next.js
+        working-directory: ./frontend
+        run: npm run build
+
+      # # 8. 배포 (SSH/SCP 사용)
+      # #    빌드된 .next 폴더, node_modules, package.json 등을 서버로 복사
+      # - name: Deploy to Server via rsync
+      #   uses: appleboy/ssh-action@master
+      #   with:
+      #     host: ${{ secrets.SERVER_HOST }}
+      #     username: ${{ secrets.SERVER_USER }}
+      #     key: ${{ secrets.SERVER_SSH_KEY }}
+      #     port: 22
+          
+      #     script: |
+      #       # 1. 서버에 프로젝트 폴더가 있는지 확인/생성
+      #       # (백엔드와 동일한 VM에 배포한다고 가정)
+      #       mkdir -p /home/ubuntu/cjproject
+      #       cd /home/ubuntu/cjproject
+
+      #       # 2. 깃허브에서 최신 코드 받기
+      #       git pull origin main
+            
+      #       # 3. (필수) Next.js 서버 재시작
+      #       #    (서버에 pm2가 설치되어 있고, 'frontend-app' 이름으로 실행 중이라고 가정)
+            
+      #       # 3-1. 프론트엔드 폴더로 이동
+      #       cd frontend
+            
+      #       # 3-2. (필수) 운영 환경용 의존성 설치
+      #       npm install --production 
+            
+      #       # 3-3. (필수) Next.js 서버 재시작
+      #       pm2 restart frontend-app
+            
+      #       # (만약 pm2를 쓰지 않는다면)
+      #       # pm2 start npm --name "frontend-app" -- start
