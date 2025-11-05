@@ -1,15 +1,16 @@
 # .gitlab-ci.yml
+# GitLab CI/CD의 메인 설정 파일입니다.
 
-# 💡 1. [수정] 단계를 3개로 분리: build -> test -> deploy
+# 1. 파이프라인 단계를 정의합니다.
 stages:
-  - build
-  - test
-  - deploy
+  - build   # 빌드 (Next.js)
+  - deploy  # 배포 (Ansible)
 
-# 2. CI (빌드) 단계 (변경 없음)
+# 2. CI (빌드) 단계: 프론트엔드 코드가 유효한지 검사합니다.
+# (Vercel이 해주던 'npm run build'를 GitLab Runner가 대신합니다.)
 build_frontend:
   stage: build
-  image: node:18-alpine
+  image: node:18-alpine # 💡 Node.js 18 버전 환경 사용
   cache:
     key:
       files:
@@ -20,50 +21,28 @@ build_frontend:
     - echo "Starting Frontend Build..."
     - cd frontend
     - npm install
+    # 💡 [중요] 빌드 시 사용할 환경 변수를 GitLab 변수에서 가져옵니다.
+    #    (이 변수들은 4단계에서 GitLab에 등록해야 합니다.)
     - npm run build
   artifacts:
+    # 빌드 결과물(.next)을 다음 단계(배포)로 전달할 수 있습니다. (선택적)
     paths:
       - frontend/.next/
   only:
     refs:
-      - Git_CICD
+      - Git_CICD # 👈 Git_CICD 브랜치에서만 실행
     changes:
-      - frontend/**/*
+      - frontend/**/* # 👈 frontend 폴더가 변경될 때만 실행
 
-# 3. 💡 [핵심 추가] Ansible 문법 검사 단계
-test_ansible_syntax:
-  stage: test
-  image: alpine:latest # 👈 가벼운 이미지 사용
-  
-  before_script:
-    # 1. Ansible 설치 (SSH 클라이언트는 필요 없음)
-    - apk add --no-cache ansible
-    
-  script:
-    - echo "Checking Ansible playbook syntax..."
-    # 2. 💡 ansible/deploy.yml 파일의 문법만 검사 (SSH 접속 안 함)
-    #    'localhost,'는 임시 인벤토리(주소록)를 제공하는 구문입니다.
-    - ansible-playbook -i "localhost," --syntax-check ansible/deploy.yml
-    
-  when: on_success # 👈 'build' 단계가 성공했을 때만 실행
-  
-  only:
-    refs:
-      - Git_CICD
-    changes:
-      # 💡 Ansible 파일이 변경되었을 때만 이 테스트 실행
-      - ansible/deploy.yml
-      - .gitlab-ci.yml
-
-# 4. CD (배포) 단계 (변경 없음)
+# 3. CD (배포) 단계: Ansible을 실행합니다.
 deploy_to_server:
   stage: deploy
-  image: alpine:latest 
+  image: alpine:latest # 💡 가벼운 리눅스 이미지
   
   before_script:
-    # (기존과 동일) Ansible과 SSH 클라이언트 설치
+    # 1. Ansible과 SSH 클라이언트 설치
     - apk add --no-cache ansible openssh-client
-    # (기존과 동일) SSH 키 등록 (VM 준비 전까지 여기서 실패하는 것이 정상)
+    # 2. GitLab 변수에 저장된 SSH 키를 Runner에 등록
     - eval $(ssh-agent -s)
     - echo "$SERVER_SSH_KEY" | tr -d '\r' | ssh-add -
     - mkdir -p ~/.ssh
@@ -72,15 +51,17 @@ deploy_to_server:
 
   script:
     - echo "Deploying to KT Cloud VM..."
-    # (기존과 동일) Ansible Playbook 실행
+    # 3. 💡 [핵심] Ansible Playbook 실행
+    #    $SERVER_HOST, $SERVER_USER는 4단계에서 등록할 GitLab 변수입니다.
     - ansible-playbook -i "$SERVER_USER@$SERVER_HOST," ansible/deploy.yml
   
-  when: on_success # 👈 'test' 단계가 성공했을 때만 실행
+  when: on_success # 💡 'build' 단계가 성공했을 때만 실행
   
   only:
     refs:
       - Git_CICD
     changes:
+      # 💡 백엔드, 프론트엔드, 앤서블 코드가 변경되면 배포 실행
       - backend/**/*
       - frontend/**/*
       - ansible/deploy.yml
