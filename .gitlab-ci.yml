@@ -35,3 +35,4 @@ test-backend:
     - echo "Backend 종속성을 설치합니다..."
     - pip install -r requirements.txt
     # - pytest (테스트 코드가 있다면)
+    
