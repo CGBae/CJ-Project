@@ -4,7 +4,7 @@
 pipeline {
     agent any // 젠킨스 서버 어디에서나 실행
 
-    # 1. 툴(Tools) 정의: NodeJS 플러그인 사용
+    # 1. 툴(Tools)정의: NodeJS 플러그인 사용
     tools {
         // 💡 [중요] 젠킨스 [Manage Jenkins] > [Global Tool Configuration]에서
         // 'NodeJS' 설정을 추가하고, 이름을 'NodeJS-18'로 지정해야 합니다.
