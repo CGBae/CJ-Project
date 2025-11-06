@@ -24,21 +24,16 @@ pipeline {
         stage('Test Backend') {
             steps {
                 script {
-                def pythonHome = tool name: 'Python', type: 'jenkins.plugins.shiningpanda.tools.PythonInstallation'
-                
-                withEnv(["PATH+PYTHON=${pythonHome}/bin"]) {
-                    dir('backend') {
-                        sh 'ls -la ${pythonHome}/bin' 
-                        
-                        sh 'echo $PATH'
+                    def pythonHome = tool name: 'Python', type: 'jenkins.plugins.shiningpanda.tools.PythonInstallation'
+                    
+                    withEnv(["PATH+PYTHON=${pythonHome}/bin"]) {
+                        dir('backend') {
+                            sh 'python3 --version'
 
-                        sh 'python --version || echo "python not found"'
-                        sh 'python3 --version || echo "python3 not found"'
-
-                        sh 'pip3 install -r requirements.txt'
+                            sh 'python3 -m pip3 install -r requirements.txt'
+                        }
                     }
                 }
-            }
             }
         }
         
