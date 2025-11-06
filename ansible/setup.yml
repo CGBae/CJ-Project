@@ -1,0 +1,32 @@
+# ansible/setup.yml
+# VM 생성 직후 딱 1번만 실행하는 '초기 설정' 스크립트
+# (GitLab CI/CD가 아닌, 개발자 로컬에서 1회 실행)
+
+- hosts: all
+  become: true # (sudo 권한으로 실행)
+  tasks:
+    - name: 1. Update APT cache
+      apt:
+        update_cache: yes
+        
+    - name: 2. Install Git
+      apt:
+        name: git
+        state: present
+        
+    - name: 3. Install Python3-venv (백엔드용)
+      apt:
+        name: python3-venv
+        state: present
+        
+    - name: 4. Install Node.js 18 (프론트엔드용)
+      shell: |
+        curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+        sudo apt-get install -y nodejs
+      args:
+        warn: false # (경고 무시)
+        
+    - name: 5. Install PM2 globally (프론트엔드용)
+      npm:
+        name: pm2
+        global: yes

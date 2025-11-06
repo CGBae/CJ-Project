@@ -1,20 +1,20 @@
 # .gitlab-ci.yml
 # GitLab CI/CD의 메인 설정 파일입니다.
 
-# 1. 파이프라인 단계를 정의합니다.
+# 1. 파이프라인 단계를 3개로 정의합니다: build -> test -> deploy
 stages:
-  - build   # 빌드 (Next.js)
-  - deploy  # 배포 (Ansible)
+  - build
+  - test
+  - deploy
 
-# 2. CI (빌드) 단계: 프론트엔드 코드가 유효한지 검사합니다.
-# (Vercel이 해주던 'npm run build'를 GitLab Runner가 대신합니다.)
+# 2. CI (빌드) 단계: 프론트엔드 코드를 빌드하여 검사합니다.
 build_frontend:
   stage: build
-  image: node:18-alpine # 💡 Node.js 18 버전 환경 사용
-  cache:
+  image: node:18-alpine # Node.js 18 버전 환경 사용
+  cache: # npm 패키지 캐싱으로 다음 실행 속도 향상
     key:
       files:
-        - frontend/package-lock.json
+        - frontend/package-lock.json # 👈 package-lock.json 기준
     paths:
       - frontend/node_modules/
   script:
@@ -22,10 +22,10 @@ build_frontend:
     - cd frontend
     - npm install
     # 💡 [중요] 빌드 시 사용할 환경 변수를 GitLab 변수에서 가져옵니다.
-    #    (이 변수들은 4단계에서 GitLab에 등록해야 합니다.)
+    #    (이 변수들은 깃랩 [Settings] > [CI/CD] > [Variables]에 등록해야 합니다)
     - npm run build
   artifacts:
-    # 빌드 결과물(.next)을 다음 단계(배포)로 전달할 수 있습니다. (선택적)
+    # 빌드 결과물(.next)을 다음 단계(배포)로 전달 (선택적)
     paths:
       - frontend/.next/
   only:
@@ -34,15 +34,41 @@ build_frontend:
     changes:
       - frontend/**/* # 👈 frontend 폴더가 변경될 때만 실행
 
-# 3. CD (배포) 단계: Ansible을 실행합니다.
+# 3. Ansible 문법 검사 단계 (서버 없이 테스트 가능)
+test_ansible_syntax:
+  stage: test
+  image: alpine:latest # 가벼운 이미지 사용
+  
+  before_script:
+    # 1. Ansible 설치
+    - apk add --no-cache ansible
+    
+  script:
+    - echo "Checking Ansible playbook syntax..."
+    # 2. 💡 ansible/deploy.yml 파일의 문법만 검사 (SSH 접속 안 함)
+    #    'localhost,'는 임시 인벤토리(주소록)를 제공하는 구문입니다.
+    - ansible-playbook -i "localhost," --syntax-check ansible/deploy.yml
+    # (setup.yml도 검사하려면 아래 줄 추가)
+    # - ansible-playbook -i "localhost," --syntax-check ansible/setup.yml
+    
+  when: on_success # 👈 'build' 단계가 성공했을 때만 실행
+  
+  only:
+    refs:
+      - Git_CICD
+    changes:
+      - ansible/deploy.yml
+      - .gitlab-ci.yml # 👈 이 파일이 바뀌면 test 실행
+
+# 4. CD (배포) 단계 (VM 준비 전까지 여기서 실패하는 것이 정상)
 deploy_to_server:
   stage: deploy
-  image: alpine:latest # 💡 가벼운 리눅스 이미지
+  image: alpine:latest 
   
   before_script:
     # 1. Ansible과 SSH 클라이언트 설치
     - apk add --no-cache ansible openssh-client
-    # 2. GitLab 변수에 저장된 SSH 키를 Runner에 등록
+    # 2. 💡 SSH 키 등록 (VM 준비 전까지 $SERVER_SSH_KEY 변수가 없어 여기서 실패함)
     - eval $(ssh-agent -s)
     - echo "$SERVER_SSH_KEY" | tr -d '\r' | ssh-add -
     - mkdir -p ~/.ssh
@@ -51,17 +77,17 @@ deploy_to_server:
 
   script:
     - echo "Deploying to KT Cloud VM..."
-    # 3. 💡 [핵심] Ansible Playbook 실행
-    #    $SERVER_HOST, $SERVER_USER는 4단계에서 등록할 GitLab 변수입니다.
+    # 3. 💡 Ansible Playbook 실행 (VM 준비 전까지 여기서 실패함)
     - ansible-playbook -i "$SERVER_USER@$SERVER_HOST," ansible/deploy.yml
   
-  when: on_success # 💡 'build' 단계가 성공했을 때만 실행
+  when: on_success # 👈 'test' 단계가 성공했을 때만 실행
   
   only:
     refs:
       - Git_CICD
     changes:
-      # 💡 백엔드, 프론트엔드, 앤서블 코드가 변경되면 배포 실행
+      # 💡 백엔드, 프론트엔드, 앤서블, CI/CD 파일이 변경되면 배포 실행
       - backend/**/*
       - frontend/**/*
       - ansible/deploy.yml
+      - .gitlab-ci.yml
