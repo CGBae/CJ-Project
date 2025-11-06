@@ -28,7 +28,7 @@ pipeline {
                 
                 withEnv(["PATH+PYTHON=${pythonHome}/bin"]) {
                     dir('backend') {
-                        sh 'pip install -r requirements.txt'
+                        sh 'pip3 install -r requirements.txt'
                     }
                 }
             }
