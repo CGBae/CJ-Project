@@ -22,15 +22,16 @@ pipeline {
         
         // 2. Backend CI (테스트)
         stage('Test Backend') {
-            tools {
-                jenkins.plugins.shiningpanda.tools.PythonInstallation('Python')
-            }
             steps {
-                // backend 폴더로 이동
-                dir('backend') {
-                    sh 'pip install -r requirements.txt'
-                    // sh 'pytest' (테스트가 있다면)
+                script {
+                def pythonHome = tool name: 'Python', type: 'jenkins.plugins.shiningpanda.tools.PythonInstallation'
+                
+                withEnv(["PATH+PYTHON=${pythonHome}/bin"]) {
+                    dir('backend') {
+                        sh 'pip install -r requirements.txt'
+                    }
                 }
+            }
             }
         }
         
