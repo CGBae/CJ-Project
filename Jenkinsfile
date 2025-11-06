@@ -60,8 +60,8 @@ pipeline {
             // 💡 build 또는 test 단계가 성공했을 때 실행
             when {
                 anyOf {
-                    stage('Build Frontend')
-                    stage('Test Ansible Syntax')
+                    stageName 'Build Frontend'
+                    stageName 'Test Ansible Syntax'
                 }
             }
             steps {
