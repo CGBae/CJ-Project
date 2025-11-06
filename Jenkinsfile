@@ -30,6 +30,10 @@ pipeline {
                         dir('backend') {
                             sh 'python3 --version'
 
+                            sh 'python3 -m ensurepip'
+
+                            sh 'python3 -m pip install --upgrade pip'
+
                             sh 'python3 -m pip install -r requirements.txt'
                         }
                     }
@@ -38,12 +42,12 @@ pipeline {
         }
         
         // 3. Deploy (배포)
-        stage('Deploy') {
-            steps {
-                // 젠킨스 서버가 SSH를 통해 배포 서버에 접속
-                // (SSH 플러그인 설치 및 설정이 미리 필요함)
-                sh 'ssh ubuntu@<배포서버_IP> "cd /home/ubuntu/my-project && git pull && ..."'
-            }
-        }
+        // stage('Deploy') {
+        //     steps {
+        //         // 젠킨스 서버가 SSH를 통해 배포 서버에 접속
+        //         // (SSH 플러그인 설치 및 설정이 미리 필요함)
+        //         sh 'ssh ubuntu@<배포서버_IP> "cd /home/ubuntu/my-project && git pull && ..."'
+        //     }
+        // }
     }
 }
