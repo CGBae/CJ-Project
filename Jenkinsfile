@@ -23,7 +23,7 @@ pipeline {
         // 2. Backend CI (테스트)
         stage('Test Backend') {
             tools {
-                python 'Python'
+                jenkins.plugins.shiningpanda.tools.PythonInstallation 'Python'
             }
             steps {
                 // backend 폴더로 이동
