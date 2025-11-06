@@ -3,7 +3,7 @@
 # 1. [핵심 수정] OpenStack 제공자(Provider) 설정
 terraform {
   required_providers {
-    # 'ktcloud' 대신'openstack'을 사용합니다.
+    # 'ktcloud' 대신 'openstack'을 사용합니다.
     openstack = {
       source  = "terraform-provider-openstack/openstack"
       version = "~> 2.0" # (OpenStack은 버전 2.x대가 안정적입니다)
