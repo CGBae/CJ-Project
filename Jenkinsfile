@@ -74,7 +74,7 @@ pipeline {
                     string(credentialsId: 'SERVER_PORT', variable: 'SERVER_PORT')
                 ]) {
                     
-                    // 💡 Ansible플러그인 실행
+                    // 💡 Ansible플러그 인 실행
                     ansiblePlaybook(
                         playbook: 'ansible/deploy.yml',
                         inventory: "${env.SSH_USER}@${env.SERVER_HOST},", // 👈 호스트 주소 전달
