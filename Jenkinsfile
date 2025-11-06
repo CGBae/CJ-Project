@@ -26,9 +26,10 @@ pipeline {
                 dir('backend') {
                     // 1. 에이전트에 설치된 시스템 Python 버전을 확인합니다.
                     sh 'python3 --version'
+
+                    sh 'python3 -m venv venv'
                     
-                    // 2. 시스템 Python의 pip 모듈을 사용해 설치합니다.
-                    sh 'python3 -m pip install -r requirements.txt'
+                    sh 'source venv/bin/activate && python3 -m pip install -r requirements.txt'
                 }
             }
         }
