@@ -28,6 +28,13 @@ pipeline {
                 
                 withEnv(["PATH+PYTHON=${pythonHome}/bin"]) {
                     dir('backend') {
+                        sh 'ls -la ${pythonHome}/bin' 
+                        
+                        sh 'echo $PATH'
+
+                        sh 'python --version || echo "python not found"'
+                        sh 'python3 --version || echo "python3 not found"'
+
                         sh 'pip3 install -r requirements.txt'
                     }
                 }
