@@ -2,15 +2,14 @@
 pipeline {
     agent any // 이 작업을 아무 젠킨스 노드(서버)에서나 실행
 
-    tools {
-        nodejs 'NodeJS-22' // (Global Tool Configuration에서 설정한 Name)
-    }
-
     // GitHub Actions의 'jobs'와 유사
     stages {
         
         // 1. Frontend CI (빌드)
         stage('Build Frontend') {
+            tools {
+                nodejs 'NodeJS-22' // (Global Tool Configuration에서 설정한 Name)
+            }
             steps {
                 // frontend 폴더로 이동
                 dir('frontend') {
@@ -23,6 +22,9 @@ pipeline {
         
         // 2. Backend CI (테스트)
         stage('Test Backend') {
+            tools {
+                python 'Python'
+            }
             steps {
                 // backend 폴더로 이동
                 dir('backend') {
