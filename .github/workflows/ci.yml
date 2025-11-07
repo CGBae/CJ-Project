@@ -2,51 +2,65 @@ name: Build and Push Docker Images
 
 on:
   push:
-    branches: [ "Jenkins_CICD" ]
+    branches: [ "main" ]
 
 jobs:
-  # --- 1. 프론트엔드 빌드/테스트 작업 ---
+  # -------------------------
+  #    프론트엔드 이미지 빌드
+  # -------------------------
   build-frontend:
     runs-on: ubuntu-latest
-        
     steps:
       - name: 1. Checkout code
         uses: actions/checkout@v4
 
-      - name: 2. Login to GitHub Container Registry (GHCR)
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}       # GitHub 유저 이름
-          password: ${{ secrets.GITHUB_TOKEN }}
+      # ⬇️ 2. 소문자 태그를 생성하는 단계 (추가)
+      - name: 2. Set lowercase repository tag
+        id: set_tag # ◀ 이 단계의 ID를 'set_tag'로 지정
+        run: echo "TAG_NAME=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
-      - name: 3. Build and push frontend image
-        uses: docker/build-push-action@v5
-        with:
-          context: . # ◀ Dockerfile을 찾을 위치 (루트)
-          file: ./frontend/Dockerfile # ◀ 사용할 Dockerfile 경로
-          push: true
-          # ghcr.io/[내계정]/[레포이름]/[이미지이름]:latest
-          tags: ghcr.io/${{ toLower(github.repository) }}/frontend:latest
-
-  # --- 2. 백엔드 테스트 작업 ---
-  test-backend:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: 2. Login to GitHub Container Registry (GHCR)
+      - name: 3. Login to GitHub Container Registry (GHCR)
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 3. Build and push backend image
+      - name: 4. Build and push frontend image
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./backend/Dockerfile # ◀ 사용할 Dockerfile 경로
+          file: ./frontend/Dockerfile
           push: true
-          tags: ghcr.io/${{ toLower(github.repository) }}/backend:latest
+          # ⬇️ 'set_tag' 단계의 결과(outputs.TAG_NAME)를 사용하도록 수정
+          tags: ghcr.io/${{ steps.set_tag.outputs.TAG_NAME }}/frontend:latest
+
+  # -------------------------
+  #     백엔드 이미지 빌드
+  # -------------------------
+  build-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. Checkout code
+        uses: actions/checkout@v4
+
+      # ⬇️ 2. 소문자 태그를 생성하는 단계 (추가)
+      - name: 2. Set lowercase repository tag
+        id: set_tag # ◀ 이 단계의 ID를 'set_tag'로 지정
+        run: echo "TAG_NAME=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+      - name: 3. Login to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 4. Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./backend/Dockerfile
+          push: true
+          # ⬇️ 'set_tag' 단계의 결과(outputs.TAG_NAME)를 사용하도록 수정
+          tags: ghcr.io/${{ steps.set_tag.outputs.TAG_NAME }}/backend:latest
