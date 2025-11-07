@@ -1,0 +1,54 @@
+name: CI for Monorepo (Frontend + Backend)
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  # --- 1. 프론트엔드 빌드/테스트 작업 ---
+  build-frontend:
+    runs-on: ubuntu-latest
+    
+    # 작업의 기본 폴더를 'frontend'로 지정
+    defaults:
+      run:
+        working-directory: ./frontend 
+        
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0' # 프론트엔드에 맞는 노드 버전
+
+      - name: Install Frontend dependencies
+        run: npm ci
+
+      - name: Build Frontend
+        run: npm run build
+
+  # --- 2. 백엔드 테스트 작업 ---
+  test-backend:
+    runs-on: ubuntu-latest
+    
+    # 작업의 기본 폴더를 'backend'로 지정
+    defaults:
+      run:
+        working-directory: ./backend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13.7' # 백엔드에 맞는 파이썬 버전
+
+      - name: Install Backend dependencies
+        run: |
+          pip install -r requirements.txt
