@@ -2,9 +2,9 @@ name: CI for Monorepo (Frontend + Backend)
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "Jenkins_CICD" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "Jenkins_CICD" ]
 
 jobs:
   # --- 1. 프론트엔드 빌드/테스트 작업 ---
