@@ -27,7 +27,7 @@ jobs:
           file: ./frontend/Dockerfile # ◀ 사용할 Dockerfile 경로
           push: true
           # ghcr.io/[내계정]/[레포이름]/[이미지이름]:latest
-          tags: ghcr.io/${{ github.repository }}/frontend:latest
+          tags: ghcr.io/${{ toLower(github.repository) }}/frontend:latest
 
   # --- 2. 백엔드 테스트 작업 ---
   test-backend:
@@ -49,4 +49,4 @@ jobs:
           context: .
           file: ./backend/Dockerfile # ◀ 사용할 Dockerfile 경로
           push: true
-          tags: ghcr.io/${{ github.repository }}/backend:latest
+          tags: ghcr.io/${{ toLower(github.repository) }}/backend:latest
