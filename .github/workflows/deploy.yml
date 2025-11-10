@@ -43,22 +43,22 @@ jobs:
           echo "NEXT_PUBLIC_KAKAO_REDIRECT_URI=${{ secrets.NEXT_PUBLIC_KAKAO_REDIRECT_URI }}" >> .env.local
           npm run build
 
-      # 3. (CD) Ansible 실행 (젠킨스를 대체)
-      - name: Run Ansible Playbook
-        uses: dawidd6/action-ansible-playbook@v2
-        with:
-          # 3-1. 실행할 작업 목록 파일
-          playbook: ansible/deploy.yml
+      # # 3. (CD) Ansible 실행 (젠킨스를 대체)
+      # - name: Run Ansible Playbook
+      #   uses: dawidd6/action-ansible-playbook@v2
+      #   with:
+      #     # 3-1. 실행할 작업 목록 파일
+      #     playbook: ansible/deploy.yml
           
-          # 3-2. 접속할 호스트 주소록 (hosts.ini 대신 인라인으로 지정)
-          inventory: |
-            [vms]
-            cjproject-vm ansible_host=${{ secrets.SERVER_HOST }} ansible_user=${{ secrets.SERVER_USER }}
+      #     # 3-2. 접속할 호스트 주소록 (hosts.ini 대신 인라인으로 지정)
+      #     inventory: |
+      #       [vms]
+      #       cjproject-vm ansible_host=${{ secrets.SERVER_HOST }} ansible_user=${{ secrets.SERVER_USER }}
 
-          # 3-3. SSH 비공개 키 (깃허브 시크릿)
-          key: ${{ secrets.SERVER_SSH_KEY }}
+      #     # 3-3. SSH 비공개 키 (깃허브 시크릿)
+      #     key: ${{ secrets.SERVER_SSH_KEY }}
           
-          # 3-4. 앤서블에 추가 변수 전달 (VM 비밀번호, DB URL 등)
-          # 💡 [중요] 젠킨스 Credentials ID 대신 {{ secrets.변수명 }} 사용
-          options: |
-            --extra-vars "ansible_password=${{ secrets.SERVER_PASSWORD }} DATABASE_URL=${{ secrets.DATABASE_URL }} SECRET_KEY=${{ secrets.SECRET_KEY }} KAKAO_CLIENT_ID=${{ secrets.KAKAO_CLIENT_ID }} NEXT_PUBLIC_API_BASE_URL=${{ secrets.NEXT_PUBLIC_API_BASE_URL }} NEXT_PUBLIC_KAKAO_REST_KEY=${{ secrets.NEXT_PUBLIC_KAKAO_REST_KEY }} NEXT_PUBLIC_KAKAO_REDIRECT_URI=${{ secrets.NEXT_PUBLIC_KAKAO_REDIRECT_URI }}"
+      #     # 3-4. 앤서블에 추가 변수 전달 (VM 비밀번호, DB URL 등)
+      #     # 💡 [중요] 젠킨스 Credentials ID 대신 {{ secrets.변수명 }} 사용
+      #     options: |
+      #       --extra-vars "ansible_password=${{ secrets.SERVER_PASSWORD }} DATABASE_URL=${{ secrets.DATABASE_URL }} SECRET_KEY=${{ secrets.SECRET_KEY }} KAKAO_CLIENT_ID=${{ secrets.KAKAO_CLIENT_ID }} NEXT_PUBLIC_API_BASE_URL=${{ secrets.NEXT_PUBLIC_API_BASE_URL }} NEXT_PUBLIC_KAKAO_REST_KEY=${{ secrets.NEXT_PUBLIC_KAKAO_REST_KEY }} NEXT_PUBLIC_KAKAO_REDIRECT_URI=${{ secrets.NEXT_PUBLIC_KAKAO_REDIRECT_URI }}"
