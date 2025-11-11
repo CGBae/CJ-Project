@@ -4,6 +4,12 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
 
+ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_KAKAO_JS_KEY
+
+RUN echo "NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}" > .env.production
+RUN echo "NEXT_PUBLIC_KAKAO_JS_KEY=${NEXT_PUBLIC_KAKAO_JS_KEY}" >> .env.production
+
 # 의존성 설치 (package.json이 변경되었을 때만 재설치)
 COPY frontend/package*.json ./
 RUN npm install

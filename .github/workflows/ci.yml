@@ -34,6 +34,9 @@ jobs:
           push: true
           # ⬇️ 'set_tag' 단계의 결과(outputs.TAG_NAME)를 사용하도록 수정
           tags: ghcr.io/${{ steps.set_tag.outputs.TAG_NAME }}/frontend:latest
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_KAKAO_JS_KEY=${{ secrets.NEXT_PUBLIC_KAKAO_JS_KEY }}
 
   # -------------------------
   #     백엔드 이미지 빌드
