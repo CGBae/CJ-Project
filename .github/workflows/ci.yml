@@ -75,7 +75,7 @@ jobs:
 
       - name: Notify Jenkins to Deploy
         run: |
-          curl -X POST "${{ secrets.JENKINS_URL }}/job/Deploy-CJ-Project/buildWithParameters \
-            ?token=${{ secrets.JENKINS_TRIGGER_TOKEN }} \
-            \&FE_IMAGE_TAG=ghcr.io/${{ steps.set_tag.outputs.TAG_NAME }}/frontend:latest \
-            \&BE_IMAGE_TAG=ghcr.io/${{ steps.set_tag.outputs.TAG_NAME }}/backend:latest"
+          curl -X POST "${{ secrets.JENKINS_URL }}/job/Deploy-CJ-Project/buildWithParameters" \
+          --data-urlencode "token=${{ secrets.JENKINS_TRIGGER_TOKEN }}" \
+          --data-urlencode "FE_IMAGE_TAG=ghcr.io/${{ steps.set_tag.outputs.TAG_NAME }}/frontend:latest" \
+          --data-urlencode "BE_IMAGE_TAG=ghcr.io/${{ steps.set_tag.outputs.TAG_NAME }}/backend:latest"
