@@ -1,0 +1,18 @@
+# ansible/docker-compose.yml
+version: '3.8'
+services:
+  frontend:
+    # 이미지는 Jenkins/Ansible이 외부에서 주입 (예: ghcr.io/cgbae/cj-project/frontend:latest)
+    image: ${FRONTEND_IMAGE_TAG}
+    ports:
+      - "80:3000" # ◀ Host 80포트를 컨테이너 3000포트로 연결
+    restart: always
+
+  backend:
+    # 이미지는 Jenkins/Ansible이 외부에서 주입 (예: ghcr.io/cgbae/cj-project/backend:latest)
+    image: ${BACKEND_IMAGE_TAG}
+    ports:
+      - "8000:8000" # ◀ Host 8000포트를 컨테이너 8000포트로 연결
+    restart: always
+    # (필요시) environment:
+    #   - DATABASE_URL=...

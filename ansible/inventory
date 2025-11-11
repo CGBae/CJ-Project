@@ -1,2 +1,2 @@
-[webservers]
-YOUR_SERVER_IP_HERE ansible_user=ubuntu
+[local]
+localhost ansible_connection=local

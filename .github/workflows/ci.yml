@@ -64,3 +64,18 @@ jobs:
           push: true
           # ⬇️ 'set_tag' 단계의 결과(outputs.TAG_NAME)를 사용하도록 수정
           tags: ghcr.io/${{ steps.set_tag.outputs.TAG_NAME }}/backend:latest
+
+  trigger-cd-pipeline:
+    needs: [build-frontend, build-backend] # ◀ 두 빌드가 성공해야 실행됨
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set lowercase repository tag
+        id: set_tag
+        run: echo "TAG_NAME=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+      - name: Notify Jenkins to Deploy
+        run: |
+          curl -X POST "${{ secrets.JENKINS_URL }}/job/Deploy-CJ-Project/buildWithParameters \
+            ?token=${{ secrets.JENKINS_TRIGGER_TOKEN }} \
+            &FE_IMAGE_TAG=ghcr.io/${{ steps.set_tag.outputs.TAG_NAME }}/frontend:latest \
+            &BE_IMAGE_TAG=ghcr.io/${{ steps.set_tag.outputs.TAG_NAME }}/backend:latest"

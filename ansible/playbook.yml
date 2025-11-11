@@ -1,36 +1,30 @@
-- hosts: all  # inventory 파일의 모든 서버에 대해
-  become: yes   # sudo 권한으로 실행
+# ansible/playbook.yml
+- hosts: localhost
+  connection: local
+  become: yes # sudo 권한으로 실행
   tasks:
-    - name: apt 패키지 업데이트
-      apt: update_cache=yes
+    - name: 1. (필수) GHCR(GitHub Registry)에 로그인
+      community.docker.docker_login:
+        registry: ghcr.io
+        username: "{{ ghcr_username }}" # ◀ Jenkins에서 변수로 받음
+        password: "{{ ghcr_password }}" # ◀ Jenkins에서 변수로 받음
 
-    - name: git, python3-pip, nodejs, npm 설치 (서버에 없다면)
-      apt:
-        name: ["git", "python3-pip", "nodejs", "npm"]
-        state: present
+    - name: 2. 배포할 폴더 생성
+      file:
+        path: /home/ubuntu/cj-project # (또는 jenkins 유저가 접근 가능한 경로)
+        state: directory
+        owner: ubuntu
 
-    - name: 1. 프로젝트 폴더로 이동하여 최신 코드 받기 (git pull)
-      git:
-        repo: https://gitlab.com/CGBae/CJ-Project.git # ◀ 깃랩 레포 주소
-        dest: /home/ubuntu/CJ-Project                 # ◀ 서버의 프로젝트 경로
-        version: main                                  # ◀ 배포할 브랜치
-        force: yes
+    - name: 3. 로컬의 docker-compose.yml 파일을 서버 배포 경로로 복사
+      copy:
+        src: ./docker-compose.yml # ◀ 위에서 만든 파일
+        dest: /home/ubuntu/cj-project/docker-compose.yml
 
-    - name: 2. 백엔드 의존성 설치 (pip)
-      pip:
-        requirements: /home/ubuntu/CJ-Project/backend/requirements.txt
-
-    - name: 3. 프론트엔드 의존성 설치 (npm install)
-      npm:
-        path: /home/ubuntu/CJ-Project/frontend
-
-    - name: 4. 프론트엔드 빌드 (npm run build)
-      command: npm run build
-      args:
-        chdir: /home/ubuntu/CJ-Project/frontend # 이 폴더에서 명령어 실행
-
-    - name: 5. 애플리케이션 재시작 (예: pm2)
-      command: pm2 restart all
-      args:
-        chdir: /home/ubuntu/CJ-Project
-      ignore_errors: yes # pm2가 없거나 실패해도 일단 넘어감
+    - name: 4. Docker Compose로 앱 실행 (Pull & Up)
+      community.docker.docker_compose:
+        project_src: /home/ubuntu/cj-project
+        pull: yes # ◀ 항상 새 이미지를 pull
+      environment:
+        # Jenkins/Ansible에서 받은 변수를 docker-compose.yml로 전달
+        FRONTEND_IMAGE_TAG: "{{ fe_image_tag }}" 
+        BACKEND_IMAGE_TAG: "{{ be_image_tag }}"
