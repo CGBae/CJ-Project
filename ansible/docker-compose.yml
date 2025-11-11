@@ -7,12 +7,27 @@ services:
     ports:
       - "80:3000" # ◀ Host 80포트를 컨테이너 3000포트로 연결
     restart: always
+    env_file: # ⬇️ (추가) 이 파일을 환경변수로 사용
+      - ./frontend.env
 
   backend:
     # 이미지는 Jenkins/Ansible이 외부에서 주입 (예: ghcr.io/cgbae/cj-project/backend:latest)
     image: ${BACKEND_IMAGE_TAG}
     ports:
       - "8000:8000" # ◀ Host 8000포트를 컨테이너 8000포트로 연결
+    restart: always.
+    env_file: # ⬇️ (추가) 이 파일을 환경변수로 사용
+      - ./backend.env
+    depends_on:
+      - db
+
+  db:
+    image: postgres:15-alpine # (또는 mysql:8)
     restart: always
-    # (필요시) environment:
-    #   - DATABASE_URL=...
+    volumes:
+      - db-data:/var/lib/postgresql/data # ◀ 데이터 영구 저장을 위함
+    env_file:
+      - ./backend.env
+
+volumes:
+  db-data:
