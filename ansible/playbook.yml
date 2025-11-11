@@ -33,9 +33,16 @@
         src: ./docker-compose.yml # ◀ 위에서 만든 파일
         dest: /home/ubuntu/cj-project/docker-compose.yml
 
-    - name: 6. Docker Compose로 앱 실행 (Pull & Up)
+    - name: 6. Stop and remove existing containers
       community.docker.docker_compose:
         project_src: /home/ubuntu/cj-project
+        state: absent # 'absent' = docker-compose down
+        remove_orphans: yes
+
+    - name: 7. Docker Compose로 앱 실행 (Pull & Up)
+      community.docker.docker_compose:
+        project_src: /home/ubuntu/cj-project
+        state: present
         pull: yes # ◀ 항상 새 이미지를 pull
       environment:
         # Jenkins/Ansible에서 받은 변수를 docker-compose.yml로 전달
