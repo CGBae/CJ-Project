@@ -1,60 +1,99 @@
 # ansible/playbook.yml
 - hosts: localhost
   connection: local
-  become: yes 
+  become: yes
+  gather_facts: false
+
+  vars:
+    deploy_dir: /home/ubuntu/cj-project
+
   tasks:
-    - name: 1. GHCR(GitHub Registry)에 로그인
+    - name: 1. GHCR 로그인
       community.docker.docker_login:
         registry: ghcr.io
         username: "{{ ghcr_username }}"
         password: "{{ ghcr_password }}"
+        reauthorize: true
 
-    - name: 2. 배포할 폴더 생성
+    - name: 2. 배포 폴더 생성
       file:
-        path: /home/ubuntu/cj-project
+        path: "{{ deploy_dir }}"
         state: directory
         owner: ubuntu
+        group: ubuntu
+        mode: "0755"
 
-    # ⬇️ (수정) lookup('env') 대신 extra-var 변수 사용
-    - name: 3. 데이터베이스 .env 파일 생성
+    # === env 파일 생성 (CRLF 제거 + 마지막 개행 + 0600 + no_log) ===
+    - name: 3. db.env 생성
       copy:
-        content: "{{ db_env_content }}" 
-        dest: /home/ubuntu/cj-project/db.env
+        content: "{{ db_env_content | regex_replace('\r','') }}\n"
+        dest: "{{ deploy_dir }}/db.env"
         owner: ubuntu
+        group: ubuntu
+        mode: "0600"
+      no_log: true   # 비밀번호 로그 차단
 
-    # ⬇️ (수정) lookup('env') 대신 extra-var 변수 사용 (번호 수정)
-    - name: 4. 백엔드 .env 파일 생성
+    - name: 4. backend.env 생성
       copy:
-        content: "{{ be_env_content }}" 
-        dest: /home/ubuntu/cj-project/backend.env
+        content: "{{ be_env_content | regex_replace('\r','') }}\n"
+        dest: "{{ deploy_dir }}/backend.env"
         owner: ubuntu
+        group: ubuntu
+        mode: "0600"
+      no_log: true
 
-    # ⬇️ (수정) lookup('env') 대신 extra-var 변수 사용 (번호 수정)
-    - name: 5. 프론트엔드 .env 파일 생성
+    - name: 5. frontend.env 생성
       copy:
-        content: "{{ fe_env_content }}" 
-        dest: /home/ubuntu/cj-project/frontend.env
+        content: "{{ fe_env_content | regex_replace('\r','') }}\n"
+        dest: "{{ deploy_dir }}/frontend.env"
         owner: ubuntu
+        group: ubuntu
+        mode: "0600"
+      no_log: true
 
-    # ⬇️ (번호 수정)
-    - name: 6. docker-compose.yml 파일을 서버 배포 경로로 복사
+    - name: 6. docker-compose.yml 복사
       copy:
         src: ./docker-compose.yml
-        dest: /home/ubuntu/cj-project/docker-compose.yml
+        dest: "{{ deploy_dir }}/docker-compose.yml"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
 
-    # ⬇️ (번호 수정)
-    - name: 7. Stop and remove existing containers
+    # === 안전한 재배포 순서: 먼저 중지/정리 → DB만 기동 → readiness 확인 → 전체 기동 ===
+    - name: 7. 기존 컨테이너 중지 및 제거
       community.docker.docker_compose:
-        project_src: /home/ubuntu/cj-project
+        project_src: "{{ deploy_dir }}"
         state: absent
         remove_orphans: yes
 
-    # ⬇️ (번호 수정)
-    - name: 8. Docker Compose로 앱 실행 (Pull & Up)
+    - name: 8. DB만 먼저 올리기
       community.docker.docker_compose:
-        project_src: /home/ubuntu/cj-project
+        project_src: "{{ deploy_dir }}"
+        services:
+          - db
         state: present
         pull: yes
       environment:
-        FRONTEND_IMAGE_TAG: "{{ fe_image_tag }}" 
+        FRONTEND_IMAGE_TAG: "{{ fe_image_tag }}"
+        BACKEND_IMAGE_TAG: "{{ be_image_tag }}"
+
+    - name: 9. Postgres 준비 완료 대기(pg_isready)
+      shell: |
+        set -e
+        for i in $(seq 1 60); do
+          docker compose -f "{{ deploy_dir }}/docker-compose.yml" exec -T db sh -lc 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' && exit 0
+          sleep 2
+        done
+        echo "Postgres not ready in time" >&2
+        exit 1
+      args:
+        chdir: "{{ deploy_dir }}"
+
+    - name: 10. 전체 서비스 기동(backend, frontend 포함)
+      community.docker.docker_compose:
+        project_src: "{{ deploy_dir }}"
+        state: present
+        pull: yes
+      environment:
+        FRONTEND_IMAGE_TAG: "{{ fe_image_tag }}"
         BACKEND_IMAGE_TAG: "{{ be_image_tag }}"
