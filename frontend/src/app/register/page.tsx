@@ -23,7 +23,7 @@ export default function RegisterPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const API_URL = process.env.INTERNAL_API_URL;
+    const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
     // 페이지 로드 시 임시 토큰 확인
     useEffect(() => {
