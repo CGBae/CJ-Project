@@ -1,56 +1,60 @@
 # ansible/playbook.yml
 - hosts: localhost
   connection: local
-  become: yes # sudo 권한으로 실행
+  become: yes 
   tasks:
-    - name: 1. (필수) GHCR(GitHub Registry)에 로그인
+    - name: 1. GHCR(GitHub Registry)에 로그인
       community.docker.docker_login:
         registry: ghcr.io
-        username: "{{ ghcr_username }}" # ◀ Jenkins에서 변수로 받음
-        password: "{{ ghcr_password }}" # ◀ Jenkins에서 변수로 받음
+        username: "{{ ghcr_username }}"
+        password: "{{ ghcr_password }}"
 
     - name: 2. 배포할 폴더 생성
       file:
-        path: /home/ubuntu/cj-project # (또는 jenkins 유저가 접근 가능한 경로)
+        path: /home/ubuntu/cj-project
         state: directory
         owner: ubuntu
 
+    # ⬇️ (수정) lookup('env') 대신 extra-var 변수 사용
     - name: 3. 데이터베이스 .env 파일 생성
       copy:
-        content: "{{ lookup('env', 'DB_ENV') }}" # 젠킨스 DB_ENV 변수
+        content: "{{ db_env_content }}" 
         dest: /home/ubuntu/cj-project/db.env
         owner: ubuntu
 
-    - name: 3. 백엔드 .env 파일 생성
+    # ⬇️ (수정) lookup('env') 대신 extra-var 변수 사용 (번호 수정)
+    - name: 4. 백엔드 .env 파일 생성
       copy:
-        content: "{{ lookup('env', 'BE_ENV') }}" # 젠킨스가 주입한 BE_ENV 변수
+        content: "{{ be_env_content }}" 
         dest: /home/ubuntu/cj-project/backend.env
         owner: ubuntu
 
-    # ⬇️ (신규) 젠킨스 Secret(FE_ENV)을 -> 서버 파일(frontend.env)로 생성
-    - name: 4. 프론트엔드 .env 파일 생성
+    # ⬇️ (수정) lookup('env') 대신 extra-var 변수 사용 (번호 수정)
+    - name: 5. 프론트엔드 .env 파일 생성
       copy:
-        content: "{{ lookup('env', 'FE_ENV') }}" # 젠킨스가 주입한 FE_ENV 변수
+        content: "{{ fe_env_content }}" 
         dest: /home/ubuntu/cj-project/frontend.env
         owner: ubuntu
 
-    - name: 5. 로컬의 docker-compose.yml 파일을 서버 배포 경로로 복사
+    # ⬇️ (번호 수정)
+    - name: 6. docker-compose.yml 파일을 서버 배포 경로로 복사
       copy:
-        src: ./docker-compose.yml # ◀ 위에서 만든 파일
+        src: ./docker-compose.yml
         dest: /home/ubuntu/cj-project/docker-compose.yml
 
-    - name: 6. Stop and remove existing containers
+    # ⬇️ (번호 수정)
+    - name: 7. Stop and remove existing containers
       community.docker.docker_compose:
         project_src: /home/ubuntu/cj-project
-        state: absent # 'absent' = docker-compose down
+        state: absent
         remove_orphans: yes
 
-    - name: 7. Docker Compose로 앱 실행 (Pull & Up)
+    # ⬇️ (번호 수정)
+    - name: 8. Docker Compose로 앱 실행 (Pull & Up)
       community.docker.docker_compose:
         project_src: /home/ubuntu/cj-project
         state: present
-        pull: yes # ◀ 항상 새 이미지를 pull
+        pull: yes
       environment:
-        # Jenkins/Ansible에서 받은 변수를 docker-compose.yml로 전달
         FRONTEND_IMAGE_TAG: "{{ fe_image_tag }}" 
         BACKEND_IMAGE_TAG: "{{ be_image_tag }}"
