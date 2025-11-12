@@ -11,4 +11,4 @@ COPY backend/ .
 
 # 이 이미지를 실행하면 'gunicorn'이 실행됨 (예시)
 # (실제 실행 명령어는 프로젝트에 맞게 수정하세요)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
