@@ -39,6 +39,7 @@ const StatCard: React.FC<StatCardProps> = ({ title, value, icon, color }) => (
     </div>
 );
 
+const API_URL = process.env.INTERNAL_API_URL;
 
 // === 상담가 대시보드 페이지 ===
 export default function CounselorDashboardPage() {
@@ -70,10 +71,10 @@ export default function CounselorDashboardPage() {
                 // 🚨 [필수] 백엔드에 이 API 2개가 구현되어 있어야 합니다.
                 // API 요청들을 병렬로 실행
                 const [statsRes, musicRes] = await Promise.all([
-                    fetch('http://localhost:8000/therapist/stats', { // 👈 1. 통계 API
+                    fetch(`${API_URL}/therapist/stats`, { // 👈 1. 통계 API
                         headers: { 'Authorization': `Bearer ${token}` }
                     }),
-                    fetch('http://localhost:8000/therapist/recent-music?limit=3', { // 👈 2. 최근 음악 API
+                    fetch(`${API_URL}/therapist/recent-music?limit=3`, { // 👈 2. 최근 음악 API
                         headers: { 'Authorization': `Bearer ${token}` }
                     })
                 ]);

@@ -17,6 +17,8 @@ interface MusicTrackInfo {
   // 필요한 다른 정보
 }
 
+const API_URL = process.env.INTERNAL_API_URL;
+
 export default function MusicPlaylistPage() {
     const router = useRouter();
     // 💡 3. 상태 타입을 MusicTrackInfo[]로 변경
@@ -51,7 +53,7 @@ export default function MusicPlaylistPage() {
             try {
                 // 백엔드 API 호출 (limit 없이 전체 목록 가져오기)
                 // 🚨 프록시 사용 시: '/backend-api/music/my'
-                const response = await fetch('http://localhost:8000/music/my', { // ⬅️ 백엔드 경로 확인!
+                const response = await fetch(`${API_URL}/music/my`, { // ⬅️ 백엔드 경로 확인!
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
 

@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react'; // 💡 로딩 아이콘 추가
 
+const API_URL = process.env.INTERNAL_API_URL;
+
 export default function KakaoCallbackClient() {
     const router = useRouter();
     const searchParams = useSearchParams(); // 👈 훅 사용
@@ -24,7 +26,7 @@ export default function KakaoCallbackClient() {
 
     const sendCodeToBackend = async (code: string) => {
         try {
-            const response = await fetch('http://localhost:8000/auth/kakao', {
+            const response = await fetch(`${API_URL}/auth/kakao`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

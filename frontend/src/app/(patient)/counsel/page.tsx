@@ -27,6 +27,7 @@ interface MusicTrack {
   audioUrl: string;
 }
 
+const API_URL = process.env.INTERNAL_API_URL;
 
 /**
  * AI와 채팅하고, 버튼 클릭으로 대화 내용을 분석하여 음악을 생성하는 페이지입니다.
@@ -71,7 +72,7 @@ export default function CounselPage() {
                 const token = localStorage.getItem('accessToken');
                 if (!token) throw new Error("로그인이 필요합니다.");
 
-                const response = await fetch(`http://localhost:8000/chat/history/${sessionId}`, {
+                const response = await fetch(`${API_URL}/chat/history/${sessionId}`, {
                     headers: { 'Authorization': `Bearer ${token}` } // 👈 헤더 추가
                 });
                 
@@ -132,7 +133,7 @@ export default function CounselPage() {
         try {
             // 1단계: 분석 및 프롬프트 생성
             setMusicGenerationStep("대화 내용 분석 및 프롬프트 생성 중...");
-            const analyzeResponse = await fetch('http://localhost:8000/patient/analyze-and-generate', {
+            const analyzeResponse = await fetch(`${API_URL}/patient/analyze-and-generate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ session_id: Number(sessionId), guideline_json: "{}" }),
@@ -147,7 +148,7 @@ export default function CounselPage() {
 
             // 2단계: 음악 생성
             setMusicGenerationStep("AI가 프롬프트를 기반으로 음악 작곡 중...");
-            const musicResponse = await fetch('http://localhost:8000/music/compose', {
+            const musicResponse = await fetch(`${API_URL}/music/compose`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ session_id: Number(sessionId), music_length_ms: 180000, force_instrumental: true }),
@@ -202,7 +203,7 @@ export default function CounselPage() {
             const token = localStorage.getItem('accessToken');
             if (!token) throw new Error("로그인 토큰 없음");
 
-            const response = await fetch('http://localhost:8000/chat/send', {
+            const response = await fetch(`${API_URL}/chat/send`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ session_id: Number(sessionId), message: userText, guideline_json: "{}" }),

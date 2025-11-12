@@ -7,7 +7,7 @@ import React, { useState, FormEvent, useCallback, useEffect } from 'react';
 import { Settings, UserPlus, Loader2, User, XCircle, AlertTriangle, CheckCircle, Info, Search, Link2, Trash2 } from 'lucide-react';
 
 // API 통신을 위한 기본 URL (사용자 확인: prefix 없음)
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = process.env.INTERNAL_API_URL;
 
 // 탭 상태를 위한 타입
 type Tab = 'general' | 'my_profile' | 'deactivate';

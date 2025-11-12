@@ -13,6 +13,7 @@ interface MusicTrack {
   audioUrl: string;
 }
 
+const API_URL = process.env.INTERNAL_API_URL;
 
 export default function ComposePage() {
     // --- 상태 관리 (변경 없음) ---
@@ -85,7 +86,7 @@ export default function ComposePage() {
                 goal: { text: "작곡 체험 세션" },
                 dialog: []
             };
-            const sessionResponse = await fetch('http://localhost:8000/patient/intake', { // ✅ API 경로 확인
+            const sessionResponse = await fetch(`${API_URL}/patient/intake`, { // ✅ API 경로 확인
                  method: 'POST',
                  headers: {
                       'Content-Type': 'application/json',
@@ -114,7 +115,7 @@ export default function ComposePage() {
                            vocals_allowed: vocalsAllowed, include_instruments: [instrument],
                            exclude_instruments: excludedInstruments, duration_sec: duration, notes }
             };
-            const generateResponse = await fetch('http://localhost:8000/therapist/manual-generate', { // ✅ API 경로 확인
+            const generateResponse = await fetch(`${API_URL}/therapist/manual-generate`, { // ✅ API 경로 확인
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, // ✅ 인증 헤더 추가
                 body: JSON.stringify(manualPayload)
@@ -135,7 +136,7 @@ export default function ComposePage() {
             // --- 3단계: 음악 생성 (/music/compose 사용 유지) ---
             // 🚨 [주의] 이 API가 인증 및 세션 소유권 확인을 하는지 백엔드 확인 권장!
             setLoadingStatus('ElevenLabs에서 음악 생성 중...');
-            const musicResponse = await fetch('http://localhost:8000/music/compose', { // ✅ API 경로 확인
+            const musicResponse = await fetch(`${API_URL}/music/compose`, { // ✅ API 경로 확인
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, // ✅ 인증 헤더 추가
                 body: JSON.stringify({

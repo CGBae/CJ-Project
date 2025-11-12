@@ -1,6 +1,8 @@
 // src/app/admin/page.tsx
 import { cookies } from 'next/headers';
 
+const API_URL = process.env.INTERNAL_API_URL;
+
 export default async function AdminPage() {
     if (process.env.NEXT_PUBLIC_AUTH_BYPASS === 'true') {
     return <div className="p-6 bg-yellow-50 rounded">[TEST MODE] 관리자 페이지(우회)</div>;
@@ -13,7 +15,7 @@ export default async function AdminPage() {
   }
 
   // 역할 재검증 (프록시 경로 사용 권장)
-  const meRes = await fetch('http://localhost:8000/auth/me', {
+  const meRes = await fetch(`${API_URL}/auth/me`, {
     headers: { cookie: `access_token=${access}` },
     cache: 'no-store',
   });

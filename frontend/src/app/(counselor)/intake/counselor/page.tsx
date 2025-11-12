@@ -36,6 +36,7 @@ const ConnectionRequest: React.FC = () => {
      );
 };
 
+const API_URL = process.env.INTERNAL_API_URL;
 
 export default function CounselorIntakePage() {
     const [formData, setFormData] = useState<CounselorIntakeData>(initialCounselorIntakeData);
@@ -65,7 +66,7 @@ export default function CounselorIntakePage() {
             }
             
             // therapist.py의 /my-patients API 호출
-            const response = await fetch('http://localhost:8000/therapist/my-patients', {
+            const response = await fetch(`${API_URL}/therapist/my-patients`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -163,7 +164,7 @@ export default function CounselorIntakePage() {
             console.log(`환자(${patientIdToUse})의 새 세션 및 음악 생성을 시작합니다...`);
             
             // 💡 7. [수정] 1단계: 새 상담 세션 생성 (patient_id 전송 및 헤더 추가)
-            const sessionResponse = await fetch('http://localhost:8000/therapist/new', { 
+            const sessionResponse = await fetch(`${API_URL}/therapist/new`, { 
                 method: 'POST', // 👈 [추가]
                 headers: { 
                     'Authorization': `Bearer ${token}`, // 👈 [추가]
@@ -196,7 +197,7 @@ export default function CounselorIntakePage() {
                     notes: formData.compositionalNotes,
                 }
             };
-            const generateResponse = await fetch('http://localhost:8000/therapist/manual-generate', {
+            const generateResponse = await fetch(`${API_URL}/therapist/manual-generate`, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
@@ -211,7 +212,7 @@ export default function CounselorIntakePage() {
             finalPrompt = promptData.prompt_text;
 
             // 💡 10. [수정] 4단계: 음악 생성 (Authorization 헤더 추가)
-            const musicResponse = await fetch('http://localhost:8000/music/compose', {
+            const musicResponse = await fetch(`${API_URL}/music/compose`, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',

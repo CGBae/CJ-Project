@@ -51,6 +51,8 @@ export default function PatientDetailPage() {
     const [chatLogs, setChatLogs] = useState<Record<number, ChatMessage[]>>({});
     const [logLoading, setLogLoading] = useState<number | null>(null);
 
+    const API_URL = process.env.INTERNAL_API_URL;
+
     // 💡 3. [핵심 수정] useEffect에서 실제 API 3개 호출
     useEffect(() => {
         // Audio 객체 초기화
@@ -84,9 +86,9 @@ export default function PatientDetailPage() {
             try {
                 // 3개 API 병렬 호출 (백엔드 URL 확인!)
                 const [profileRes, sessionsRes, musicRes] = await Promise.all([
-                    fetch(`http://localhost:8000/therapist/patient/${patientId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-                    fetch(`http://localhost:8000/therapist/patient/${patientId}/sessions`, { headers: { 'Authorization': `Bearer ${token}` } }),
-                    fetch(`http://localhost:8000/therapist/patient/${patientId}/music`, { headers: { 'Authorization': `Bearer ${token}` } })
+                    fetch(`${API_URL}/therapist/patient/${patientId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+                    fetch(`${API_URL}/therapist/patient/${patientId}/sessions`, { headers: { 'Authorization': `Bearer ${token}` } }),
+                    fetch(`${API_URL}/therapist/patient/${patientId}/music`, { headers: { 'Authorization': `Bearer ${token}` } })
                 ]);
 
                 // 공통 에러 처리
@@ -172,7 +174,7 @@ export default function PatientDetailPage() {
         }
 
         try {
-            const response = await fetch(`http://localhost:8000/chat/history/${sessionId}`, {
+            const response = await fetch(`${API_URL}/chat/history/${sessionId}`, {
                  headers: { 'Authorization': `Bearer ${token}` } // ✅ 헤더 추가!
             });
             if (response.status === 401) throw new Error('인증 실패');

@@ -23,6 +23,8 @@ export default function RegisterPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    const API_URL = process.env.INTERNAL_API_URL;
+
     // 페이지 로드 시 임시 토큰 확인
     useEffect(() => {
         const token = localStorage.getItem('temp_register_token');
@@ -77,7 +79,7 @@ export default function RegisterPage() {
         setLoading(true);
         
         try {
-            const response = await fetch('http://localhost:8000/auth/register', {
+            const response = await fetch(`${API_URL}/auth/register`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
@@ -109,7 +111,7 @@ export default function RegisterPage() {
         setError(null);
 
         try {
-            const response = await fetch('http://localhost:8000/auth/register/social', {
+            const response = await fetch(`${API_URL}/auth/register/social`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 

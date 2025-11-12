@@ -23,7 +23,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
-  const BACKEND_URL = 'http://localhost:8000';
+  const BACKEND_URL = process.env.INTERNAL_API_URL;
   const isBypass = process.env.NEXT_PUBLIC_AUTH_BYPASS === 'true';
 
   // 💡 4. [핵심] checkAuth 함수를 useCallback으로 감싸서 고정합니다.

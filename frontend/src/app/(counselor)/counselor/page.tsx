@@ -18,6 +18,7 @@ interface PatientInfo {
   // (참고: age, lastSession 등은 User 모델에 없으므로 일단 제외)
 }
 
+const API_URL = process.env.INTERNAL_API_URL;
 
 // === 환자 카드 컴포넌트 ===
 // PatientCard 컴포넌트를 페이지 컴포넌트 외부 또는 별도 파일로 분리해도 좋습니다.
@@ -97,7 +98,7 @@ export default function CounselorDashboardPage() {
             try {
                 // 11. 백엔드 /therapist/my-patients API 호출
                 // 🚨 [수정] API 경로 확인! (http://... 또는 프록시 경로)
-                const response = await fetch('http://localhost:8000/therapist/my-patients', {
+                const response = await fetch(`${API_URL}/therapist/my-patients`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
 

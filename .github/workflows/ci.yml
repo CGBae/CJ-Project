@@ -37,6 +37,11 @@ jobs:
           build-args: |
             NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
             NEXT_PUBLIC_KAKAO_JS_KEY=${{ secrets.NEXT_PUBLIC_KAKAO_JS_KEY }}
+            INTERNAL_API_URL=${{ secrets.INTERNAL_API_URL }}
+            NEXT_PUBLIC_AUTH_BYPASS=${{ secrets.NEXT_PUBLIC_AUTH_BYPASS }}
+            NEXT_PUBLIC_KAKAO_REST_KEY=${{ secrets.NEXT_PUBLIC_KAKAO_REST_KEY }}
+
+          no-cache: true
 
   # -------------------------
   #     백엔드 이미지 빌드

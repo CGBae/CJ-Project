@@ -30,6 +30,8 @@ interface UserProfile {
   // 필요한 다른 정보
 }
 
+const API_URL = process.env.INTERNAL_API_URL;
+
 // 💡 3. 시뮬레이션 ID 제거
 // const SIMULATED_LOGGED_IN_PATIENT_ID = 'p_user_001';
 
@@ -61,7 +63,7 @@ export default function PatientDashboardPage() {
         // --- API 호출 시작 ---
 
         // (1) 사용자 정보 가져오기 (/auth/me)
-        const meResponse = await fetch('http://localhost:8000/auth/me', {
+        const meResponse = await fetch(`${API_URL}/auth/me`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         // 401 오류 처리 추가
@@ -71,7 +73,7 @@ export default function PatientDashboardPage() {
         setUser(userData); // 사용자 정보 저장
 
         // (2) 상담 기록 가져오기 (/sessions/my) - 백엔드 경로 확인!
-        const sessionsResponse = await fetch('http://localhost:8000/sessions/my', {
+        const sessionsResponse = await fetch(`${API_URL}/sessions/my`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (!sessionsResponse.ok) throw new Error('상담 기록 로딩 실패');
@@ -79,7 +81,7 @@ export default function PatientDashboardPage() {
         setSessions(sessionsData); // 세션 목록 저장
 
         // (3) 최근 음악 가져오기 (/music/my?limit=3) - 백엔드 경로 확인!
-        const musicResponse = await fetch('http://localhost:8000/music/my?limit=3', {
+        const musicResponse = await fetch(`${API_URL}/music/my?limit=3`, {
            headers: { 'Authorization': `Bearer ${token}` }
         });
         if (!musicResponse.ok) throw new Error('최근 음악 로딩 실패');
@@ -123,7 +125,7 @@ export default function PatientDashboardPage() {
         }
 
         try {
-            const response = await fetch(`http://localhost:8000/chat/history/${sessionId}`, {
+            const response = await fetch(`${API_URL}/chat/history/${sessionId}`, {
                 method: 'DELETE',
                 headers: { // ⬅️ 헤더 추가
                     'Authorization': `Bearer ${token}`
