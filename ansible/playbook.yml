@@ -26,7 +26,7 @@
     # === env 파일 생성 (CRLF 제거 + 마지막 개행 + 0600 + no_log) ===
     - name: 3. db.env 생성
       copy:
-        content: "{{ lookup('file', db_env_path) | regex_replace('\r','') | trim }}\n"
+        content: "{{ db_env_b64 | b64decode | regex_replace('\r','') | trim }}\n"
         dest: "{{ deploy_dir }}/db.env"
         owner: ubuntu
         group: ubuntu
@@ -35,7 +35,7 @@
 
     - name: 4. backend.env 생성
       copy:
-        content: "{{ lookup('file', be_env_path) | regex_replace('\r','') | trim }}\n"
+        content: "{{ be_env_b64 | b64decode | regex_replace('\r','') | trim }}\n"
         dest: "{{ deploy_dir }}/backend.env"
         owner: ubuntu
         group: ubuntu
@@ -44,7 +44,7 @@
 
     - name: 5. frontend.env 생성
       copy:
-        content: "{{ lookup('file', fe_env_path) | regex_replace('\r','') | trim }}\n"
+        content: "{{ fe_env_b64 | b64decode | regex_replace('\r','') | trim }}\n"
         dest: "{{ deploy_dir }}/frontend.env"
         owner: ubuntu
         group: ubuntu
