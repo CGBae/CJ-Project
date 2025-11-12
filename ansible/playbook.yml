@@ -81,7 +81,8 @@
       shell: |
         set -e
         for i in $(seq 1 60); do
-          docker compose -f "{{ deploy_dir }}/docker-compose.yml" exec -T db sh -lc 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' && exit 0
+          docker-compose -f "{{ deploy_dir }}/docker-compose.yml" exec -T db \
+            sh -lc 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' && exit 0
           sleep 2
         done
         echo "Postgres not ready in time" >&2
