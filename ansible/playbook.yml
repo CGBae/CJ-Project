@@ -15,6 +15,12 @@
         state: directory
         owner: ubuntu
 
+    - name: 3. 데이터베이스 .env 파일 생성
+      copy:
+        content: "{{ lookup('env', 'DB_ENV') }}" # 젠킨스 DB_ENV 변수
+        dest: /home/ubuntu/cj-project/db.env
+        owner: ubuntu
+
     - name: 3. 백엔드 .env 파일 생성
       copy:
         content: "{{ lookup('env', 'BE_ENV') }}" # 젠킨스가 주입한 BE_ENV 변수

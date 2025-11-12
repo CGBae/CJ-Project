@@ -27,7 +27,7 @@ services:
     volumes:
       - db-data:/var/lib/postgresql/data # ◀ 데이터 영구 저장을 위함
     env_file:
-      - ./backend.env
+      - ./db.env
 
 volumes:
   db-data:
