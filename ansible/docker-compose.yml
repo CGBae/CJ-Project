@@ -28,6 +28,8 @@ services:
       - db-data:/var/lib/postgresql/data # ◀ 데이터 영구 저장을 위함
     env_file:
       - ./db.env
+    ports:
+    - "55432:5432"
 
 volumes:
   db-data:
