@@ -15,6 +15,8 @@ from fastapi.staticfiles import StaticFiles
 app = FastAPI(title="TheraMusic API")
 
 origins = [
+    "http://210.104.76.200",
+    "http://210.104.76.200:80",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     # (추후 배포 시 프론트엔드 도메인 추가)
