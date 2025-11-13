@@ -19,6 +19,19 @@ from app.models import Base
 # access to the values within the .ini file in use.
 config = context.config
 
+DB_USER = os.getenv("DB_USER", "cjuser")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "1234")
+DB_HOST = os.getenv("DB_HOST", "db")      # 도커 안에서는 `db`, 로컬에선 우리가 override
+DB_PORT = os.getenv("DB_PORT", "5432")
+DB_NAME = os.getenv("DB_NAME", "cj_db")
+
+SQLALCHEMY_DATABASE_URL = (
+    f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+)
+
+# alembic.ini의 sqlalchemy.url을 이 값으로 덮어쓰기
+config.set_main_option("sqlalchemy.url", SQLALCHEMY_DATABASE_URL)
+
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 if config.config_file_name is not None:
