@@ -33,7 +33,7 @@
             | regex_replace('\r','')                # CR 제거
             | regex_replace('\\\\n', '\n')          # 리터럴 \n → 실제 개행
             | trim
-            | regex_replace('(?<!^)[ \\t]+(?=[A-Z0-9_]+=)', '\n')  # 토큰 앞 공백 → 개행
+            | regex_replace(' +(?=[A-Z0-9_]+=)', '\n')
           }}\n
         dest: "{{ deploy_dir }}/db.env"
         owner: ubuntu
@@ -50,7 +50,7 @@
             | regex_replace('\r','')
             | regex_replace('\\\\n', '\n')
             | trim
-            | regex_replace('(?<!^)[ \\t]+(?=[A-Z0-9_]+=)', '\n')
+            | regex_replace(' +(?=[A-Z0-9_]+=)', '\n')
           }}\n
         dest: "{{ deploy_dir }}/backend.env"
         owner: ubuntu
@@ -67,7 +67,7 @@
             | regex_replace('\r','')
             | regex_replace('\\\\n', '\n')
             | trim
-            | regex_replace('(?<!^)[ \\t]+(?=[A-Z0-9_]+=)', '\n')
+            | regex_replace(' +(?=[A-Z0-9_]+=)', '\n')
           }}\n
         dest: "{{ deploy_dir }}/frontend.env"
         owner: ubuntu
