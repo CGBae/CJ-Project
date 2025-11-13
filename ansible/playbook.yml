@@ -26,15 +26,7 @@
     # === env 파일 생성 (CRLF 제거 + 마지막 개행 + 0600 + no_log) ===
     - name: 3. db.env 생성
       copy:
-        content: >-
-          {{
-            db_env_b64
-            | b64decode
-            | regex_replace('\r','')                # CR 제거
-            | regex_replace('\\\\n', '\n')          # 리터럴 \n → 실제 개행
-            | trim
-            | regex_replace(' +(?=[A-Z0-9_]+=)', '\n')
-          }}\n
+        content: "{{ db_env_b64 | b64decode | regex_replace('\r','') | trim }}\n"
         dest: "{{ deploy_dir }}/db.env"
         owner: ubuntu
         group: ubuntu
@@ -43,15 +35,7 @@
 
     - name: 4. backend.env 생성
       copy:
-        content: >-
-          {{
-            be_env_b64
-            | b64decode
-            | regex_replace('\r','')
-            | regex_replace('\\\\n', '\n')
-            | trim
-            | regex_replace(' +(?=[A-Z0-9_]+=)', '\n')
-          }}\n
+        content: "{{ be_env_b64 | b64decode | regex_replace('\r','') | trim }}\n"
         dest: "{{ deploy_dir }}/backend.env"
         owner: ubuntu
         group: ubuntu
@@ -60,15 +44,7 @@
 
     - name: 5. frontend.env 생성
       copy:
-        content: >-
-          {{
-            fe_env_b64
-            | b64decode
-            | regex_replace('\r','')
-            | regex_replace('\\\\n', '\n')
-            | trim
-            | regex_replace(' +(?=[A-Z0-9_]+=)', '\n')
-          }}\n
+        content: "{{ fe_env_b64 | b64decode | regex_replace('\r','') | trim }}\n"
         dest: "{{ deploy_dir }}/frontend.env"
         owner: ubuntu
         group: ubuntu
