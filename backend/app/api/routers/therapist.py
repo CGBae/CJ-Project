@@ -21,6 +21,9 @@ router = APIRouter(prefix="/therapist", tags=["therapist"])
 # /new API가 받을 요청 본문(body) 스키마
 class CreateSessionForPatientReq(BaseModel):
     patient_id: int 
+    
+class PatientSearchRequest(BaseModel):
+    query: str
 
 # 권한 확인 헬퍼 함수
 async def check_counselor_patient_access(
@@ -158,14 +161,14 @@ async def manual_generate(
 
 @router.post("/find-patient", response_model=FoundPatientResponse) 
 async def find_patient_by_email_or_id( 
-    req: dict, 
+    req: PatientSearchRequest, 
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     if current_user.role != "therapist":
         raise HTTPException(status_code=403, detail="상담사만 이용 가능한 기능입니다.")
 
-    search_query = req.get("query") 
+    search_query = req.query
     if not search_query:
         raise HTTPException(status_code=400, detail="검색어(이메일 또는 ID)를 입력해주세요.")
 
