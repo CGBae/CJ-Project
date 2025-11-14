@@ -32,6 +32,21 @@ interface PatientProfile {
   // (참고: 'age'는 User 모델에 없으므로, UserPublic 스키마에 따라 제거)
 }
 
+function getApiUrl() {
+  // 1순위: 내부 통신용 (docker 네트워크 안에서 backend 이름으로 호출)
+  if (process.env.INTERNAL_API_URL) {
+    return process.env.INTERNAL_API_URL;
+  }
+
+  // 2순위: 공개용 API URL (빌드 시점에라도 이건 거의 항상 들어있음)
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+
+  // 3순위: 최후 fallback - 도커 네트워크 기준으로 backend 서비스 직접 호출
+  return 'http://backend:8000';
+}
+
 export default function PatientDetailPage() {
     const router = useRouter();
     const params = useParams();
@@ -51,7 +66,7 @@ export default function PatientDetailPage() {
     const [chatLogs, setChatLogs] = useState<Record<number, ChatMessage[]>>({});
     const [logLoading, setLogLoading] = useState<number | null>(null);
 
-    const API_URL = process.env.INTERNAL_API_URL;
+    const API_URL = getApiUrl();
 
     // 💡 3. [핵심 수정] useEffect에서 실제 API 3개 호출
     useEffect(() => {

@@ -18,7 +18,22 @@ interface PatientInfo {
   // (참고: age, lastSession 등은 User 모델에 없으므로 일단 제외)
 }
 
-const API_URL = process.env.INTERNAL_API_URL;
+function getApiUrl() {
+  // 1순위: 내부 통신용 (docker 네트워크 안에서 backend 이름으로 호출)
+  if (process.env.INTERNAL_API_URL) {
+    return process.env.INTERNAL_API_URL;
+  }
+
+  // 2순위: 공개용 API URL (빌드 시점에라도 이건 거의 항상 들어있음)
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+
+  // 3순위: 최후 fallback - 도커 네트워크 기준으로 backend 서비스 직접 호출
+  return 'http://backend:8000';
+}
+
+const API_URL = getApiUrl();
 
 // === 환자 카드 컴포넌트 ===
 // PatientCard 컴포넌트를 페이지 컴포넌트 외부 또는 별도 파일로 분리해도 좋습니다.

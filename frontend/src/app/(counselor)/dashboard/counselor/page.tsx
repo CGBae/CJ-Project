@@ -39,7 +39,22 @@ const StatCard: React.FC<StatCardProps> = ({ title, value, icon, color }) => (
     </div>
 );
 
-const API_URL = process.env.INTERNAL_API_URL;
+function getApiUrl() {
+  // 1순위: 내부 통신용 (docker 네트워크 안에서 backend 이름으로 호출)
+  if (process.env.INTERNAL_API_URL) {
+    return process.env.INTERNAL_API_URL;
+  }
+
+  // 2순위: 공개용 API URL (빌드 시점에라도 이건 거의 항상 들어있음)
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+
+  // 3순위: 최후 fallback - 도커 네트워크 기준으로 backend 서비스 직접 호출
+  return 'http://backend:8000';
+}
+
+const API_URL = getApiUrl();
 
 // === 상담가 대시보드 페이지 ===
 export default function CounselorDashboardPage() {

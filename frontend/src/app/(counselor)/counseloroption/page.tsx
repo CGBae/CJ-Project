@@ -6,8 +6,23 @@ import React, { useState, FormEvent, useCallback, useEffect } from 'react';
 // 💡 [수정] 'Info' 아이콘 임포트 추가
 import { Settings, UserPlus, Loader2, User, XCircle, AlertTriangle, CheckCircle, Info, Search, Link2, Trash2 } from 'lucide-react';
 
+function getApiUrl() {
+  // 1순위: 내부 통신용 (docker 네트워크 안에서 backend 이름으로 호출)
+  if (process.env.INTERNAL_API_URL) {
+    return process.env.INTERNAL_API_URL;
+  }
+
+  // 2순위: 공개용 API URL (빌드 시점에라도 이건 거의 항상 들어있음)
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+
+  // 3순위: 최후 fallback - 도커 네트워크 기준으로 backend 서비스 직접 호출
+  return 'http://backend:8000';
+}
+
 // API 통신을 위한 기본 URL (사용자 확인: prefix 없음)
-const API_BASE_URL = process.env.INTERNAL_API_URL;
+const API_BASE_URL = getApiUrl();
 
 // 탭 상태를 위한 타입
 type Tab = 'general' | 'my_profile' | 'deactivate';
