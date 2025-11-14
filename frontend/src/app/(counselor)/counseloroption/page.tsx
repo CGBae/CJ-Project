@@ -270,7 +270,7 @@ const PatientConnectionManager: React.FC<PatientConnectionManagerProps> = ({ sho
         setIsLoading(true);
 
         try {
-            const payload = { email };
+            const payload = { query: email.trim() };
             // 💡 백엔드 /counselor/find-patient API 호출
             const result = await apiCall<FoundPatient>('/therapist/find-patient', 'POST', payload);
             
