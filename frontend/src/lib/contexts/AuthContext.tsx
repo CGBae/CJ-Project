@@ -16,6 +16,21 @@ interface AuthContextType {
 // 2. Context 생성
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function getApiUrl() {
+  // 1순위: 내부 통신용 (docker 네트워크 안에서 backend 이름으로 호출)
+  if (process.env.INTERNAL_API_URL) {
+    return process.env.INTERNAL_API_URL;
+  }
+
+  // 2순위: 공개용 API URL (빌드 시점에라도 이건 거의 항상 들어있음)
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+
+  // 3순위: 최후 fallback - 도커 네트워크 기준으로 backend 서비스 직접 호출
+  return 'http://backend:8000';
+}
+
 // 3. Provider 컴포넌트 (모든 인증 로직 포함)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthed, setIsAuthed] = useState(false);
@@ -23,7 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
-  const BACKEND_URL = process.env.INTERNAL_API_URL;
+  const BACKEND_URL = getApiUrl();
   const isBypass = process.env.NEXT_PUBLIC_AUTH_BYPASS === 'true';
 
   // 💡 4. [핵심] checkAuth 함수를 useCallback으로 감싸서 고정합니다.
