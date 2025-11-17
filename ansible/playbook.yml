@@ -91,14 +91,13 @@
         chdir: "{{ deploy_dir }}"
 
     - name: 10. Run Database Migrations (Alembic)
-      community.docker.docker_compose:
-        project_src: "{{ deploy_dir }}"
-        service: backend  # 'backend' 서비스(컨테이너)에서
-        command: alembic upgrade head # ◀ "alembic upgrade head" 명령어 실행
-        run_options: # ◀ 일회성 명령어 실행 후 컨테이너 삭제
-          - "--rm"
-      environment: # ◀ 마이그레이션도 DB 접속 정보가 필요함
-        FRONTEND_IMAGE_TAG: "{{ fe_image_tag }}" 
+      ansible.builtin.shell:
+        cmd: |
+          docker-compose -f docker-compose.yml run --rm backend alembic upgrade head
+      args:
+        chdir: "{{ deploy_dir }}" # ◀ /home/ubuntu/cj-project 에서 실행
+      environment: # ◀ docker-compose run도 이미지 태그 변수가 필요함
+        FRONTEND_IMAGE_TAG: "{{ fe_image_tag }}"
         BACKEND_IMAGE_TAG: "{{ be_image_tag }}"
 
     - name: 11. 전체 서비스 기동(backend, frontend 포함)
