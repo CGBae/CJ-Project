@@ -66,7 +66,15 @@
         state: absent
         remove_orphans: yes
 
-    - name: 8. DB만 먼저 올리기
+    - name: 8. (초기화) DB 데이터 볼륨(db-data) 완전 삭제
+      community.docker.docker_volume:
+        name: cj-project_db-data # ◀ docker-compose가 생성한 볼륨 이름
+        state: absent
+        force: yes
+      no_log: true # ◀ 에러 시에도 무시하고 진행 (볼륨이 원래 없었을 수 있으므로)
+      failed_when: false
+
+    - name: 9. DB만 먼저 올리기
       community.docker.docker_compose:
         project_src: "{{ deploy_dir }}"
         services:
@@ -77,7 +85,7 @@
         FRONTEND_IMAGE_TAG: "{{ fe_image_tag }}"
         BACKEND_IMAGE_TAG: "{{ be_image_tag }}"
 
-    - name: 9. Postgres 준비 완료 대기(pg_isready)
+    - name: 10. Postgres 준비 완료 대기(pg_isready)
       shell: |
         set -e
         for i in $(seq 1 60); do
@@ -90,7 +98,7 @@
       args:
         chdir: "{{ deploy_dir }}"
 
-    - name: 10. Run Database Migrations (Alembic)
+    - name: 11. Run Database Migrations (Alembic)
       ansible.builtin.shell:
         cmd: |
           docker-compose -f docker-compose.yml run --rm backend alembic upgrade head
