@@ -72,6 +72,7 @@ jobs:
           push: true
           # ⬇️ 'set_tag' 단계의 결과(outputs.TAG_NAME)를 사용하도록 수정
           tags: ghcr.io/${{ steps.set_tag.outputs.TAG_NAME }}/backend:latest
+          no-cache: true
 
   trigger-cd-pipeline:
     needs: [build-frontend, build-backend] # ◀ 두 빌드가 성공해야 실행됨
