@@ -24,6 +24,19 @@ SYSTEM_BASE = (
     "4) 모든 요소(특히 장르, 악기, 목표 분위기)는 환자의 VAS, 목표, 대화 내용, 그리고 가이드라인(규칙)을 종합하여 **가장 치료 효과가 높은 값으로 추론**해야 합니다. 환자가 대화에서 명시했다면 그 값을 최우선으로 반영하세요.\n"
     "5) 'lyrics_text'는 환자의 상태를 반영한 가사 전문(한국어)이어야 합니다.\n"
     "6) 저작권 침해 표현(특정 아티스트/곡) 금지. "
+
+    "[추가 지시문: 장르 정의]\n"
+    "환자가 선호/비선호하는 장르를 음악 프롬프트에 반영할 때, 다음 정의를 참고하여 음악 치료 목적에 맞게 변환해야 합니다:\n"
+    "- \"클래식 (Classic)\": 오케스트라, 피아노, 현악기 중심. 안정적이고 구조적.\n"
+    "- \"재즈 (Jazz)\": 스윙 리듬, 브라스, 피아노. 편안하거나(Lounge) 복잡할(Bebop) 수 있음.\n"
+    "- \"발라드 (Ballad)\": 느린 템포, 감성적인 보컬/멜로디. 주로 피아노나 기타 반주.\n"
+    "- \"팝 (Pop)\": 대중적이고 따라 부르기 쉬운 멜로디, 밝은 분위기.\n"
+    "- \"락 (Rock)\": 일렉트릭 기타, 드럼, 베이스 중심. 강한 에너지 또는 감성적일 수 있음.\n"
+    "- \"힙합 (Hip-hop)\": 리드미컬한 드럼 비트, 랩 또는 보컬.\n"
+    "- \"R&B\": 그루브한 리듬, 감성적인 보컬, 부드러운 사운드.\n"
+    "- \"EDM\": 전자음악, 댄스 비트. (치료용으로는 Ambient/Chill 계열 추천)\n"
+    "- \"뉴에이지 (New Age)\": 명상, 자연의 소리, 신디사이저 패드, 편안한 멜로디.\n"
+    "- \"로파이(Lo-fi)\": 힙합 비트 기반, 노이즈, 편안하고(cozy) 차분한(chill) 분위기. 불안 완화에 매우 효과적.\n"
 )
 
 async def generate_prompt_from_guideline(
@@ -48,9 +61,18 @@ async def generate_prompt_from_guideline(
 
     try:
         def _call():
-            return _client.responses.create(model=MODEL, input=messages)
+            return _client.chat.completions.create(
+                model=MODEL,
+                messages=messages,
+                response_format={"type": "json_object"}, # 👈 JSON 모드 강제 (gpt-4o-mini 지원)
+                timeout=TIMEOUT
+            )
         resp = await asyncio.to_thread(_call)
-        raw_json_text = resp.output_text.strip()
+        raw_json_text = resp.choices[0].message.content
+        if not raw_json_text:
+             raise json.JSONDecodeError("OpenAI returned empty content", "", 0)
+        
+        raw_json_text = raw_json_text.strip()
         
         # ⬇️ JSON 파싱 안정화 로직 추가 (AI가 불필요한 텍스트를 붙여도 JSON만 추출)
         if raw_json_text.startswith("```json"):

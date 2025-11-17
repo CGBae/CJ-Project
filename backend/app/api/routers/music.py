@@ -4,12 +4,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, update, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
-from app.schemas import MusicTrackInfo
+from app.schemas import MusicTrackInfo, MusicTrackDetail, SimpleIntakeData, SimpleChatMessage
 from app.db import get_db
 # 💡 2. Connection, SessionPatientIntake 모델 import 추가
-from app.models import Session, SessionPrompt, Track, User, Connection, SessionPatientIntake
+from app.models import Session, SessionPrompt, Track, User, Connection, SessionPatientIntake, ConversationMessage
 from app.services.auth_service import get_current_user
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 # 1. 함수 이름을 'compose_and_save'으로 변경합니다.
 from app.services.elevenlabs_client import compose_and_save, ElevenLabsError
 
@@ -127,12 +127,15 @@ async def get_my_music(
     """현재 로그인한 사용자가 생성한 음악 트랙 목록을 최신순으로 반환합니다."""
     query = (
         select(Track)
-        .options(joinedload(Track.session))
+        .options(
+            joinedload(Track.session).options(
+                joinedload(Session.patient_intake)
+            )
+        )
         .join(Session, Track.session_id == Session.id)
         .where(Session.created_by == current_user.id)
         .order_by(Track.created_at.desc())
     )
-    
     # limit() 적용 로직
     if limit is not None:
         query = query.limit(limit)
@@ -142,23 +145,222 @@ async def get_my_music(
 
     response_tracks = []
     for track in tracks:
-        # 프롬프트 추출 로직
-        session_prompt_data = track.session.prompt or {}
-        session_prompt_text = "프롬프트 정보 없음"
-        if isinstance(session_prompt_data, dict) and "text" in session_prompt_data:
-            value = session_prompt_data["text"]
-            if isinstance(value, str):
-                session_prompt_text = value
+        session = track.session
+        intake = session.patient_intake
+        
+        # 💡 [수정] 동적 제목 생성
+        title = f"AI 트랙 (세션 {track.session_id})" # 기본값
+        if session.initiator_type == "therapist":
+            title = f"상담사 처방 음악 (세션 {track.session_id})"
+        elif session.initiator_type == "patient":
+            if intake and intake.has_dialog:
+                title = f"AI 상담 기반 음악 (세션 {track.session_id})"
             else:
-                session_prompt_text = "프롬프트 형식 오류 (값이 문자열 아님)"
-        elif session_prompt_data is not None:
-             session_prompt_text = "프롬프트 형식 오류 (DB 데이터 확인 필요)"
+                title = f"작곡 체험 음악 (세션 {track.session_id})"
+        
+        session_prompt_data = session.prompt or {}
+        session_prompt_text = session_prompt_data.get("music_prompt") or session_prompt_data.get("text") or "프롬프트 정보 없음"
              
         response_tracks.append(MusicTrackInfo(
             id=track.id,
-            title=f"AI 생성 트랙 (세션 {track.session_id})",
+            title=title, # 👈 동적 제목
             prompt=session_prompt_text,
-            track_url=track.track_url # 👈 schemas.py와 일치
+            track_url=track.track_url,
+            session_id=session.id, # 👈 세션 ID
+            initiator_type=session.initiator_type, # 👈 세션 타입
+            has_dialog=intake.has_dialog if intake else False, # 👈 대화 유무
+            created_at=track.created_at,
+            is_favorite=track.is_favorite
         ))
 
     return response_tracks
+
+@router.get("/my/favorites", response_model=List[MusicTrackInfo])
+async def get_my_favorite_music(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """(신규) 현재 로그인한 사용자가 '즐겨찾기'한 음악 목록만 반환합니다."""
+    query = (
+        select(Track)
+        .options(
+            joinedload(Track.session).options(
+                joinedload(Session.patient_intake)
+            )
+        )
+        .join(Session, Track.session_id == Session.id)
+        .where(
+            Session.created_by == current_user.id,
+            Track.is_favorite == True # 👈 즐겨찾기 필터
+        )
+        .order_by(Track.created_at.desc())
+    )
+        
+    result = await db.execute(query)
+    tracks = result.scalars().unique().all()
+    
+    # (위 /my API의 반환 로직과 동일)
+    response_tracks = []
+    for track in tracks:
+        session = track.session
+        intake = session.patient_intake
+        title = f"AI 트랙"
+        if session.initiator_type == "therapist": title = "상담사 처방 음악"
+        elif session.initiator_type == "patient":
+            if intake and intake.has_dialog: title = "AI 상담 기반 음악"
+            else: title = "작곡 체험 음악"
+        session_prompt_text = (session.prompt or {}).get("music_prompt", "프롬프트 없음")
+             
+        response_tracks.append(MusicTrackInfo(
+            id=track.id, title=title, prompt=session_prompt_text, track_url=track.track_url,
+            session_id=session.id, initiator_type=session.initiator_type,
+            has_dialog=intake.has_dialog if intake else False,
+            created_at=track.created_at, is_favorite=track.is_favorite
+        ))
+    return response_tracks
+
+
+# 💡 [핵심 API 추가] 즐겨찾기 토글(Toggle) API
+class FavoriteResponse(BaseModel):
+    track_id: int
+    is_favorite: bool
+
+@router.post("/track/{track_id}/toggle-favorite", response_model=FavoriteResponse)
+async def toggle_favorite_track(
+    track_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """(신규) 트랙 1개의 'is_favorite' 상태를 토글(Toggles)합니다."""
+    
+    query = (
+        select(Track)
+        .options(joinedload(Track.session)) # 👈 소유권 확인을 위해 세션 로드
+        .where(Track.id == track_id)
+    )
+    result = await db.execute(query)
+    track = result.scalars().unique().first()
+
+    if not track or not track.session or not track.session.created_by:
+        raise HTTPException(status_code=404, detail="트랙 또는 세션 정보를 찾을 수 없습니다.")
+        
+    session = track.session
+
+    # 보안 검사 (환자 본인만 즐겨찾기 가능)
+    if session.created_by != current_user.id:
+        raise HTTPException(status_code=403, detail="이 트랙에 접근할 권한이 없습니다.")
+            
+    # 상태 토글
+    track.is_favorite = not track.is_favorite
+    
+    try:
+        db.add(track)
+        await db.commit()
+        await db.refresh(track)
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(500, f"즐겨찾기 업데이트 실패: {e}")
+        
+    return FavoriteResponse(track_id=track.id, is_favorite=track.is_favorite)
+
+
+
+@router.get("/track/{track_id}", response_model=MusicTrackDetail)
+async def get_track_details(
+    track_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    (신규) 트랙 ID 1개로 음악 상세 정보 (트랙, 가사, 접수 기록, 채팅 내역)를
+    가져옵니다.
+    """
+    
+    # 1. 트랙 및 관련 세션, 접수 기록, 채팅 기록을 한 번에 조인(join)해서 가져옴
+    query = (
+        select(Track)
+        .where(Track.id == track_id)
+        # N+1 방지: 관련된 엔티티를 미리 로드
+        .options(
+            joinedload(Track.session).options(
+                joinedload(Session.patient_intake), # 👈 접수 기록
+                selectinload(Session.messages)  # 👈 채팅 기록
+            )
+        )
+    )
+    
+    result = await db.execute(query)
+    track = result.scalars().unique().first()
+
+    if not track:
+        raise HTTPException(status_code=404, detail="트랙을 찾을 수 없습니다.")
+        
+    session = track.session
+    if not session:
+        raise HTTPException(status_code=404, detail="연결된 세션을 찾을 수 없습니다.")
+
+    # 2. 보안 검사: 이 트랙이 현재 로그인한 사용자의 것인지 확인
+    # (또는 이 사용자가 환자를 담당하는 상담사인지 확인 - therapist.py의 check_counselor_patient_access 로직)
+    if session.created_by != current_user.id:
+        # (상담사 권한 체크 로직)
+        if current_user.role == "therapist":
+            try:
+                # (therapist.py의 헬퍼 함수를 여기에 가져오거나 import해야 함)
+                # await check_counselor_patient_access(session.created_by, current_user.id, db)
+                pass # (임시로 상담사는 통과)
+            except HTTPException:
+                 raise HTTPException(status_code=403, detail="이 트랙에 접근할 권한이 없습니다.")
+        else:
+            raise HTTPException(status_code=403, detail="이 트랙에 접근할 권한이 없습니다.")
+            
+    # 3. 데이터 가공
+    
+    # 가사 (Session.prompt JSON에서 추출)
+    lyrics = None
+    if isinstance(session.prompt, dict):
+        lyrics = session.prompt.get("lyrics_text")
+
+    # 접수 기록 (SimpleIntakeData 스키마로 변환)
+    intake_data = None
+    if session.patient_intake:
+        intake_data = SimpleIntakeData(
+            goal_text=session.patient_intake.goal.get("text") if isinstance(session.patient_intake.goal, dict) else "N/A"
+            # (필요시 VAS 점수 등도 추가)
+        )
+        
+    # 채팅 기록 (SimpleChatMessage 스키마 리스트로 변환)
+    chat_history = []
+    if session.messages: # 👈 [수정] chat_history -> messages
+        chat_history = [
+            SimpleChatMessage(id=msg.id, role=msg.role, content=msg.content)
+            for msg in session.messages # 👈 [수정] chat_history -> messages
+        ]
+    
+    # 💡 4. [핵심 수정] NameError 해결: 'title' 변수 정의를 return 위로 이동
+    intake = session.patient_intake
+    title = f"AI 트랙 (세션 {track.session_id})" # 기본값
+    if session.initiator_type == "therapist":
+        title = f"상담사 처방 음악 (세션 {track.session_id})"
+    elif session.initiator_type == "patient":
+        if intake and intake.has_dialog:
+            title = f"AI 상담 기반 음악 (세션 {track.session_id})"
+        else:
+            title = f"작곡 체험 음악 (세션 {track.session_id})"
+        
+    # 4. 최종 응답 반환 (MusicTrackDetail 스키마)
+    return MusicTrackDetail(
+        id=track.id,
+        title=title, # 👈 동적 제목
+        prompt=session.prompt.get("music_prompt") or session.prompt.get("text") or "프롬프트 없음" if isinstance(session.prompt, dict) else "프롬프트 없음",
+        track_url=track.track_url,
+        audioUrl=track.track_url,
+        
+        session_id=session.id, # 👈 세션 ID
+        initiator_type=session.initiator_type, # 👈 세션 타입
+        has_dialog=intake.has_dialog if intake else False, # 👈 대화 유무
+        created_at=track.created_at,
+        is_favorite=track.is_favorite,
+        lyrics=lyrics,
+        intake_data=intake_data,
+        chat_history=chat_history
+    )

@@ -1,10 +1,10 @@
 from __future__ import annotations
-from typing import Optional, Literal
+from typing import Optional, Literal, List 
 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import (
     BigInteger, String, Text, Integer, DateTime, CheckConstraint,
-    ForeignKey, Index
+    ForeignKey, Index, Boolean
 )
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 from sqlalchemy.sql import func
@@ -239,6 +239,11 @@ class Track(Base):
     duration_sec: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     quality: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     provider: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    is_favorite: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default='false'
+    )
+
     created_at: Mapped[Optional["datetime"]] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -247,4 +252,36 @@ class Track(Base):
 
     __table_args__ = (
         Index("idx_tracks_session_time", "session_id", "created_at"),
+    )
+
+class CounselorNote(Base):
+    __tablename__ = "counselor_notes"
+    
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
+    
+    # 💡 어떤 환자에 대한 메모인지
+    patient_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    # 💡 어떤 상담사가 작성했는지
+    therapist_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+
+    # 💡 메모 내용
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    
+    # (관계 설정: User 모델에도 이 관계를 추가해야 함)
+    patient: Mapped["User"] = relationship(foreign_keys=[patient_id])
+    therapist: Mapped["User"] = relationship(foreign_keys=[therapist_id])
+
+    __table_args__ = (
+        Index("idx_notes_patient_therapist", "patient_id", "therapist_id"),
     )

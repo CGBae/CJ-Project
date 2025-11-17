@@ -36,7 +36,7 @@ class TherapistManualInput(BaseModel):
     include_instruments: Optional[List[str]] = None
     exclude_instruments: Optional[List[str]] = None
     duration_sec: Optional[int] = 120
-    notes: Optional[Any] = None
+    notes: Optional[str] = None
 
 class TherapistPromptReq(BaseModel):
     session_id: int
@@ -106,6 +106,13 @@ class MusicTrackInfo(BaseModel):
     track_url: str = Field(..., serialization_alias="audioUrl")
     # 필요하다면 Track 모델의 다른 필드도 추가 가능 (예: created_at: datetime)
 
+    session_id: int
+    initiator_type: Optional[str] = None
+    has_dialog: Optional[bool] = False # 👈 patient_intake.has_dialog
+    
+    created_at: Optional[datetime] = None
+    is_favorite: bool = False
+
     class Config:
         from_attributes = True # SQLAlchemy 모델 -> Pydantic 자동 변환
         
@@ -169,8 +176,8 @@ class KakaoLoginResponse(BaseModel):
     
 class FoundPatientResponse(BaseModel):
     id: int
-    name: str
-    email: str
+    name: Optional[str] = None
+    email: Optional[str] = None
     connection_status: Literal['available', 'pending', 'connected_to_self', 'connected_to_other']
 
     class Config:
@@ -187,3 +194,66 @@ class RecentMusicTrack(BaseModel):
     music_title: str
     patient_id: int | str
     patient_name: str | None
+    
+    session_id: int
+    initiator_type: Optional[str] = None
+    has_dialog: Optional[bool] = False
+
+    created_at: Optional[datetime] = None
+    is_favorite: bool = False
+    class Config:
+        from_attributes = True
+
+class SimpleIntakeData(BaseModel):
+    goal_text: Optional[str] = None
+    # (필요시 vas_anxiety 등 다른 필드도 추가)
+
+    class Config:
+        from_attributes = True
+
+# 💡 [핵심 추가] 채팅 메시지 스키마
+class SimpleChatMessage(BaseModel):
+    id: int
+    role: str
+    content: str
+
+    class Config:
+        from_attributes = True
+
+# 💡 [핵심 추가] 음악 '상세' 정보 응답 스키마
+class MusicTrackDetail(MusicTrackInfo):
+    # (MusicTrackInfo의 id, title, prompt, track_url을 상속받음)
+    
+    lyrics: Optional[str] = None # 👈 가사
+    intake_data: Optional[SimpleIntakeData] = None # 👈 접수 기록
+    chat_history: List[SimpleChatMessage] = [] # 👈 채팅 기록
+
+# 💡 [핵심 추가] 프로필 '수정' 시 받을 데이터 스키마
+class UserUpdate(BaseModel):
+    # (name은 수정 불가로 가정, age만 받음)
+    age: Optional[int] = None
+    # (만약 dob(생년월일)을 사용 중이라면 age 대신 dob: Optional[date] = None)
+
+class PatientInfoWithStats(UserPublic):
+    # (UserPublic의 id, name, email, role, dob 등을 상속받음)
+    total_sessions: int
+    total_music_tracks: int
+
+class NoteBase(BaseModel):
+    content: str = Field(..., min_length=1)
+
+class NoteCreate(NoteBase):
+    pass # patient_id는 URL에서, therapist_id는 인증에서 받음
+
+class NoteUpdate(NoteBase):
+    pass
+
+class NotePublic(NoteBase):
+    id: int
+    patient_id: int
+    therapist_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True

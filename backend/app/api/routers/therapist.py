@@ -1,18 +1,18 @@
 from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
-from sqlalchemy import insert, update, select, func
+from sqlalchemy import insert, update, select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional # 💡 Optional 추가
-from app.models import User, Session, TherapistManualInputs, SessionPrompt, Connection, Track, SessionPatientIntake
+from app.models import User, Session, TherapistManualInputs, SessionPrompt, Connection, Track, SessionPatientIntake, CounselorNote
 from app.services.auth_service import get_current_user
 from app.schemas import (
     TherapistPromptReq, SessionCreateResp, PromptResp, TherapistManualInput, 
     FoundPatientResponse, UserPublic, SessionInfo, MusicTrackInfo,
-    CounselorStats, RecentMusicTrack
+    CounselorStats, RecentMusicTrack, PatientInfoWithStats, NoteCreate, NotePublic, NoteUpdate
 )
 from app.db import get_db
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 from app.services.openai_client import generate_prompt_from_guideline
 from app.services.prompt_from_guideline import build_extra_requirements_for_therapist
 
@@ -236,7 +236,7 @@ async def request_connection_to_patient(
     return {"message": "Connection request sent successfully."}
 
 
-@router.get("/my-patients", response_model=List[UserPublic])
+@router.get("/my-patients", response_model=List[PatientInfoWithStats])
 async def get_my_assigned_patients(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user) 
@@ -263,11 +263,44 @@ async def get_my_assigned_patients(
             User.id.in_(patient_ids),
             User.role == "patient"
         )
+        .options(
+            # 💡 [수정] User.sessions (models.py의 관계 이름) 로드
+            selectinload(User.sessions).options(
+                selectinload(Session.tracks),           # 👈 세션의 트랙 목록
+                joinedload(Session.patient_intake)  # 👈 세션의 Intake 정보 (has_dialog)
+            ) 
+        )
     )
     patients_result = await db.execute(patients_query)
-    patients = patients_result.scalars().all()
-    
-    return patients
+    patients = patients_result.scalars().unique().all()
+
+    # 3. 💡 [수정] 통계 정보를 계산하여 새 스키마로 변환
+    response_data = []
+    for patient in patients:
+        
+        # 💡 [핵심!] has_dialog가 True인 세션만 필터링하여 개수 계산
+        counseling_sessions = [
+            s for s in patient.sessions 
+            if s.patient_intake and s.patient_intake.has_dialog
+        ]
+        total_sessions = len(counseling_sessions) # 👈 [수정] 정확한 상담 횟수
+
+        # 💡 총 생성 음악 (이전과 동일 - 모든 세션의 트랙 합산)
+        total_music_tracks = sum(len(session.tracks) for session in patient.sessions)
+        
+        response_data.append(PatientInfoWithStats(
+            id=patient.id,
+            name=patient.name,
+            email=patient.email,
+            role=patient.role,
+            age=patient.age,
+            kakao_id=patient.kakao_id,
+            social_provider=patient.social_provider,
+            total_sessions=total_sessions, # 👈 수정된 값
+            total_music_tracks=total_music_tracks
+        ))
+
+    return response_data
 
 
 @router.get("/patient/{patient_id}", response_model=UserPublic)
@@ -322,7 +355,12 @@ async def get_patient_music_by_counselor(
     
     query = (
         select(Track)
-        .options(joinedload(Track.session))
+        # 💡 [수정] Session 및 SessionPatientIntake 정보 함께 로드
+        .options(
+            joinedload(Track.session).options(
+                joinedload(Session.patient_intake)
+            )
+        )
         .join(Session, Track.session_id == Session.id)
         .where(Session.created_by == patient_id) 
         .order_by(Track.created_at.desc())
@@ -335,22 +373,32 @@ async def get_patient_music_by_counselor(
     
     response_tracks = []
     for track in tracks:
-        session_prompt_data = track.session.prompt or {}
-        session_prompt_text = "프롬프트 정보 없음"
-        if isinstance(session_prompt_data, dict) and "text" in session_prompt_data:
-            value = session_prompt_data["text"]
-            if isinstance(value, str):
-                session_prompt_text = value
+        session = track.session
+        intake = session.patient_intake
+        
+        # 💡 [수정] 동적 제목 생성
+        title = f"AI 트랙 (세션 {track.session_id})" # 기본값
+        if session.initiator_type == "therapist":
+            title = f"상담사 처방 음악 (세션 {track.session_id})"
+        elif session.initiator_type == "patient":
+            if intake and intake.has_dialog:
+                title = f"AI 상담 기반 음악 (세션 {track.session_id})"
             else:
-                session_prompt_text = "프롬프트 형식 오류"
-        elif session_prompt_data is not None:
-             session_prompt_text = "프롬프트 형식 오류 (DB)"
+                title = f"작곡 체험 음악 (세션 {track.session_id})"
+        
+        session_prompt_data = session.prompt or {}
+        session_prompt_text = session_prompt_data.get("music_prompt") or session_prompt_data.get("text") or "프롬프트 정보 없음"
              
         response_tracks.append(MusicTrackInfo(
             id=track.id,
-            title=f"AI 생성 트랙 (세션 {track.session_id})",
+            title=title, # 👈 동적 제목
             prompt=session_prompt_text,
-            track_url=track.track_url
+            track_url=track.track_url,
+            session_id=session.id, # 👈 세션 ID
+            initiator_type=session.initiator_type, # 👈 세션 타입
+            has_dialog=intake.has_dialog if intake else False, # 👈 대화 유무
+            created_at=track.created_at,
+            is_favorite=track.is_favorite
         ))
     return response_tracks
 
@@ -409,7 +457,10 @@ async def get_recent_music_for_counselor(
         .join(Session, Track.session_id == Session.id)
         .join(User, Session.created_by == User.id)
         .options(
-            joinedload(Track.session).joinedload(Session.creator)
+            joinedload(Track.session).options(
+                joinedload(Session.creator), # 👈 환자 정보
+                joinedload(Session.patient_intake) # 👈 대화 유무
+            )
         )
         .where(Session.created_by.in_(patient_ids))
         .order_by(Track.created_at.desc())
@@ -420,17 +471,113 @@ async def get_recent_music_for_counselor(
     
     response_tracks = []
     for track in tracks:
-        session_prompt_data = track.session.prompt or {}
-        session_prompt_text = "프롬프트 정보 없음"
-        if isinstance(session_prompt_data, dict) and "text" in session_prompt_data:
-             value = session_prompt_data["text"]
-             if isinstance(value, str): session_prompt_text = value
-             else: session_prompt_text = "프롬프트 형식 오류"
+        session = track.session
+        intake = session.patient_intake
+        
+        # 💡 [수정] 동적 제목 생성
+        title = f"AI 트랙 (세션 {track.session_id})" # 기본값
+        if session.initiator_type == "therapist":
+            title = f"상담사 처방 음악"
+        elif session.initiator_type == "patient":
+            if intake and intake.has_dialog:
+                title = f"AI 상담 기반 음악"
+            else:
+                title = f"작곡 체험 음악"
 
         response_tracks.append(RecentMusicTrack(
             music_id=track.id,
-            music_title=f"AI 트랙 (세션 {track.session_id})",
+            music_title=title, # 👈 동적 제목
             patient_id=track.session.created_by,
-            patient_name=track.session.creator.name or track.session.creator.email
+            patient_name=track.session.creator.name or track.session.creator.email,
+            
+            session_id=session.id, # 👈 세션 ID
+            initiator_type=session.initiator_type, # 👈 세션 타입
+            has_dialog=intake.has_dialog if intake else False, # 👈 대화 유무
+            created_at=track.created_at,
+            is_favorite=track.is_favorite
         ))
     return response_tracks
+
+@router.get("/patient/{patient_id}/notes", response_model=List[NotePublic])
+async def get_counselor_notes_for_patient(
+    patient_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """(신규) 이 상담사가 특정 환자에 대해 작성한 모든 메모를 조회합니다."""
+    if current_user.role != "therapist":
+        raise HTTPException(status_code=403, detail="상담사 전용 기능입니다.")
+    
+    # (환자 접근 권한 확인)
+    await check_counselor_patient_access(patient_id, current_user.id, db)
+    
+    query = (
+        select(CounselorNote)
+        .where(
+            CounselorNote.patient_id == patient_id,
+            CounselorNote.therapist_id == current_user.id
+        )
+        .order_by(CounselorNote.created_at.desc()) # 최신순
+    )
+    result = await db.execute(query)
+    notes = result.scalars().all()
+    return notes
+
+# 💡 3. (POST) 특정 환자에 대한 메모 생성
+@router.post("/patient/{patient_id}/notes", response_model=NotePublic, status_code=status.HTTP_201_CREATED)
+async def create_counselor_note_for_patient(
+    patient_id: int,
+    note_in: NoteCreate, # 👈 schemas.py에 정의한 Input
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """(신규) 특정 환자에 대한 새 메모를 생성합니다."""
+    if current_user.role != "therapist":
+        raise HTTPException(status_code=403, detail="상담사 전용 기능입니다.")
+    
+    await check_counselor_patient_access(patient_id, current_user.id, db)
+    
+    new_note = CounselorNote(
+        patient_id=patient_id,
+        therapist_id=current_user.id,
+        content=note_in.content
+    )
+    
+    try:
+        db.add(new_note)
+        await db.commit()
+        await db.refresh(new_note)
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(500, f"메모 저장 실패: {e}")
+        
+    return new_note
+
+# 💡 4. (DELETE) 특정 메모 삭제
+@router.delete("/notes/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_counselor_note(
+    note_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """(신규) 상담사 본인이 작성한 메모를 삭제합니다."""
+    if current_user.role != "therapist":
+        raise HTTPException(status_code=403, detail="상담사 전용 기능입니다.")
+        
+    note = await db.get(CounselorNote, note_id)
+    
+    if not note:
+        raise HTTPException(status_code=404, detail="메모를 찾을 수 없습니다.")
+        
+    # (보안: 본인이 쓴 메모만 삭제 가능)
+    if note.therapist_id != current_user.id:
+        raise HTTPException(status_code=403, detail="이 메모를 삭제할 권한이 없습니다.")
+        
+    try:
+        await db.delete(note)
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(500, f"메모 삭제 실패: {e}")
+    
+    return None # 204 No Content

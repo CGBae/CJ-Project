@@ -1,13 +1,26 @@
-// counseloroption/page.tsx
-
 'use client';
 
 import React, { useState, FormEvent, useCallback, useEffect } from 'react';
-// 💡 [수정] 'Info' 아이콘 임포트 추가
-import { Settings, UserPlus, Loader2, User, XCircle, AlertTriangle, CheckCircle, Info, Search, Link2, Trash2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Settings, UserPlus, Loader2, User, XCircle, AlertTriangle, CheckCircle, Info, Search, Link2, Trash2, Edit, Check } from 'lucide-react';
 
-// API 통신을 위한 기본 URL (사용자 확인: prefix 없음)
-const API_BASE_URL = 'http://localhost:8000';
+function getApiUrl() {
+  // 1순위: 내부 통신용 (docker 네트워크 안에서 backend 이름으로 호출)
+  if (process.env.INTERNAL_API_URL) {
+    return process.env.INTERNAL_API_URL;
+  }
+
+  // 2순위: 공개용 API URL (빌드 시점에라도 이건 거의 항상 들어있음)
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+
+  // 3순위: 최후 fallback - 도커 네트워크 기준으로 backend 서비스 직접 호출
+  return 'http://backend:8000';
+}
+
+// API 통신을 위한 기본 URL
+const API_BASE_URL = getApiUrl();
 
 // 탭 상태를 위한 타입
 type Tab = 'general' | 'my_profile' | 'deactivate';
@@ -17,18 +30,21 @@ interface ValidationErrorDetail {
     msg: string;
     type: string;
 }
-
-// API 에러 응답 구조
 interface ApiErrorResponse {
     detail: string | ValidationErrorDetail[];
 }
-
-// 환자 검색 결과 타입
 interface FoundPatient {
     id: number;
     name: string;
-    email: string;
+    email: string | null;
     connection_status: 'available' | 'pending' | 'connected_to_self' | 'connected_to_other';
+}
+interface UserProfile {
+    id: number;
+    name: string | null;
+    age: number | null; 
+    email: string | null;
+    role: string;
 }
 
 /**
@@ -57,24 +73,26 @@ const apiCall = async <T = unknown>(endpoint: string, method: string = 'GET', bo
     const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
 
     if (!response.ok) {
-        let errorData: ApiErrorResponse;
+        let errorData: ApiErrorResponse | null = null;
         try {
             errorData = await response.json();
         } catch (e) {
-            throw new Error(`[${response.status}] 서버 통신 중 오류가 발생했습니다: ${response.statusText}`);
+            // JSON 파싱 실패 시
         }
         
-        let errorMessage = `[${response.status}] 오류`;
-        if (typeof errorData.detail === 'string') {
-            errorMessage = errorData.detail;
-        } else if (Array.isArray(errorData.detail)) {
-            errorMessage = errorData.detail.map(d => `(${d.loc.join(' > ')}) ${d.msg}`).join('\n');
+        let errorMessage = `[${response.status}] ${response.statusText || '서버 통신 오류'}`;
+        
+        if (errorData && errorData.detail) {
+            if (typeof errorData.detail === 'string') {
+                errorMessage = errorData.detail;
+            } else if (Array.isArray(errorData.detail)) {
+                errorMessage = errorData.detail.map(d => `(${d.loc.join(' > ')}) ${d.msg}`).join('\n');
+            }
         }
         throw new Error(errorMessage);
     }
     
     if (response.status === 204) {
-        // No Content (탈퇴 성공 등)
         return null as T; 
     }
 
@@ -92,42 +110,86 @@ export default function CounselorSettingsPage() {
 
     const [showDeactivateModal, setShowDeactivateModal] = useState(false);
     const [isDeactivating, setIsDeactivating] = useState(false);
+    const router = useRouter(); 
+
+    // 프로필 수정용 상태
+    const [profile, setProfile] = useState<UserProfile | null>(null);
+    const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+    const [isEditing, setIsEditing] = useState(false);
+    const [editAge, setEditAge] = useState(''); 
+    const [isUpdating, setIsUpdating] = useState(false);
 
     // 공통 알림 메시지
     const showMessage = (type: 'success' | 'error', message: string) => {
-        if (type === 'success') {
-            setSuccess(message);
-            setError(null);
-        } else {
-            setError(message);
-            setSuccess(null);
+        // ... (기존 showMessage 로직) ...
+    };
+    
+    // 프로필 로딩 로직
+    const fetchUserProfile = useCallback(async () => {
+        setIsLoadingProfile(true);
+        try {
+            const data: UserProfile = await apiCall('/auth/me'); 
+            setProfile(data);
+            setEditAge(data.age ? String(data.age) : '');
+        } catch (err: unknown) {
+            if (err instanceof Error) {
+                // 💡 [수정] showMessage 대신 setError (프로필 탭 내부 알림)
+                setError(`프로필 로딩 오류: ${err.message}`);
+            }
+        } finally {
+            setIsLoadingProfile(false);
         }
-        setTimeout(() => {
-            setSuccess(null);
-            setError(null);
-        }, 5000);
+    }, []); // 👈 의존성 배열 비우기 (set... 함수는 안정적임)
+
+    useEffect(() => {
+        if (activeTab === 'my_profile') {
+            fetchUserProfile();
+        }
+    }, [activeTab, fetchUserProfile]);
+    
+    // 프로필 업데이트 핸들러
+    const handleProfileUpdate = async () => {
+        const ageValue = editAge.trim() ? parseInt(editAge.trim(), 10) : null;
+        if (ageValue !== null && (isNaN(ageValue) || ageValue <= 0 || ageValue > 150)) {
+            setError('유효하지 않은 나이입니다.');
+            return;
+        }
+        setIsUpdating(true);
+        setError(null);
+        try {
+            const updatePayload = { age: ageValue }; 
+            const updatedProfile: UserProfile = await apiCall('/auth/me', 'PUT', updatePayload);
+            setProfile(updatedProfile);
+            setEditAge(updatedProfile.age ? String(updatedProfile.age) : '');
+            setIsEditing(false);
+            // 💡 [수정] showMessage 대신 setSuccess (프로필 탭 내부 알림)
+            setSuccess('프로필이 성공적으로 업데이트되었습니다.'); 
+        } catch (err: unknown) {
+            if (err instanceof Error) {
+                setError(`프로필 업데이트 오류: ${err.message}`);
+            }
+        } finally {
+            setIsUpdating(false);
+        }
     };
 
+    // 💡 [핵심 수정] 계정 탈퇴 핸들러 (API 경로 수정)
     const handleDeactivate = async () => {
         setIsDeactivating(true);
-        // 글로벌 메시지 초기화
         setError(null);
         setSuccess(null); 
         
         try {
-            // apiCall 헬퍼를 사용해 /user/deactivate 엔드포인트 호출
-            await apiCall('/user/deactivate', 'DELETE');
+            // 💡 [수정] /user/deactivate -> /auth/me
+            await apiCall('/auth/me', 'DELETE'); 
             
-            // 토큰 제거
             localStorage.removeItem('accessToken');
-            
             alert('계정 탈퇴가 완료되었습니다. 이용해 주셔서 감사합니다.');
-            window.location.href = '/login'; // 로그인 페이지로 리디렉션
-
+            router.push('/login'); 
         } catch (err: unknown) {
             if (err instanceof Error) {
-                // 글로벌 오류 메시지 표시
-                showMessage('error', `계정 탈퇴 오류: ${err.message}. 다시 시도해주세요.`);
+                // 💡 [수정] showMessage 대신 setError (계정 탈퇴 탭 내부 알림)
+                setError(`계정 탈퇴 오류: ${err.message}. 다시 시도해주세요.`);
             }
         } finally {
             setIsDeactivating(false);
@@ -142,45 +204,126 @@ export default function CounselorSettingsPage() {
     );
 
     const renderMyProfileTab = () => (
-        <Alert type="info" message="상담사 프로필 수정 기능은 현재 준비 중입니다." />
+        <div className="space-y-6 max-w-lg mx-auto p-8 bg-white border border-gray-200 rounded-xl shadow-lg">
+             <h3 className="text-xl font-semibold border-b pb-2 text-gray-700">상담사 프로필</h3>
+             {/* 💡 [추가] 프로필 탭 전용 알림 메시지 */}
+             {error && !isUpdating && <Alert type="error" message={error} onClose={() => setError(null)} />}
+             {success && <Alert type="success" message={success} onClose={() => setSuccess(null)} />}
+             
+             {isLoadingProfile ? (
+                 <div className="flex justify-center items-center h-40">
+                     <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+                 </div>
+             ) : profile ? (
+                <>
+                    <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-xl shadow-inner">
+                        <div className="space-y-3">
+                            <ProfileField label="이메일 (ID)" value={profile.email || 'N/A'} isEditable={false} />
+                            <ProfileField 
+                                label="이름" 
+                                value={isEditing ? 
+                                    <input 
+                                        type="text" 
+                                        value={profile.name || ''} 
+                                        readOnly
+                                        disabled
+                                        className="border rounded-md px-2 py-1 w-full max-w-xs bg-gray-100 cursor-not-allowed"
+                                    /> : 
+                                    profile.name || 'N/A'}
+                                isEditable={isEditing}
+                            />
+                            <ProfileField 
+                                label="나이" 
+                                value={isEditing ? 
+                                    <input 
+                                        type="number" 
+                                        value={editAge} 
+                                        onChange={(e) => setEditAge(e.target.value)}
+                                        min="1" max="150"
+                                        className="border rounded-md px-2 py-1 w-24 focus:ring-indigo-500 focus:border-indigo-500"
+                                    /> : 
+                                    profile.age ? String(profile.age) : 'N/A'}
+                                isEditable={isEditing}
+                            />
+                            <ProfileField label="역할" value={profile.role === 'therapist' ? '상담사' : '기타'} isEditable={false} />
+                            <ProfileField label="고유 ID" value={String(profile.id)} isEditable={false} />
+                        </div>
+                    </div>
+
+                    <div className="flex justify-end">
+                        {isEditing ? (
+                            <div className="flex space-x-2">
+                                <button
+                                    onClick={handleProfileUpdate}
+                                    disabled={isUpdating}
+                                    className="flex items-center px-4 py-2 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600 transition disabled:bg-gray-400"
+                                >
+                                    {isUpdating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-1" />}
+                                    저장
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setIsEditing(false);
+                                        setEditAge(profile.age ? String(profile.age) : '');
+                                        setError(null);
+                                        setSuccess(null); // 👈 [추가] 성공 메시지도 닫기
+                                    }}
+                                    className="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg shadow-md hover:bg-gray-400 transition"
+                                >
+                                    취소
+                                </button>
+                            </div>
+                        ) : (
+                            <button
+                                onClick={() => setIsEditing(true)}
+                                className="flex items-center px-4 py-2 bg-indigo-500 text-white rounded-lg shadow-md hover:bg-indigo-600 transition"
+                            >
+                                <Edit className="w-4 h-4 mr-1" />
+                                프로필 수정
+                            </button>
+                        )}
+                    </div>
+                </>
+             ) : (
+                 // 💡 [수정] 로딩 실패 시 탭 내부에 에러 표시
+                 <Alert type="error" message={error || '프로필을 불러오지 못했습니다.'} />
+             )}
+        </div>
     );
     
     const renderDeactivateTab = () => (
-    <div className="space-y-6 max-w-lg mx-auto p-8 bg-white border border-gray-200 rounded-xl shadow-lg">
-        <h3 className="text-xl font-semibold border-b pb-2 text-red-600">계정 탈퇴</h3>
-        <div className="p-6 bg-red-50 border border-red-200 rounded-xl shadow-inner space-y-4">
-            <div className="flex items-start">
-                <AlertTriangle className="w-6 h-6 text-red-500 mr-3 mt-1 flex-shrink-0" />
-                <p className="text-red-700 font-medium">
-                    계정을 탈퇴하면 모든 사용자 데이터(프로필 정보, 환자 연결 기록 등)가 영구적으로 삭제됩니다. 
-                    탈퇴 후에는 데이터를 복구할 수 없습니다. 신중하게 결정해 주세요.
-                </p>
-            </div>
-            <button
-                onClick={() => setShowDeactivateModal(true)}
-                className="w-full flex justify-center items-center px-4 py-3 text-sm font-medium rounded-lg shadow-md text-white bg-red-600 hover:bg-red-700 transition disabled:bg-gray-400"
-            >
-                <XCircle className="w-5 h-5 mr-2" />
-                계정 영구 탈퇴하기
-            </button>
+        <div className="space-y-6 max-w-lg mx-auto p-8 bg-white border border-gray-200 rounded-xl shadow-lg">
+             <h3 className="text-xl font-semibold border-b pb-2 text-red-600">계정 탈퇴</h3>
+             {/* 💡 [추가] 계정 탈퇴 탭 전용 알림 메시지 */}
+             {error && <Alert type="error" message={error} onClose={() => setError(null)} />}
+
+             <div className="p-6 bg-red-50 border border-red-200 rounded-xl shadow-inner space-y-4">
+                 <div className="flex items-start">
+                     <AlertTriangle className="w-6 h-6 text-red-500 mr-3 mt-1 flex-shrink-0" />
+                     <p className="text-red-700 font-medium">
+                         계정을 탈퇴하면 모든 사용자 데이터가 영구적으로 삭제됩니다. 
+                         탈퇴 후에는 데이터를 복구할 수 없습니다.
+                     </p>
+                 </div>
+                 <button
+                     onClick={() => setShowDeactivateModal(true)}
+                     className="w-full flex justify-center items-center px-4 py-3 text-sm font-medium rounded-lg shadow-md text-white bg-red-600 hover:bg-red-700 transition disabled:bg-gray-400"
+                 >
+                     <XCircle className="w-5 h-5 mr-2" />
+                     계정 영구 탈퇴하기
+                 </button>
+             </div>
+             {showDeactivateModal && (
+                 <ConfirmationModal
+                     title="계정 탈퇴 확인"
+                     message="정말로 계정을 영구적으로 탈퇴하시겠습니까? 이 작업은 되돌릴 수 없습니다."
+                     onConfirm={handleDeactivate}
+                     onCancel={() => setShowDeactivateModal(false)}
+                     isProcessing={isDeactivating}
+                 />
+             )}
         </div>
-
-        {/* 이 함수가 렌더링될 때 showDeactivateModal이 true면 모달을 띄움 */}
-        {showDeactivateModal && (
-            <ConfirmationModal
-                title="계정 탈퇴 확인"
-                message="정말로 계정을 영구적으로 탈퇴하시겠습니까? 이 작업은 되돌릴 수 없습니다."
-                onConfirm={handleDeactivate}
-                onCancel={() => setShowDeactivateModal(false)}
-                isProcessing={isDeactivating}
-            />
-        )}
-
-        {/* 글로벌 알림 메시지가 이미 상단에 있으므로 
-          여기서 별도 에러 메시지를 표시할 필요는 없습니다.
-        */}
-    </div>
-);
+    );
 
     return (
         <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
@@ -192,19 +335,20 @@ export default function CounselorSettingsPage() {
                 {/* 탭 네비게이션 */}
                 <div className="flex border-b border-gray-200 mb-8 overflow-x-auto whitespace-nowrap">
                     <TabButton 
-                        icon={Settings} // 아이콘 변경
-                        label="일반 설정" // 라벨 변경
-                        tab="general" // 탭 ID 변경
-                        activeTab={activeTab} 
-                        onClick={setActiveTab}
-                    />
-                    <TabButton 
                         icon={User} 
                         label="내 프로필" 
                         tab="my_profile" 
                         activeTab={activeTab} 
                         onClick={setActiveTab}
                     />
+                    <TabButton 
+                        icon={Link2} 
+                        label="환자 연결 관리" 
+                        tab="general" 
+                        activeTab={activeTab} 
+                        onClick={setActiveTab}
+                    />
+                    
                     <TabButton 
                         icon={XCircle} 
                         label="계정 탈퇴" 
@@ -215,9 +359,10 @@ export default function CounselorSettingsPage() {
                     />
                 </div>
 
-                {/* 글로벌 알림 메시지 */}
-                {error && <Alert type="error" message={error} onClose={() => setError(null)} />}
-                {success && <Alert type="success" message={success} onClose={() => setSuccess(null)} />}
+                {/* 💡 [수정] 글로벌 알림 -> 탭 내부 알림으로 이동
+                 {error && <Alert type="error" message={error} onClose={() => setError(null)} />}
+                 {success && <Alert type="success" message={success} onClose={() => setSuccess(null)} />}
+                */}
 
                 {/* 탭 콘텐츠 */}
                 <div className="min-h-[400px] mt-6">
@@ -230,12 +375,14 @@ export default function CounselorSettingsPage() {
     );
 }
 
+// === 환자 연결 관리 컴포넌트 ===
 interface PatientConnectionManagerProps {
     showGlobalMessage: (type: 'success' | 'error', message: string) => void;
 }
 
 const PatientConnectionManager: React.FC<PatientConnectionManagerProps> = ({ showGlobalMessage }) => {
-    const [email, setEmail] = useState('');
+    // 💡 [수정] email -> searchQuery로 이름 변경 (백엔드와 일치)
+    const [searchQuery, setSearchQuery] = useState(''); 
     const [foundPatient, setFoundPatient] = useState<FoundPatient | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [searchError, setSearchError] = useState<string | null>(null);
@@ -255,23 +402,22 @@ const PatientConnectionManager: React.FC<PatientConnectionManagerProps> = ({ sho
         setIsLoading(true);
 
         try {
-            const payload = { email };
-            // 💡 백엔드 /counselor/find-patient API 호출
+            // 💡 [수정] payload의 key를 'email' -> 'query'로 변경
+            const payload = { query: searchQuery }; 
             const result = await apiCall<FoundPatient>('/therapist/find-patient', 'POST', payload);
             
             setFoundPatient(result);
             if(result.connection_status === 'available') {
-                setSearchSuccess(`환자 '${result.name}' (${result.email}) 님을 찾았습니다. 연결 요청을 보낼 수 있습니다.`);
+                setSearchSuccess(`환자 '${result.name}' (${result.email || 'ID:'+result.id}) 님을 찾았습니다. 연결 요청을 보낼 수 있습니다.`);
             } else {
-                // 이미 연결되었거나 대기 중인 상태에 대한 피드백
-                let infoMessage = `환자 '${result.name}' (${result.email}) 님을 찾았습니다. `;
+                let infoMessage = `환자 '${result.name}' (${result.email || 'ID:'+result.id}) 님을 찾았습니다. `;
                 if (result.connection_status === 'pending') infoMessage += "이미 연결 요청이 전송되어 대기 중입니다.";
                 if (result.connection_status === 'connected_to_self') infoMessage += "이미 담당 환자로 등록되어 있습니다.";
                 if (result.connection_status === 'connected_to_other') infoMessage += "이미 다른 상담사와 연결되어 있습니다.";
-                setSearchError(infoMessage); // 정보성 메시지이지만 오류 상태로 처리하여 버튼 비활성화
+                setSearchError(infoMessage);
             }
 
-        } catch (err: unknown) { // 💡 'any' 대신 'unknown' 사용
+        } catch (err: unknown) { 
             if (err instanceof Error) {
                 setSearchError(`검색 실패: ${err.message}`);
             } else {
@@ -285,22 +431,18 @@ const PatientConnectionManager: React.FC<PatientConnectionManagerProps> = ({ sho
     // 연결 요청 핸들러
     const handleRequestConnection = async () => {
         if (!foundPatient) return;
-
         setIsLoading(true);
-        resetSearchState(); // 메시지 초기화
+        resetSearchState();
 
         try {
             const payload = { patient_id: foundPatient.id };
-            // 💡 백엔드 /counselor/request-connection API 호출
             const result = await apiCall<{ detail: string }>('/therapist/request-connection', 'POST', payload);
             
-            // 글로벌 성공 메시지 표시
             showGlobalMessage('success', `환자 '${foundPatient.name}' 님에게 연결 요청을 성공적으로 보냈습니다.`);
-            setEmail(''); // 입력 필드 초기화
+            setSearchQuery(''); // 💡 [수정] email -> searchQuery
             
-        } catch (err: unknown) { // 💡 'any' 대신 'unknown' 사용
+        } catch (err: unknown) { 
              if (err instanceof Error) {
-                // 글로벌 오류 메시지 표시
                 showGlobalMessage('error', `연결 요청 실패: ${err.message}`);
             } else {
                 showGlobalMessage('error', '알 수 없는 오류가 발생했습니다.');
@@ -315,21 +457,22 @@ const PatientConnectionManager: React.FC<PatientConnectionManagerProps> = ({ sho
             <h3 className="text-xl font-semibold border-b pb-2 text-gray-700">담당 환자 연결</h3>
             
             <p className="text-sm text-gray-500">
-                환자가 가입 시 사용한 **이메일**로 계정을 검색한 후, 연결 요청을 보내주세요.
-                환자가 수락하면 환자 관리가 가능해집니다.
+                {/* 💡 [수정] 안내 문구 변경 */}
+                환자가 가입 시 사용한 **이메일** 또는 환자의 **고유 ID**로 계정을 검색한 후, 연결 요청을 보내주세요.
             </p>
 
             {/* 1. 환자 검색 폼 */}
             <form onSubmit={handleSearch} className="flex items-end gap-3">
                 <div className="flex-grow">
-                    <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">환자 이메일</label>
+                    {/* 💡 [수정] 라벨, id, value, onChange 모두 searchQuery로 변경 */}
+                    <label htmlFor="searchQuery" className="block text-sm font-medium text-gray-700 mb-1">환자 이메일 또는 고유 ID</label>
                     <input
-                        type="email"
-                        id="email"
-                        value={email}
+                        type="text" // 👈 email -> text
+                        id="searchQuery"
+                        value={searchQuery}
                         onChange={(e) => {
-                            setEmail(e.target.value);
-                            resetSearchState(); // 이메일 변경 시 검색 결과 초기화
+                            setSearchQuery(e.target.value);
+                            resetSearchState(); 
                         }}
                         required
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
@@ -337,7 +480,7 @@ const PatientConnectionManager: React.FC<PatientConnectionManagerProps> = ({ sho
                 </div>
                 <button
                     type="submit"
-                    disabled={isLoading || !email.trim()}
+                    disabled={isLoading || !searchQuery.trim()} // 👈 email.trim() -> searchQuery.trim()
                     className="px-4 py-2 h-10 flex justify-center items-center text-sm font-medium rounded-lg shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 transition-colors"
                 >
                     {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Search className="w-5 h-5" />}
@@ -345,24 +488,17 @@ const PatientConnectionManager: React.FC<PatientConnectionManagerProps> = ({ sho
             </form>
 
             {/* 2. 검색 결과 및 연결 요청 버튼 */}
-            {/* 로딩 중 (검색 중) */}
             {isLoading && !foundPatient && (
                 <div className="text-center p-4 text-gray-500">
                     <Loader2 className="w-5 h-5 animate-spin inline-block" />
                 </div>
             )}
-
-            {/* 검색 성공 */}
             {searchSuccess && (
-                <Alert type="success" message={searchSuccess} />
+                <Alert type="success" message={searchSuccess} onClose={() => setSearchSuccess(null)} />
             )}
-
-            {/* 검색 실패 또는 정보 */}
             {searchError && (
-                 <Alert type="error" message={searchError} />
+                <Alert type="error" message={searchError} onClose={() => setSearchError(null)} />
             )}
-
-            {/* 연결 요청 버튼 (검색 성공 및 연결 가능 시) */}
             {foundPatient && foundPatient.connection_status === 'available' && (
                 <button
                     type="button"
@@ -391,9 +527,10 @@ interface TabButtonProps {
     activeTab: Tab;
     onClick: (tab: Tab) => void;
     className?: string;
+    badgeCount?: number; 
 }
 
-const TabButton: React.FC<TabButtonProps> = ({ icon: Icon, label, tab, activeTab, onClick, className = '' }) => {
+const TabButton: React.FC<TabButtonProps> = ({ icon: Icon, label, tab, activeTab, onClick, className = '', badgeCount = 0 }) => {
     const isActive = activeTab === tab;
     return (
         <button
@@ -406,9 +543,31 @@ const TabButton: React.FC<TabButtonProps> = ({ icon: Icon, label, tab, activeTab
         >
             <Icon className="w-5 h-5 mr-2" />
             {label}
+            {badgeCount > 0 && (
+                <span className="ml-2 inline-flex items-center justify-center px-2 py-0.5 text-xs font-bold leading-none text-white bg-red-500 rounded-full">
+                    {badgeCount}
+                </span>
+            )}
         </button>
     );
 };
+
+// 프로필 필드 컴포넌트
+interface ProfileFieldProps {
+    label: string;
+    value: React.ReactNode;
+    isEditable?: boolean;
+}
+
+const ProfileField: React.FC<ProfileFieldProps> = ({ label, value, isEditable = false }) => (
+    <div className={`flex flex-col sm:flex-row sm:items-center py-2 border-b last:border-b-0 ${isEditable ? 'bg-white p-2 rounded-lg' : ''}`}>
+        <span className="w-32 font-medium text-gray-600 flex-shrink-0">{label}</span>
+        <span className="flex-grow text-gray-800 mt-1 sm:mt-0">
+            {value}
+        </span>
+    </div>
+);
+
 
 // 알림 컴포넌트
 interface AlertProps {
@@ -433,7 +592,6 @@ const Alert: React.FC<AlertProps> = ({ type, message, onClose }) => {
         case 'info':
         default:
             bgColor = 'bg-blue-100 border-blue-400 text-blue-700';
-            // 💡 [수정] AlertTriangle 대신 Info 아이콘 사용
             Icon = Info; 
             break;
     }
@@ -454,6 +612,7 @@ const Alert: React.FC<AlertProps> = ({ type, message, onClose }) => {
     );
 };
 
+// 확인 모달 컴포넌트
 interface ConfirmationModalProps {
     title: string;
     message: string;

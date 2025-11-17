@@ -6,9 +6,23 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Settings, User, Zap, MessageCircle, XCircle, Loader2, Edit, Check, AlertTriangle } from 'lucide-react';
 
-// API 통신을 위한 기본 URL
-const API_BASE_URL = 'http://localhost:8000'; // 👈 백엔드 라우터의 Prefix와 일치해야 합니다!
+function getApiUrl() {
+  // 1순위: 내부 통신용 (docker 네트워크 안에서 backend 이름으로 호출)
+  if (process.env.INTERNAL_API_URL) {
+    return process.env.INTERNAL_API_URL;
+  }
 
+  // 2순위: 공개용 API URL (빌드 시점에라도 이건 거의 항상 들어있음)
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+
+  // 3순위: 최후 fallback - 도커 네트워크 기준으로 backend 서비스 직접 호출
+  return 'http://backend:8000';
+}
+
+// API 통신을 위한 기본 URL
+const API_BASE_URL = getApiUrl(); // 👈 백엔드 라우터의 Prefix와 일치해야 합니다!
 // 탭 상태를 위한 타입
 type Tab = 'profile' | 'connection' | 'settings' | 'deactivate';
 
@@ -406,7 +420,7 @@ export default function PatientOptionPage() {
                 <div className="flex border-b border-gray-200 mb-8 overflow-x-auto whitespace-nowrap">
                     <TabButton 
                         icon={User} 
-                        label="프로필 수정" 
+                        label="내 프로필" 
                         tab="profile" 
                         activeTab={activeTab} 
                         onClick={setActiveTab}
@@ -419,13 +433,7 @@ export default function PatientOptionPage() {
                         onClick={setActiveTab}
                         badgeCount={connections.length}
                     />
-                    <TabButton 
-                        icon={Settings} 
-                        label="일반 설정" 
-                        tab="settings" 
-                        activeTab={activeTab} 
-                        onClick={setActiveTab}
-                    />
+                    
                     <TabButton 
                         icon={XCircle} 
                         label="계정 탈퇴" 
@@ -440,7 +448,6 @@ export default function PatientOptionPage() {
                 <div className="min-h-[400px]">
                     {activeTab === 'profile' && renderProfileTab()}
                     {activeTab === 'connection' && renderConnectionTab()}
-                    {activeTab === 'settings' && <Alert type="info" message="일반 설정 기능은 현재 준비 중입니다." />}
                     {activeTab === 'deactivate' && renderDeactivateTab()}
                 </div>
             </div>

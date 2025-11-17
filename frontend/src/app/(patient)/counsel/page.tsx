@@ -1,138 +1,258 @@
 'use client';
 
-import React, { useEffect, useRef, useState, FormEvent } from 'react';
+// 💡 1. [수정] Suspense, useCallback 추가
+import React, { useEffect, useRef, useState, FormEvent, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Loader2, Send, Music, Volume2, Trash2} from 'lucide-react';
-// 💡 '가짜 DB' import는 사용하지 않으므로 제거 (또는 주석 처리)
-// import { addTrackToPlaylist, getPlaylist, MusicTrack } from '@/lib/utils/music';
-// import { addMusicToPatient, getPatientById } from '@/lib/utils/patients';
+import { motion, AnimatePresence } from 'framer-motion';
+// 💡 2. [수정] 아이콘 추가
+import {
+    Loader2,
+    Send,
+    Music,
+    Volume2,
+    User,
+    Bot,
+    AlertTriangle,
+    MessageSquare,
+    FilePen,
+    ArrowRight
+} from 'lucide-react';
+import { useAuth } from '@/lib/contexts/AuthContext'; // 💡 3. [추가] useAuth 임포트
 
-/**
- * 메시지 객체 타입을 명시적으로 정의합니다.
- */
+function getApiUrl() {
+  // 1순위: 내부 통신용 (docker 네트워크 안에서 backend 이름으로 호출)
+  if (process.env.INTERNAL_API_URL) {
+    return process.env.INTERNAL_API_URL;
+  }
+
+  // 2순위: 공개용 API URL (빌드 시점에라도 이건 거의 항상 들어있음)
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+
+  // 3순위: 최후 fallback - 도커 네트워크 기준으로 backend 서비스 직접 호출
+  return 'http://backend:8000';
+}
+
+const API_URL = getApiUrl();
+// --- 타입 정의 ---
 interface Message {
     id: string;
     role: 'user' | 'assistant';
     content: string;
 }
-
-/**
- * MusicTrack 타입 정의 (백엔드 MusicTrackInfo와 유사하게)
- */
-interface MusicTrack {
-  id: string | number;
-  title: string;
-  artist: string;
-  prompt: string;
-  audioUrl: string;
+// 💡 4. [추가] 세션 목록 타입
+interface SessionInfo {
+    id: number;
+    created_at: string;
+    initiator_type: string | null;
+    has_dialog: boolean | null;
 }
 
+interface ChatHistoryResponse {
+    history: Message[];
+    goal_text: string | null;
+}
 
-/**
- * AI와 채팅하고, 버튼 클릭으로 대화 내용을 분석하여 음악을 생성하는 페이지입니다.
- */
+// 💡 5. [수정] Suspense로 감싸기 위해 컴포넌트 분리
+// (useSearchParams는 Suspense 내부에서만 사용 가능)
 export default function CounselPage() {
+    return (
+        <Suspense fallback={<LoadingScreen message="상담 정보 확인 중..." />}>
+            <CounselChat />
+        </Suspense>
+    );
+}
+
+// 💡 6. [수정] 메인 로직을 CounselChat 컴포넌트로 이동
+function CounselChat() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const messagesEndRef = useRef<HTMLDivElement>(null);
-    // 💡 1. [핵심] input 요소에 대한 ref 생성
     const inputRef = useRef<HTMLInputElement | null>(null);
-
-    // URL에서 session ID와 patient ID를 가져옵니다.
+    const { user, isAuthed } = useAuth(); // 💡 [추가] user 정보 가져오기
     const sessionId = searchParams.get('session');
-    const patientId = searchParams.get('patientId');
-    
-    const [patientName, setPatientName] = useState<string | null>(null);
+
+    // 💡 [수정] patientName을 AuthContext의 user.name으로 초기화 시도
+    const [patientName, setPatientName] = useState<string | null>(user?.name || null);
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
-    const [isLoading, setIsLoading] = useState(false); // 채팅 응답 로딩
-    const [isGeneratingMusic, setIsGeneratingMusic] = useState(false); // 음악 생성 로딩
+    const [isLoading, setIsLoading] = useState(false);
+    const [isGeneratingMusic, setIsGeneratingMusic] = useState(false);
     const [musicGenerationStep, setMusicGenerationStep] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [isInitialLoading, setIsInitialLoading] = useState(true);
 
-    // 페이지 로드 시, 세션 ID로 과거 대화 기록을 불러옵니다.
-    useEffect(() => {
-        const loadSessionHistory = async () => {
-            if (!sessionId) {
-                setError("유효한 세션 ID가 없습니다. 대시보드부터 다시 시작해주세요.");
-                setIsInitialLoading(false);
-                return;
-            }
+    const [ongoingSessions, setOngoingSessions] = useState<SessionInfo[]>([]);
 
-            // (환자 이름 로딩은 /auth/me 등을 통해 가져오는 로직으로 변경 필요)
-            // if (patientId) {
-            //     const patient = getPatientById(patientId); // 👈 가짜 DB
-            //     if (patient) setPatientName(patient.name);
-            // }
+    // --- 초기 대화/세션 목록 불러오기 ---
+    const loadSessionData = useCallback(async () => {
+        setIsInitialLoading(true);
+        setError(null);
 
-            try {
-                // 💡 [수정] Authorization 헤더 추가
-                const token = localStorage.getItem('accessToken');
-                if (!token) throw new Error("로그인이 필요합니다.");
+        const token = localStorage.getItem('accessToken');
+        if (!token) {
+            setError('로그인이 필요합니다.');
+            setIsInitialLoading(false);
+            router.push('/login?next=/counsel');
+            return;
+        }
 
-                const response = await fetch(`http://localhost:8000/chat/history/${sessionId}`, {
+        try {
+            if (sessionId) {
+                // --- A. 세션 ID가 있는 경우 (기존 채팅 로드) ---
+                                const response = await fetch(`${API_URL}/chat/history/${sessionId}`, {
                     headers: { 'Authorization': `Bearer ${token}` } // 👈 헤더 추가
                 });
-                
-                if (response.status === 401) throw new Error("인증 실패(기록 조회)");
                 if (!response.ok) {
-                    throw new Error("과거 대화 기록을 불러오는 데 실패했습니다.");
+                    const errData = await response.json().catch(() => ({}));
+                    throw new Error(errData.detail || '대화 기록 불러오기 실패');
                 }
-                const data = await response.json();
-                
+                // 💡 8. [수정] 새로운 API 응답 타입(ChatHistoryResponse)으로 파싱
+                const data: ChatHistoryResponse = await response.json();
+
                 if (data.history.length > 0) {
+                    // (기록이 있으면 그대로 표시)
                     setMessages(data.history);
                 } else {
+                    // 💡 9. [핵심 수정] 기록이 0개일 때 (새 세션) -> 'goal_text'를 사용해 첫 질문 생성
+                    const goal = data.goal_text;
+                    const name = user?.name || '사용자';
+                    
+                    let firstMessage = `안녕하세요. ${name}님, AI 상담을 시작하겠습니다.`;
+                    
+                    if (goal) {
+                        // (목표가 있을 때)
+                        firstMessage = `안녕하세요. ${name}님. '${goal}'라고 상담 목표를 작성해주신 것을 확인했습니다. 이 문제에 대해 조금 더 자세히 말씀해 주시겠어요?`;
+                    } else {
+                        // (목표가 없을 때 - 예: 작곡 체험 세션 등)
+                        firstMessage = `안녕하세요. ${name}님, AI 상담을 시작하겠습니다. 오늘은 어떤 이야기를 나누고 싶으신가요?`;
+                    }
+                    
                     setMessages([
-                        { id: 'initial-greeting', role: 'assistant', content: `${patientName || '사용자'}님, 안녕하세요! AI 상담을 시작하겠습니다.` }
+                        { id: 'initial', role: 'assistant', content: firstMessage },
                     ]);
                 }
-            } catch (err: unknown) {
-                 const errorMessage = err instanceof Error ? err.message : '초기화 중 오류 발생';
-                 setError(errorMessage);
-                 if (errorMessage.includes('인증') || errorMessage.includes('로그인')) {
-                     localStorage.removeItem('accessToken');
-                     router.push('/login?next=/counsel?session='+sessionId);
-                 }
-            } finally {
-                setIsInitialLoading(false);
+            } else {
+                // --- B. 세션 ID가 없는 경우 (진행 중 세션 목록 로드) ---
+                const response = await fetch(
+                    `${API_URL}/sessions/my?has_dialog=true`, // 👈 대화 기록이 있는 세션만 요청
+                    { headers: { Authorization: `Bearer ${token}` } }
+                );
+                if (!response.ok) throw new Error('진행 중인 상담 목록 불러오기 실패');
+                const data: SessionInfo[] = await response.json();
+                
+                setOngoingSessions(data); // 👈 (필터링은 백엔드에서 수행)
             }
-        };
+        } catch (err: unknown) {
+            if (err instanceof Error) {
+                setError(err.message);
+            } else {
+                setError('오류가 발생했습니다.');
+            }
+            if (err instanceof Error && (err.message.includes('인증') || err.message.includes('로그인'))) {
+                localStorage.removeItem('accessToken');
+                router.push('/login?next=/counsel');
+            }
+        } finally {
+            setIsInitialLoading(false);
+        }
+    }, [sessionId, user?.name, router]); // 👈 의존성 유지
 
-        loadSessionHistory();
-    }, [sessionId, patientId, patientName, router]); // router 추가
-
-    // 💡 2. [수정] 새 메시지가 추가되거나, AI 응답 로딩이 시작될 때 스크롤
     useEffect(() => {
-        // 로딩이 끝났고 (둘 다 false), 첫 페이지 로딩도 아닐 때
+        loadSessionData();
+    }, [loadSessionData]);
+
+    // 💡 [추가] AuthContext에서 사용자 이름 가져오기
+    useEffect(() => {
+        if (user && user.name) {
+            setPatientName(user.name);
+        }
+    }, [user]);
+
+    // --- (기존 로직: 자동 스크롤 - 변경 없음) ---
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages, isLoading]);
+
+    // --- (기존 로직: 포커스 유지 - 변경 없음) ---
+    useEffect(() => {
         if (!isLoading && !isGeneratingMusic && !isInitialLoading) {
-            // 💡 setTimeout(..., 0)으로 React 렌더링이 확실히 끝난 후 포커스 실행
             setTimeout(() => {
                 inputRef.current?.focus();
             }, 0);
         }
     }, [isLoading, isGeneratingMusic, isInitialLoading]);
-    /**
-     * "음악 생성" 버튼 클릭 핸들러 (Authorization 헤더 추가됨)
-     */
+
+    // --- (기존 로직: 메시지 전송 - 변경 없음) ---
+    const handleSubmit = async (e: FormEvent) => {
+        e.preventDefault();
+        const userText = input.trim();
+        if (!userText || isLoading || !sessionId) return;
+
+        const userMessage: Message = { id: Date.now().toString(), role: 'user', content: userText };
+        setMessages(prev => [...prev, userMessage]);
+        setInput('');
+        setIsLoading(true);
+
+        try {
+            const token = localStorage.getItem('accessToken');
+            if (!token) throw new Error('로그인이 필요합니다.');
+
+            const response = await fetch(`${API_URL}/chat/send`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ session_id: Number(sessionId), message: userText, guideline_json: "{}" }),
+            });
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.detail || '응답 수신 실패');
+            }
+            const data = await response.json();
+            setMessages(prev => [
+                ...prev,
+                { id: Date.now().toString() + '-ai', role: 'assistant', content: data.assistant },
+            ]);
+        } catch (err: unknown) {
+            if (err instanceof Error) {
+                setError(err.message);
+            } else {
+                setError('오류가 발생했습니다.');
+            }
+            setMessages(prev => prev.filter(msg => msg.id !== userMessage.id)); // 롤백
+            if (err instanceof Error && err.message.includes('인증')) {
+                localStorage.removeItem('accessToken');
+                router.push('/login?next=/counsel?session=' + sessionId);
+            }
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // --- (기존 로직: 음악 생성 - 변경 없음) ---
     const handleGenerateMusicClick = async () => {
-        if (!sessionId) { return; }
+        if (!sessionId) {
+            setError('세션 ID가 없습니다.');
+            return;
+        }
         setIsGeneratingMusic(true);
+        setMusicGenerationStep('대화 내용을 분석 중...');
         setError(null);
-        let finalPrompt = '';
 
         const token = localStorage.getItem('accessToken');
         if (!token) {
-            setError('음악 생성을 위해 로그인이 필요합니다.');
+            setError('로그인이 필요합니다.');
             setIsGeneratingMusic(false);
             return;
         }
 
         try {
-            // 1단계: 분석 및 프롬프트 생성
-            setMusicGenerationStep("대화 내용 분석 및 프롬프트 생성 중...");
-            const analyzeResponse = await fetch('http://localhost:8000/patient/analyze-and-generate', {
+            // 1단계: 분석
+            const analyzeResponse = await fetch(`${API_URL}/patient/analyze-and-generate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ session_id: Number(sessionId), guideline_json: "{}" }),
@@ -142,192 +262,266 @@ export default function CounselPage() {
                 const errorData = await analyzeResponse.json();
                 throw new Error(errorData.detail || "대화 분석 실패");
             }
-            const { prompt_text } = await analyzeResponse.json();
-            finalPrompt = prompt_text;
 
             // 2단계: 음악 생성
-            setMusicGenerationStep("AI가 프롬프트를 기반으로 음악 작곡 중...");
-            const musicResponse = await fetch('http://localhost:8000/music/compose', {
+            setMusicGenerationStep('AI가 음악을 작곡하고 있습니다...');
+            const musicResponse = await fetch(`${API_URL}/music/compose`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ session_id: Number(sessionId), music_length_ms: 180000, force_instrumental: true }),
+                body: JSON.stringify({
+                    session_id: Number(sessionId),
+                    music_length_ms: 180000,
+                    force_instrumental: true
+                }),
             });
             if (musicResponse.status === 401) throw new Error('인증 실패(음악생성)');
             if (!musicResponse.ok) {
                 const errorData = await musicResponse.json();
                 throw new Error(errorData.detail || "음악 생성 실패");
             }
-            const result = await musicResponse.json();
-            if (!result.track_url) throw new Error("음악 생성 결과 URL 없음");
 
-            // 💡 3. [수정] '가짜 DB' 로직 제거
-            // const newTrack: MusicTrack = { ... };
-            // addTrackToPlaylist(newTrack); 
-            // if (patientId) { addMusicToPatient(patientId, newTrack); }
-
-            alert("음악 생성이 완료되었습니다! 플레이리스트로 이동합니다.");
             router.push('/music');
 
         } catch (err: unknown) {
-             console.error('Music generation process failed:', err);
-             const errorMessage = err instanceof Error ? err.message : '음악 생성 중 오류 발생';
-             setError(errorMessage);
-             if (errorMessage.includes('인증 실패')) {
-                 localStorage.removeItem('accessToken');
-                 router.push('/login?next=/counsel?session='+sessionId);
-             }
+            if (err instanceof Error) {
+                setError(err.message);
+            } else {
+                setError('음악 생성 중 알 수 없는 오류 발생');
+            }
+            if (err instanceof Error && err.message.includes('인증 실패')) {
+                localStorage.removeItem('accessToken');
+                router.push('/login?next=/counsel?session=' + sessionId);
+            }
         } finally {
             setIsGeneratingMusic(false);
-            setMusicGenerationStep("");
-            // 💡 4. [핵심] 음악 생성 후에도 포커스 복원
-            inputRef.current?.focus();
         }
     };
-    
-    /**
-     * 채팅 메시지 전송 핸들러
-     */
-    const handleSubmit = async (e: FormEvent) => {
-        e.preventDefault();
-        const userText = input.trim();
-        if (isLoading || isGeneratingMusic || !userText || !sessionId) return;
 
-        const userMessage: Message = { id: Date.now().toString(), role: 'user', content: userText };
-        setMessages(prev => [...prev, userMessage]);
-        setInput('');
-        setIsLoading(true);
-        setError(null);
-
-        try {
-            const token = localStorage.getItem('accessToken');
-            if (!token) throw new Error("로그인 토큰 없음");
-
-            const response = await fetch('http://localhost:8000/chat/send', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ session_id: Number(sessionId), message: userText, guideline_json: "{}" }),
-            });
-
-            if (response.status === 401) throw new Error('인증 실패(채팅)');
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || "서버 응답 오류");
-            }
-            
-            const data = await response.json();
-            const assistantMessage: Message = { id: Date.now().toString() + '-ai', role: 'assistant', content: data.assistant };
-            setMessages(currentMsgs => [...currentMsgs, assistantMessage]);
-            
-        } catch (err: unknown) {
-             console.error('Chat API Error:', err);
-             const errorMessage = err instanceof Error ? err.message : '알 수 없는 오류';
-             setError(errorMessage);
-             setMessages(currentMsgs => currentMsgs.filter(msg => msg.id !== userMessage.id)); // 롤백
-             if (errorMessage.includes('인증 실패')) {
-                 localStorage.removeItem('accessToken');
-                 router.push('/login?next=/counsel?session='+sessionId);
-             }
-        } finally {
-            setIsLoading(false);
-            // 💡 5. [핵심] AI 응답 완료 후(성공/실패 무관) input에 다시 포커스
-            inputRef.current?.focus();
-        }
-    };
 
     const isReadyToGenerate = messages.some(m => m.role === 'user');
 
+    // 💡 8. [핵심 수정] JSX (UI) 렌더링 분기
+
+    // 8-1. 로딩 중
+    if (isInitialLoading) {
+        return <LoadingScreen message="상담 정보 확인 중..." />;
+    }
+
+    // 8-2. 세션 ID가 없는 경우 (선택 화면)
+    if (!sessionId) {
+        return (
+            <div className="flex flex-col h-screen bg-gray-100 max-w-3xl mx-auto shadow-2xl">
+                {/* 💡 [오류 수정] patientName state를 전달합니다. */}
+                <Header patientName={user?.name || null} /> 
+                <main className="flex-1 overflow-y-auto p-6 space-y-8">
+                    <h2 className="text-2xl font-bold text-gray-800">AI 심리 상담</h2>
+                    
+                    {error && ( // 💡 [추가] 오류가 있을 경우 표시
+                        <div className="p-3 bg-red-100 border border-red-200 text-red-700 rounded-lg text-sm flex items-center gap-2">
+                             <AlertTriangle className="w-5 h-5"/> {error}
+                        </div>
+                    )}
+
+                    {/* 새 상담 시작 */}
+                    <div className="p-6 bg-white rounded-lg shadow border border-gray-200">
+                        <h3 className="font-semibold text-lg text-gray-900 flex items-center">
+                            <FilePen className="w-5 h-5 mr-3 text-indigo-600" />
+                            새 상담 시작하기
+                        </h3>
+                        <p className="text-gray-600 mt-2 text-sm">
+                            새로운 상담을 시작하려면, 먼저 상담 접수를 통해 현재 상태와 목표를 알려주세요.
+                        </p>
+                        <button
+                            onClick={() => router.push('/intake/patient')}
+                            className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg shadow hover:bg-indigo-700 transition-colors"
+                        >
+                            상담 접수 페이지로 이동 <ArrowRight className="w-4 h-4" />
+                        </button>
+                    </div>
+
+                    {/* 이어하기 */}
+                    <div className="p-6 bg-white rounded-lg shadow border border-gray-200">
+                        <h3 className="font-semibold text-lg text-gray-900 flex items-center">
+                            <MessageSquare className="w-5 h-5 mr-3 text-indigo-600" />
+                            진행 중인 상담 이어하기
+                        </h3>
+                        {ongoingSessions.length === 0 ? (
+                            <p className="text-gray-500 mt-3 text-sm">진행 중인 AI 상담이 없습니다.</p>
+                        ) : (
+                            <ul className="mt-4 space-y-3">
+                                {ongoingSessions.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map(session => (
+                                    <li key={session.id}>
+                                        <button
+                                            onClick={() => router.push(`/counsel?session=${session.id}`)}
+                                            className="w-full text-left p-3 rounded-md bg-gray-50 border border-gray-200 hover:bg-indigo-50 hover:border-indigo-300 transition-colors"
+                                        >
+                                            <span className="font-medium text-gray-700">
+                                                {new Date(session.created_at).toLocaleString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit' })} 상담
+                                            </span>
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
+                </main>
+            </div>
+        );
+    }
+
+    // 8-3. 세션 ID가 있는 경우 (채팅 UI)
     return (
-        <div className="flex flex-col h-screen max-w-2xl mx-auto bg-white shadow-2xl relative">
-            
-            {/* [수정] 음악 생성 시에만 전체 로딩 오버레이 */}
-            {isGeneratingMusic && (
-                <div className="absolute inset-0 bg-white bg-opacity-80 flex flex-col justify-center items-center z-10 text-center px-4">
-                    <Loader2 className="w-12 h-12 animate-spin text-indigo-600" />
-                    <p className="mt-4 text-lg font-semibold text-gray-700">{musicGenerationStep}</p>
-                    <p className="text-sm text-gray-500">잠시만 기다려주세요.</p>
-                </div>
-            )}
+        <div className="flex flex-col h-screen bg-gray-100 max-w-3xl mx-auto shadow-2xl">
+            {/* 로딩 오버레이 */}
+            <AnimatePresence>
+                {isGeneratingMusic && (
+                    <motion.div
+                        className="absolute inset-0 bg-white/80 backdrop-blur-sm flex flex-col justify-center items-center z-50"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                    >
+                        <Loader2 className="w-10 h-10 animate-spin text-indigo-600" />
+                        <p className="mt-4 text-lg font-medium text-gray-700">
+                            {musicGenerationStep || '음악을 생성 중입니다...'}
+                        </p>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* 헤더 */}
-            <header className="p-4 bg-indigo-600 text-white text-xl font-bold text-center">
-                AI 심리 상담 {patientName ? `(${patientName}님)` : ''}
-            </header>
+            <Header patientName={patientName} />
 
-            {/* 메인 채팅 영역 */}
-            <main className="flex-1 overflow-y-auto p-4 space-y-4">
-                {isInitialLoading ? (
-                    <div className="flex justify-center items-center h-full">
-                        <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
-                        <p className="ml-3 text-gray-500">과거 상담 기록을 불러오는 중...</p>
-                    </div>
-                ) : (
-                    messages.map((m) => (
-                        <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`p-3 max-w-lg rounded-2xl shadow-md ${
-                                m.role === 'user' ? 'bg-blue-500 text-white rounded-br-none' : 'bg-white text-gray-800 rounded-tl-none border'
-                            }`}>
-                                <p className="whitespace-pre-wrap">{m.content}</p>
+            {/* 채팅 영역 */}
+            <main className="flex-1 overflow-y-auto p-6 space-y-6">
+                <AnimatePresence>
+                    {messages.map((m) => (
+                        <motion.div
+                            key={m.id}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.25 }}
+                            className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                        >
+                            <div className="flex items-start gap-3 max-w-lg">
+                                {m.role === 'assistant' && (
+                                    <div className="flex-shrink-0 w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white">
+                                        <Bot className="w-4 h-4" />
+                                    </div>
+                                )}
+                                <div
+                                    className={`p-4 rounded-2xl shadow-sm ${m.role === 'user'
+                                        ? 'bg-indigo-600 text-white rounded-br-none'
+                                        : 'bg-white text-gray-800 border border-gray-100 rounded-tl-none'
+                                        }`}
+                                >
+                                    <p className="whitespace-pre-wrap">{m.content}</p>
+                                </div>
+                                {m.role === 'user' && (
+                                    <div className="flex-shrink-0 w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center text-gray-700">
+                                        <User className="w-4 h-4" />
+                                    </div>
+                                )}
+                            </div>
+                        </motion.div>
+                    ))}
+                </AnimatePresence>
+
+                {isLoading && (
+                    <motion.div
+                        className="flex justify-start"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                    >
+                        <div className="flex items-center gap-3 max-w-lg">
+                            <div className="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white">
+                                <Bot className="w-4 h-4" />
+                            </div>
+                            <div className="px-4 py-3 bg-white border border-gray-100 rounded-2xl text-gray-400 rounded-tl-none">
+                                <span className="animate-pulse">...</span>
                             </div>
                         </div>
-                    ))
+                    </motion.div>
                 )}
-
-                {/* [수정] 채팅 응답 로딩 시 작은 로더 표시 */}
-                {isLoading && !isInitialLoading && (
-                    <div className="flex justify-start">
-                        <div className="p-3 bg-white rounded-2xl border shadow-md inline-flex items-center">
-                            <Loader2 className="h-5 w-5 animate-spin text-indigo-500 mr-2" />
-                            <span className="text-sm text-gray-500">AI 응답 대기 중...</span>
-                        </div>
-                    </div>
-                )}
-
                 <div ref={messagesEndRef} />
             </main>
 
-            {/* 에러 메시지 */}
+            {/* 오류 표시 */}
             {error && (
-                <div className="p-4 border-t text-center text-red-600 bg-red-50">
-                    <p>오류: {error}</p>
+                <div className="bg-red-50 border-t border-red-200 text-red-700 text-center p-3 text-sm flex items-center justify-center gap-2">
+                    <AlertTriangle className="w-4 h-4" /> {error}
                 </div>
             )}
 
-            {/* 푸터 */}
-            <footer className="border-t bg-white p-4 space-y-3">
-                <div className="flex justify-between items-center">
+            {/* 입력 영역 */}
+            <footer className="bg-white/90 backdrop-blur border-t border-gray-200 sticky bottom-0">
+                <div className="max-w-3xl mx-auto p-4 space-y-3">
                     <button
                         onClick={handleGenerateMusicClick}
-                        disabled={!isReadyToGenerate || isLoading || isGeneratingMusic || isInitialLoading}
-                        className="flex items-center justify-center w-full px-4 py-2 rounded-full bg-green-500 text-white hover:bg-green-600 disabled:bg-gray-400 transition-colors shadow font-semibold"
+                        disabled={!isReadyToGenerate || isLoading || isGeneratingMusic}
+                        className="w-full py-3 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold rounded-lg shadow hover:opacity-90 disabled:opacity-60 transition"
                     >
-                        <Music className="h-5 w-5 mr-2" />
+                        <Music className="inline-block w-5 h-5 mr-2" />
                         지금까지의 대화로 음악 만들기
                     </button>
-                    <button
-                        onClick={() => router.push('/music')}
-                        className="flex-shrink-0 ml-3 text-sm text-indigo-600 hover:text-indigo-800 transition-colors flex items-center gap-1"
-                        aria-label="플레이리스트 보기"
-                    >
-                        <Volume2 className="h-4 w-4"/>
-                        {/* (플레이리스트 개수 표시 로직 필요) */}
-                    </button>
+
+                    <form onSubmit={handleSubmit} className="flex items-center gap-2">
+                        <input
+                            ref={inputRef}
+                            value={input}
+                            onChange={(e) => setInput(e.target.value)}
+                            placeholder="메시지를 입력하세요..."
+                            disabled={isLoading || isGeneratingMusic || !sessionId || isInitialLoading}
+                            className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-400 outline-none transition"
+                        />
+                        <button
+                            type="submit"
+                            disabled={!input.trim() || isLoading || isGeneratingMusic}
+                            className="p-3 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:bg-gray-400 transition"
+                        >
+                            <Send className="w-5 h-5" />
+                        </button>
+                    </form>
                 </div>
-                
-                <form onSubmit={handleSubmit} className="flex items-center space-x-3">
-                    <input
-                        // 💡 6. [핵심] ref 연결
-                        ref={inputRef} 
-                        className="flex-1 p-3 border rounded-full focus:ring-2 focus:ring-indigo-500 transition"
-                        value={input}
-                        placeholder={isInitialLoading ? "상담 정보 로딩 중..." : (sessionId ? "메시지를 입력하세요..." : "세션 ID가 없습니다.")}
-                        onChange={(e) => setInput(e.target.value)}
-                        disabled={isLoading || isGeneratingMusic || !sessionId || isInitialLoading}
-                    />
-                    <button type="submit" disabled={isLoading || isGeneratingMusic || !sessionId || !input.trim()} className="p-3 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 disabled:bg-gray-400 shadow-lg transition">
-                        <Send className="h-5 w-5" />
-                    </button>
-                </form>
             </footer>
         </div>
     );
 }
+
+// 💡 9. [추가] 공용 컴포넌트
+// (채팅방 UI가 전체 화면을 사용하므로, 헤더와 로딩 스크린을 여기에 포함)
+
+// 💡 [수정] Header 컴포넌트가 patientName prop을 받도록 수정
+const Header = ({ patientName }: { patientName: string | null }) => {
+    const router = useRouter();
+    return (
+        <header className="flex-shrink-0 bg-white border-b border-gray-200 shadow-sm">
+            <div className="max-w-3xl mx-auto p-4 flex justify-between items-center">
+                <div>
+                    <h1 className="text-xl font-bold text-gray-900">AI 심리 상담</h1>
+                    <p className="text-sm text-gray-500">
+                        {patientName ? `${patientName}님` : '사용자님'}의 마음에 귀 기울이는 중입니다.
+                    </p>
+                </div>
+                <button
+                    onClick={() => router.push('/music')}
+                    className="flex-shrink-0 ml-3 text-sm text-indigo-600 hover:text-indigo-800 transition-colors flex items-center gap-1.5 p-2 rounded-lg hover:bg-indigo-50"
+                    aria-label="플레이리스트 보기"
+                >
+                    <Volume2 className="h-5 w-5" />
+                    <span className="hidden sm:inline">내 음악</span>
+                </button>
+            </div>
+        </header>
+    );
+};
+
+const LoadingScreen = ({ message }: { message: string }) => (
+    <div className="flex flex-col h-screen bg-gray-100 max-w-3xl mx-auto shadow-2xl">
+        {/* 💡 [수정] patientName에 null 전달 */}
+        <Header patientName={null} />
+        <div className="flex-1 flex items-center justify-center text-gray-500">
+            <Loader2 className="w-6 h-6 animate-spin mr-2" /> {message}
+        </div>
+    </div>
+);

@@ -1,17 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, update, delete
+from typing import Optional, Dict, Any # 💡 [수정] Dict, Any 추가
 import httpx
 import os
 from fastapi.responses import JSONResponse
 from app.db import get_db
-from app.models import User
+from app.models import User, Connection
 from app.services.auth_service import (
     create_access_token, verify_password, hash_password, get_current_user, create_temp_register_token, verify_temp_register_token # 💡 [추가] 임시 토큰 함수
 )
 # app.schemas.py에 UserCreate, Token 스키마 추가 필요
-from app.schemas import UserCreate, Token, KakaoLoginRequest, UserPublic,KakaoLoginResponse, SocialRegisterRequest # 💡 [추가] 새 스키마
+from app.schemas import UserCreate, Token, KakaoLoginRequest, UserPublic,KakaoLoginResponse, SocialRegisterRequest, UserUpdate# 💡 [추가] 새 스키마
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -190,3 +191,89 @@ async def get_my_info(current_user: User = Depends(get_current_user)):
     # get_current_user는 DB에서 User 객체를 성공적으로 가져왔음을 보장합니다.
     return current_user
 
+# 💡 [핵심 추가] 내 정보 '수정' API
+@router.put("/me", response_model=UserPublic)
+async def update_users_me(
+    user_update: UserUpdate, # 👈 schemas.py에 새로 추가한 스키마
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    (신규) 현재 로그인된 사용자의 프로필 정보(예: 나이)를 수정합니다.
+    (이름, 이메일, 역할은 수정 불가로 가정)
+    """
+    
+    # 1. 수정할 데이터(age)가 있는지 확인
+    update_data = user_update.model_dump(exclude_unset=True) 
+    
+    if not update_data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="수정할 데이터가 없습니다."
+        )
+
+    # 2. DB에서 현재 사용자 객체에 변경 사항 적용
+    # (주의: user_update.age 대신 update_data.get('age') 사용)
+    if 'age' in update_data:
+        current_user.age = update_data['age']
+    # (만약 dob를 사용한다면)
+    # if 'dob' in update_data:
+    #    current_user.dob = update_data['dob']
+
+    # 3. DB에 저장
+    try:
+        db.add(current_user)
+        await db.commit()
+        await db.refresh(current_user)
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"프로필 업데이트 중 오류 발생: {e}"
+        )
+        
+    return current_user
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_users_me(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    (수정됨) 현재 로그인된 사용자의 계정을 탈퇴(삭제)합니다.
+    DB 스키마(models.py)를 건드리지 않기 위해,
+    연결된 Connection 레코드를 어플리케이션(API) 레벨에서 '수동'으로 먼저 삭제합니다.
+    """
+    
+    try:
+        # --- (1) 수동 연쇄 삭제 ---
+        # 💡 [추가] User를 삭제하기 *전에* 연결된 Connection 레코드를 '수동'으로 삭제합니다.
+        
+        # (1-1) 내가 환자인 경우
+        if current_user.role == 'patient':
+            stmt = delete(Connection).where(Connection.patient_id == current_user.id)
+        # (1-2) 내가 상담사인 경우 (오류가 발생한 지점)
+        elif current_user.role == 'therapist':
+            stmt = delete(Connection).where(Connection.therapist_id == current_user.id)
+        else:
+            stmt = None
+        
+        if stmt is not None:
+            await db.execute(stmt)
+        
+        # --- (2) User 삭제 ---
+        # 💡 이제 Connection이 삭제되었으므로 User를 안전하게 삭제할 수 있습니다.
+        await db.delete(current_user)
+        
+        # --- (3) DB에 최종 반영 ---
+        await db.commit()
+        
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"계정 탈퇴 처리 중 오류 발생: {e}"
+        )
+    
+    # 204 No Content는 본문(body)이 없어야 함
+    return None

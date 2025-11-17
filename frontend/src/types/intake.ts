@@ -4,20 +4,57 @@
 // 1. 공통: 장르 목록
 // ===============================================
 export const MUSIC_GENRE_OPTIONS = [
-    '피아노', 
-    '클래식', 
-    '자연의 소리', 
-    '명상', 
-    '재즈', 
-    '팝',
-    '록',
-    '힙합',
+  "클래식",
+  "재즈",
+  "발라드",
+  "팝",
+  "락",
+  "힙합",
+  "R&B",
+  "EDM",
+  "뉴에이지",
+  "로파이(Lo-fi)",
 ];
 
 // ===============================================
-// 2. A. 환자용 Intake Data Type
+// 2. A. 환자용 Intake Data Type (API 전송용)
+// 💡 [수정] 백엔드 schemas.py의 PatientIntake와 구조를 일치시킵니다.
 // ===============================================
-export interface PatientIntakeData {
+
+// 2-1. 세부 타입 정의
+interface VasData {
+    anxiety: number;
+    depression: number; // 👈 백엔드 prompt_from_guideline.py가 'depression' 키를 사용
+    pain: number;
+}
+interface PrefsData {
+    genres: string[]; // 👈 백엔드 prompt_from_guideline.py가 'genres' 키를 사용
+    contraindications: string[]; // 👈 백엔드 prompt_from_guideline.py가 'contraindications' 키를 사용
+    lyrics_allowed: boolean; // 👈 백엔드 prompt_from_guideline.py가 'lyrics_allowed' 키를 사용
+}
+interface GoalData {
+    text: string;
+}
+
+interface DialogMessage {
+    role: string;
+    content: string;
+}
+// 2-2. PatientIntake (API Payload 타입)
+// 💡 (이것이 intake/patient/page.tsx가 import할 'PatientIntake'입니다)
+export interface PatientIntake {
+    vas: VasData;
+    prefs: PrefsData;
+    goal: GoalData;
+    dialog: DialogMessage[]; // (환자 접수 시에는 항상 빈 배열 []로 전송)
+}
+
+// ===============================================
+// 3. A-2. 환자용 폼(Form) 상태 타입
+// (이것이 intake/patient/page.tsx가 import할 'PatientIntakeFormData'입니다)
+// (기존 PatientIntakeData의 이름을 변경)
+// ===============================================
+export interface PatientIntakeFormData {
   // VAS (0~10점 척도)
   currentAnxietyLevel: number; 
   currentMoodLevel: number;    
@@ -30,10 +67,10 @@ export interface PatientIntakeData {
   vocalsAllowed: boolean;
 }
 
-export const initialPatientIntakeData: PatientIntakeData = {
+export const initialPatientIntakeData: PatientIntakeFormData = {
     currentAnxietyLevel: 5, 
     currentMoodLevel: 5, 
-    currentPainLevel: 5, 
+    currentPainLevel: 5, // 👈 [수정] 0 -> 5 (기존 코드와 동일하게)
     preferredMusicGenres: [], 
     dislikedMusicGenres: [],
     vocalsAllowed: false,
@@ -43,7 +80,7 @@ export const initialPatientIntakeData: PatientIntakeData = {
 // ===============================================
 // 3. B. 상담가용 Intake Data Type (작곡 심화 요소 포함)
 // ===============================================
-export interface CounselorIntakeData extends PatientIntakeData {
+export interface CounselorIntakeData extends PatientIntakeFormData {
   // 음악 생성 파라미터
   musicKeyPreference: 'Major' | 'Minor' | 'Neutral';
   musicDuration: number;              // 음악 길이 (초)

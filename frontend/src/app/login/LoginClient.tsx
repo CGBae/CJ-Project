@@ -3,7 +3,7 @@ import React, { useState, FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2, LogIn } from 'lucide-react';
-
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://210.104.76.200:8000";
 // 💡 환경 변수 로딩 함수
 const getKakaoEnv = () => {
     // .env.local의 NEXT_PUBLIC_... 환경 변수를 정확히 읽습니다.
@@ -57,7 +57,7 @@ export default function LoginClient() {
         formData.append('password', password);
 
         try {
-            const response = await fetch('http://localhost:8000/auth/login', {
+                        const response = await fetch(`${API_URL}/auth/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, 
                 body: formData,

@@ -2,7 +2,7 @@
 import axios from 'axios';
 
 // 백엔드 API의 기본 URL
-const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const baseURL = process.env.NEXT_PUBLIC_API_URL ?? "http://210.104.76.200:8000";
 
 export const api = axios.create({
   baseURL: baseURL,

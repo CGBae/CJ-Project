@@ -1,9 +1,12 @@
-# backend/db.py
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 
-ASYNC_DB_URL = os.getenv("ASYNC_DATABASE_URL", "")
+ASYNC_DB_URL = os.getenv("ASYNC_DATABASE_URL")
 
 class Base(DeclarativeBase):
     pass

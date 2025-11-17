@@ -1,8 +1,8 @@
 'use client';
 
+import React from 'react';
 import { useAuth } from '@/lib/contexts/AuthContext';
-import { useRouter, usePathname } from 'next/navigation'; // 💡 usePathname 추가
-import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 
 export default function CounselorLayout({
@@ -10,54 +10,33 @@ export default function CounselorLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { isAuthed, isLoading, role } = useAuth();
+  // 💡 1. [수정] role 대신 user 객체를 가져옵니다.
+  const { user, isAuthed, isLoading } = useAuth();
   const router = useRouter();
-  const pathname = usePathname(); // 💡 현재 경로 가져오기
 
-  useEffect(() => {
-    if (isLoading) return;
-
-    if (!isAuthed) {
-      router.push(`/login?next=${pathname}`); // 💡 현재 경로를 next로 전달
-      return;
-    }
-
-    if (role !== 'therapist') {
-      // 환자가 상담사 페이지 접근 시
-      router.push('/dashboard/patient'); // 환자 대시보드로
-    }
-  }, [isLoading, isAuthed, role, router, pathname]); // 💡 pathname 추가
-
-  // --- 렌더링 로직 ---
-
+  // 💡 2. [수정] AuthContext가 로딩 중일 때
   if (isLoading) {
     return (
-        <div className="flex justify-center items-center h-64">
-             <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
-             <p className="ml-2">권한 확인 중...</p>
-        </div>
+      <div className="flex justify-center items-center h-[calc(100vh-80px)]">
+        <Loader2 className="w-10 h-10 animate-spin text-indigo-600" />
+        <p className="ml-3 text-lg text-gray-600">인증 정보 확인 중...</p>
+      </div>
     );
   }
 
-  // 💡 [핵심 수정] 로딩 끝났는데 인증 안 됐을 때 (로그아웃 포함)
-  if (!isAuthed) {
-     return (
-        <div className="flex justify-center items-center h-64">
-             <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
-             <p className="ml-2">로그인 페이지로 이동 중...</p>
-        </div>
-    );
+  // 💡 3. [수정] 로딩이 끝났는데, 로그인이 안 되어 있을 때
+  if (!isLoading && !isAuthed) {
+    // 💡 [수정] window.location.pathname 사용 (더 안전함)
+    router.replace('/login?next=' + (typeof window !== 'undefined' ? window.location.pathname : '/dashboard/counselor')); // 👈 로그인 페이지로 튕겨냄
+    return null; // 렌더링 중단
   }
 
-  // (선택 사항) 상담사가 아닌 경우
-  if (role !== 'therapist') {
-       return (
-        <div className="flex justify-center items-center h-64">
-             <p className="text-red-600">상담사 전용 페이지입니다. 대시보드로 이동합니다...</p>
-        </div>
-    );
+  // 💡 4. [수정] 로그인은 됐는데, 역할이 '상담사(therapist)'가 아닐 때
+  if (user && user.role !== 'therapist') {
+    router.replace('/dashboard/patient'); // 👈 환자 대시보드로 튕겨냄
+    return null; // 렌더링 중단
   }
 
-  // 모든 조건 통과 (상담사 맞음)
+  // 💡 5. 모든 검사를 통과한 경우 (로그인된 상담사)
   return <>{children}</>;
 }

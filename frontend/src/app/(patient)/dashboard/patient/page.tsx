@@ -1,106 +1,147 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Fragment, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-// 💡 1. '가짜 DB' import 제거
-// import { getPatientById, Patient, unlinkSessionFromPatient } from '@/lib/utils/patients';
-// import { MusicTrack } from '@/lib/utils/music';
-import { MessageSquare, Plus, Loader2, Music, ArrowRight, Trash2 } from 'lucide-react';
+import { useAuth } from '@/lib/contexts/AuthContext';
+// 💡 1. [수정] 아이콘 추가 (Heart)
+import { 
+    MessageSquare, Plus, Loader2, Music, ArrowRight, Trash2, 
+    AlertTriangle, ChevronDown, User, Heart 
+} from 'lucide-react';
 
-// 💡 2. 실제 데이터 타입을 정의합니다. (백엔드 API 응답에 맞춰야 함)
+// 💡 2. [수정] MusicTrackInfo 타입 (is_favorite 추가)
+interface UserProfile {
+  id: number | string;
+  email: string | null;
+  role: string;
+  name?: string | null;
+}
 interface SessionInfo {
   id: number;
-  created_at: string; // 또는 Date
-  // 필요한 다른 정보 (예: 상태)
+  created_at: string;
+  initiator_type: string | null;
+  has_dialog: boolean | null;
 }
-
 interface MusicTrackInfo {
-  id: number; // 또는 string
+  id: number | string;
   title: string;
   prompt: string;
   audioUrl: string;
-  track_url?: string; // 💡 이 줄 추가 (?는 '있을 수도 있고 없을 수도 있다'는 뜻)
+  track_url?: string;
+  created_at: string;
+  session_id: number;
+  initiator_type: string | null;
+  has_dialog: boolean | null;
+  is_favorite: boolean; // 👈 [추가]
+}
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+}
+function getApiUrl() {
+  // 1순위: 내부 통신용 (docker 네트워크 안에서 backend 이름으로 호출)
+  if (process.env.INTERNAL_API_URL) {
+    return process.env.INTERNAL_API_URL;
+  }
+
+  // 2순위: 공개용 API URL (빌드 시점에라도 이건 거의 항상 들어있음)
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+
+  // 3순위: 최후 fallback - 도커 네트워크 기준으로 backend 서비스 직접 호출
+  return 'http://backend:8000';
 }
 
-interface UserProfile {
-  id: number; // 또는 string
-  email: string; // 또는 name 등 사용자 식별 정보
-  role: string;
-  name?: string | null;
-  // 필요한 다른 정보
-}
+const API_URL = getApiUrl();
 
-// 💡 3. 시뮬레이션 ID 제거
-// const SIMULATED_LOGGED_IN_PATIENT_ID = 'p_user_001';
+// 💡 3. [수정] 헬퍼 함수 (세션 ID 제거)
+const getDynamicTitle = (track: MusicTrackInfo): string => {
+    if (track.title && !track.title.includes("AI 생성 트랙")) {
+        return track.title.split(' (')[0];
+    }
+    if (track.initiator_type === "therapist") {
+        return `상담사 처방 음악`;
+    } else if (track.initiator_type === "patient") {
+        if (track.has_dialog) {
+            return `AI 상담 기반 음악`;
+        } else {
+            return `작곡 체험 음악`;
+        }
+    }
+    return track.title ? track.title.split(' (')[0] : `AI 트랙 #${track.id}`; 
+};
 
 export default function PatientDashboardPage() {
   const router = useRouter();
-  // 💡 4. 상태 타입을 실제 데이터에 맞게 변경
-  const [user, setUser] = useState<UserProfile | null>(null); // 사용자 정보 상태 추가
-  const [sessions, setSessions] = useState<SessionInfo[]>([]); // 세션 목록 상태
-  const [recentMusic, setRecentMusic] = useState<MusicTrackInfo[]>([]); // 음악 목록 상태
+  const { user, isAuthed, isLoading: isAuthLoading } = useAuth(); // 💡 [수정] user, isAuthLoading 가져오기
+  
+  const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [recentMusic, setRecentMusic] = useState<MusicTrackInfo[]>([]);
+  // 💡 4. [추가] 즐겨찾기 목록 state
+  const [favoriteMusic, setFavoriteMusic] = useState<MusicTrackInfo[]>([]);
+  
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null); // 에러 상태 추가
+  const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [chatLogs, setChatLogs] = useState<Record<number, ChatMessage[]>>({});
+  const [logLoading, setLogLoading] = useState<number | null>(null);
 
-  // 💡 5. [핵심 수정] useEffect에서 실제 API 호출
+  // 💡 5. [수정] useEffect (API 3개 호출, AuthContext 의존)
   useEffect(() => {
+    // AuthContext가 로딩 중이면 API 호출 대기
+    if (isAuthLoading) {
+        setLoading(true);
+        return;
+    }
+    // AuthContext 로딩 완료 + 로그아웃 상태
+    if (!isAuthed) {
+        setError("로그인이 필요합니다.");
+        setLoading(false);
+        router.push('/login?next=/dashboard/patient');
+        return;
+    }
+    // AuthContext 로딩 완료 + 로그인 상태
     const fetchData = async () => {
       setLoading(true);
       setError(null);
       const token = localStorage.getItem('accessToken');
-
-      if (!token) {
-        setError("로그인이 필요합니다. 로그인 페이지로 이동합니다.");
+      if (!token) { // (이중 확인)
+        setError("로그인이 필요합니다.");
         setLoading(false);
-        router.push('/login?next=/dashboard/patient'); // 로그인 페이지로 리다이렉트
         return;
       }
 
       try {
-        // --- API 호출 시작 ---
+        // 💡 3개 API 병렬 호출 (즐겨찾기 API 추가)
+        const [sessionsRes, musicRes, favRes] = await Promise.all([
+          fetch(`${API_URL}/sessions/my`, { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch(`${API_URL}/music/my?limit=3`, { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch(`${API_URL}/music/my/favorites`, { headers: { 'Authorization': `Bearer ${token}` } }) // 👈 [추가]
+        ]);
 
-        // (1) 사용자 정보 가져오기 (/auth/me)
-        const meResponse = await fetch('http://localhost:8000/auth/me', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        // 401 오류 처리 추가
-        if (meResponse.status === 401) throw new Error('인증 실패');
-        if (!meResponse.ok) throw new Error('사용자 정보 로딩 실패');
-        const userData: UserProfile = await meResponse.json();
-        setUser(userData); // 사용자 정보 저장
+        if (sessionsRes.status === 401 || musicRes.status === 401 || favRes.status === 401) throw new Error('인증 실패');
+        
+        if (!sessionsRes.ok) throw new Error('상담 기록 로딩 실패');
+        setSessions(await sessionsRes.json());
 
-        // (2) 상담 기록 가져오기 (/sessions/my) - 백엔드 경로 확인!
-        const sessionsResponse = await fetch('http://localhost:8000/sessions/my', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (!sessionsResponse.ok) throw new Error('상담 기록 로딩 실패');
-        const sessionsData: SessionInfo[] = await sessionsResponse.json();
-        setSessions(sessionsData); // 세션 목록 저장
+        if (!musicRes.ok) throw new Error('최근 음악 로딩 실패');
+        const musicData: MusicTrackInfo[] = await musicRes.json();
+        setRecentMusic(musicData.map(track => ({ ...track, audioUrl: track.audioUrl || track.track_url || '' })));
+        
+        // 💡 [추가] 즐겨찾기 목록 set
+        if (!favRes.ok) throw new Error('즐겨찾기 목록 로딩 실패');
+        const favData: MusicTrackInfo[] = await favRes.json();
+        setFavoriteMusic(favData.map(track => ({ ...track, audioUrl: track.audioUrl || track.track_url || '' })));
 
-        // (3) 최근 음악 가져오기 (/music/my?limit=3) - 백엔드 경로 확인!
-        const musicResponse = await fetch('http://localhost:8000/music/my?limit=3', {
-           headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (!musicResponse.ok) throw new Error('최근 음악 로딩 실패');
-        const musicData: MusicTrackInfo[] = await musicResponse.json();
-        // 백엔드 track_url을 audioUrl로 매핑 (필요시)
-        const mappedMusicData = musicData.map(track => ({
-             ...track,
-             audioUrl: track.audioUrl || track.track_url || ''
-        }));
-        setRecentMusic(mappedMusicData); // 음악 목록 저장
-
-        // --- API 호출 끝 ---
-
-      } catch (err) {
+      } catch (err: unknown) {
         console.error("Dashboard data fetch error:", err);
         const errorMessage = err instanceof Error ? err.message : "데이터 로딩 중 오류 발생";
         setError(errorMessage);
-        // 인증 실패 시 localStorage 비우고 로그인 페이지로
-        if (errorMessage === '인증 실패') {
-             localStorage.removeItem('accessToken');
-             router.push('/login?next=/dashboard/patient');
+        if (errorMessage.includes('인증 실패')) {
+            localStorage.removeItem('accessToken');
+            router.push('/login?next=/dashboard/patient');
         }
       } finally {
         setLoading(false);
@@ -108,10 +149,10 @@ export default function PatientDashboardPage() {
     };
 
     fetchData();
-  }, [router]); // 의존성 배열
+  }, [isAuthed, isAuthLoading, router]); // 👈 [수정] 의존성
 
-  // 💡 6. [수정] 세션 기록 삭제 핸들러 (Authorization 헤더 추가)
-  const handleDeleteSession = async (sessionId: number) => {
+  // 💡 6. [수정] handleDeleteSession (useCallback 추가)
+  const handleDeleteSession = useCallback(async (sessionId: number) => {
     if (window.confirm(`상담 세션 #${sessionId}의 모든 대화 기록을 삭제하시겠습니까?`)) {
         setDeletingId(sessionId);
         setError(null);
@@ -121,30 +162,22 @@ export default function PatientDashboardPage() {
              setDeletingId(null);
              return;
         }
-
         try {
-            const response = await fetch(`http://localhost:8000/chat/history/${sessionId}`, {
+            const response = await fetch(`${API_URL}/chat/history/${sessionId}`, {
                 method: 'DELETE',
-                headers: { // ⬅️ 헤더 추가
-                    'Authorization': `Bearer ${token}`
-                }
+                headers: { 'Authorization': `Bearer ${token}` }
             });
+            if (response.status === 401) throw new Error('인증 실패');
             if (!response.ok) {
-                // 401 오류 처리 추가
-                if (response.status === 401) throw new Error('인증 실패');
                 const err = await response.json();
                 throw new Error(err.detail || "삭제에 실패했습니다.");
             }
-
-            // UI 갱신: 삭제된 세션을 목록에서 제거
             setSessions(prevSessions => prevSessions.filter(s => s.id !== sessionId));
-
             alert("상담 기록이 삭제되었습니다.");
-
-        } catch (err) {
+        } catch (err: unknown) {
              const errorMessage = err instanceof Error ? err.message : "삭제 중 오류 발생";
              setError(errorMessage);
-             if (errorMessage === '인증 실패') {
+             if (errorMessage.includes('인증 실패')) {
                  localStorage.removeItem('accessToken');
                  router.push('/login?next=/dashboard/patient');
              }
@@ -152,17 +185,61 @@ export default function PatientDashboardPage() {
             setDeletingId(null);
         }
     }
-  };
+  }, []); // 👈 의존성 비우기
+
+  // 💡 7. [수정] toggleChatLog (useCallback 추가)
+  const toggleChatLog = useCallback(async (sessionId: number) => {
+      if (chatLogs[sessionId]) {
+          setChatLogs(prevLogs => {
+              const newLogs = { ...prevLogs };
+              delete newLogs[sessionId];
+              return newLogs;
+          });
+          return;
+      }
+      setLogLoading(sessionId);
+      setError(null);
+      const token = localStorage.getItem('accessToken');
+      if (!token) { setError("인증 토큰이 없습니다."); setLogLoading(null); return; }
+
+      try {
+          const response = await fetch(`${API_URL}/chat/history/${sessionId}`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (response.status === 401) throw new Error('인증 실패');
+          if (response.status === 403) throw new Error('이 기록에 접근할 권한이 없습니다.');
+          if (!response.ok) throw new Error("채팅 기록 로딩 실패");
+          
+          const data = await response.json(); 
+          setChatLogs(prevLogs => ({ 
+              ...prevLogs, 
+              [sessionId]: data.history.length > 0 ? data.history : [{id: 'empty', role: 'assistant', content: '저장된 대화 기록이 없습니다.'}]
+          }));
+      } catch (err: unknown) {
+          setError(err instanceof Error ? err.message : "알 수 없는 오류");
+          if (err instanceof Error && (err.message.includes('인증 실패') || err.message.includes('401'))) {
+              localStorage.removeItem('accessToken');
+              router.push('/login?next=/dashboard/patient');
+          }
+      } finally {
+          setLogLoading(null);
+      }
+  }, [chatLogs, router]); // 👈 의존성 추가
 
 
-  if (loading) {
-    return <div className="flex justify-center items-center h-[calc(100vh-100px)]"><Loader2 className="w-10 h-10 animate-spin text-indigo-600" /></div>;
+  if (loading || isAuthLoading) {
+    return (
+        <div className="flex justify-center items-center h-[calc(100vh-100px)]">
+            <Loader2 className="w-10 h-10 animate-spin text-indigo-600" />
+            <p className="ml-3 text-lg text-gray-600">대시보드 로딩 중...</p>
+        </div>
+    );
   }
 
-  // 💡 7. [수정] 에러 발생 시 에러 메시지 표시
   if (error) {
      return (
         <div className="flex flex-col justify-center items-center h-screen text-center p-4">
+            <AlertTriangle className="w-12 h-12 text-red-600 mb-4" />
             <h1 className="text-2xl font-bold mb-4 text-red-600">오류 발생</h1>
             <p className="text-gray-600 mb-6">{error}</p>
             {error.includes("로그인") && (
@@ -174,7 +251,7 @@ export default function PatientDashboardPage() {
      );
   }
 
-  // 💡 8. [수정] user 정보가 없을 때
+  // 💡 [수정] user가 null일 때를 대비한 최종 가드
   if (!user) {
     return (
         <div className="flex flex-col justify-center items-center h-screen text-center">
@@ -184,118 +261,236 @@ export default function PatientDashboardPage() {
     );
   }
 
-  // 💡 9. [수정] JSX 부분을 실제 데이터(user, sessions, recentMusic)로 렌더링
+  // 💡 8. [핵심 수정] JSX (UI) - "즐겨찾는 음악" 섹션 추가
   return (
-    <div className="max-w-3xl mx-auto p-6 space-y-10">
-      {/* user.email 대신 user.name 등이 있다면 사용 */}
-      <h1 className="text-3xl font-bold text-gray-900">
-        {user.name || user.email || '사용자'}님, 안녕하세요!
-      </h1>
-      
-      <section>
-        {/* Intake 페이지로 이동 시 user.id 전달 (Intake 페이지도 수정 필요) */}
-        <button
-          onClick={() => router.push(`/intake/patient?userId=${user.id}`)}
-          className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-indigo-600 text-white text-lg font-semibold rounded-lg shadow-lg hover:bg-indigo-700 transition"
-        >
-          <Plus className="w-6 h-6" />
-          새로운 상담 시작하기 (Intake)
-        </button>
-      </section>
-
-      {/* 최근 생성된 음악 섹션 */}
-      <section>
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-gray-800">최근 생성된 음악</h2>
-          <button
-            onClick={() => router.push('/music')} // 음악 페이지 경로 확인
-            className="flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-800 transition-colors"
-          >
-            전체 플레이리스트 가기 <ArrowRight className="w-4 h-4 ml-1" />
-          </button>
+    <div className="p-4 sm:p-8 max-w-5xl mx-auto space-y-8 bg-gray-50 min-h-screen">
+        
+      {/* --- 1. 헤더 --- */}
+      <header className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+        <div>
+            <h1 className="text-3xl font-bold text-gray-900">
+                {/* 💡 [오류 수정] user? (Optional Chaining) 사용 */}
+                {user?.name || user?.email || '사용자'}님, 안녕하세요!
+            </h1>
+            <p className="text-lg text-gray-600 mt-1">오늘의 상태를 요약해 드립니다.</p>
         </div>
-        {recentMusic.length === 0 ? (
-          <div className="p-6 text-center bg-gray-100 rounded-lg border border-gray-200">
-            <Music className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-            <p className="text-gray-500">아직 생성된 음악이 없습니다.</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {recentMusic.map(track => (
-              <div key={track.id} className="p-4 bg-white border rounded-lg shadow-sm flex items-center justify-between">
-                <div className="flex items-center min-w-0">
-                  <div className="p-2 bg-green-100 rounded-full mr-3">
-                      <Music className="w-5 h-5 text-green-600" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-medium text-gray-900 truncate">{track.title || `음악 트랙 #${track.id}`}</p>
-                    <p className="text-sm text-gray-500 truncate">Prompt: {track.prompt || '정보 없음'}</p>
-                  </div>
-                </div>
-                {/* 재생 버튼 */}
-                <a 
-                    href={track.audioUrl} // 백엔드가 제공한 URL 사용
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="ml-4 text-xs text-indigo-600 hover:underline flex-shrink-0">
-                    재생하기
-                </a>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+        <button
+            onClick={() => router.push(`/intake/patient`)}
+            className="flex-shrink-0 w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3 bg-indigo-600 text-white text-md font-semibold rounded-lg shadow-lg hover:bg-indigo-700 transition-transform transform hover:scale-105"
+        >
+            <Plus className="w-5 h-5" />
+            새로운 상담 시작
+        </button>
+      </header>
 
-      {/* 과거 상담 기록 섹션 */}
-      <section>
-        <h2 className="text-xl font-semibold text-gray-800 mb-4">과거 상담 기록</h2>
-        {sessions.length === 0 ? (
-          <div className="p-6 text-center bg-gray-100 rounded-lg border">
-            <MessageSquare className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-            <p className="text-gray-500">아직 완료된 상담 기록이 없습니다.</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {/* 최신순으로 정렬 */}
-            {[...sessions].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map((session, index) => (
-              <div
-                key={session.id}
-                className="bg-white p-4 rounded-lg border shadow-sm flex justify-between items-center"
-              >
-                <div>
-                  <p className="font-semibold text-gray-700">상담 #{sessions.length - index}</p>
-                  <p className="text-xs text-gray-500">세션 ID: {session.id}</p>
-                  <p className="text-xs text-gray-500">
-                     {new Date(session.created_at).toLocaleString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute:'2-digit' })}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => router.push(`/counsel?session=${session.id}&patientId=${user.id}`)} 
-                    disabled={deletingId === session.id}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-indigo-600 text-sm font-medium rounded-md border border-indigo-300 hover:bg-indigo-50 disabled:opacity-50"
-                  >
-                    <MessageSquare className="w-4 h-4" />
-                    이어하기
-                  </button>
-                  <button
-                    onClick={() => handleDeleteSession(session.id)}
-                    disabled={deletingId === session.id}
-                    className="p-2 text-red-500 hover:bg-red-100 rounded-md disabled:opacity-50"
-                    aria-label="기록 삭제"
-                  >
-                    {deletingId === session.id ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                        <Trash2 className="w-4 h-4" />
-                    )}
-                  </button>
-                </div>
+      {/* --- 2. 메인 컨텐츠 (그리드) --- */}
+      <main className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        {/* 2-1. 메인 컬럼 (최근 + 즐겨찾기) */}
+        <div className="lg:col-span-2 space-y-8">
+            
+            {/* 💡 "즐겨찾는 음악" 섹션 (새로 추가) */}
+            <section className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold text-gray-800 flex items-center">
+                    <Heart className="w-5 h-5 mr-3 text-pink-500 fill-pink-500"/>
+                    즐겨찾는 음악
+                </h2>
+                <button
+                  onClick={() => router.push('/music')}
+                  className="flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-800 transition-colors"
+                >
+                  전체 목록 <ArrowRight className="w-4 h-4 ml-1" />
+                </button>
               </div>
-            ))}
-          </div>
-        )}
-      </section>
+              {favoriteMusic.length === 0 ? (
+                <div className="p-6 text-center bg-gray-50 rounded-lg border border-gray-200">
+                  <p className="text-gray-500">아직 즐겨찾기한 음악이 없습니다.</p>
+                  <p className="text-sm text-gray-400 mt-1">내 음악 페이지에서 하트(❤️)를 눌러 추가해보세요.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {favoriteMusic.map(track => (
+                    <div 
+                        key={track.id} 
+                        className="p-4 bg-white border rounded-lg shadow-sm flex items-center justify-between transition hover:bg-gray-50 cursor-pointer"
+                        onClick={() => router.push(`/music?track=${track.id}`)} // 👈 클릭 시 음악 페이지로 이동
+                    >
+                      <div className="flex items-center min-w-0">
+                        <div className="p-2 bg-pink-100 rounded-full mr-4">
+                          <Heart className="w-5 h-5 text-pink-600 fill-pink-600" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-medium text-gray-900 truncate">{getDynamicTitle(track)}</p>
+                          <p className="text-sm text-gray-500 mt-1">
+                            {new Date(track.created_at).toLocaleString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })}
+                          </p>
+                        </div>
+                      </div>
+                      <a 
+                        href={track.audioUrl}
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="ml-4 text-sm text-indigo-600 hover:underline flex-shrink-0"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        재생하기
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+            
+            {/* "최근 생성된 음악" 섹션 (변경 없음) */}
+            <section className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-800 flex items-center mb-4">
+                  <Music className="w-5 h-5 mr-3 text-green-500" />
+                  최근 생성된 음악
+              </h2>
+              {recentMusic.length === 0 ? (
+                <div className="p-6 text-center bg-gray-50 rounded-lg border border-gray-200">
+                  <p className="text-gray-500">아직 생성된 음악이 없습니다.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {recentMusic.map(track => (
+                    <div 
+                        key={track.id} 
+                        className="p-4 bg-white border rounded-lg shadow-sm flex items-center justify-between transition hover:bg-gray-50 cursor-pointer"
+                        onClick={() => router.push(`/music?track=${track.id}`)}
+                    >
+                      <div className="flex items-center min-w-0">
+                        <div className="p-2 bg-green-100 rounded-full mr-4">
+                          <Music className="w-5 h-5 text-green-600" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-medium text-gray-900 truncate">{getDynamicTitle(track)}</p>
+                          <p className="text-sm text-gray-500 mt-1">
+                            {new Date(track.created_at).toLocaleString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })}
+                          </p>
+                        </div>
+                      </div>
+                      <a 
+                        href={track.audioUrl}
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="ml-4 text-sm text-indigo-600 hover:underline flex-shrink-0"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        재생하기
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+        </div>
+
+        {/* 2-2. 사이드바 (과거 상담 기록) (변경 없음) */}
+        <section className="lg:col-span-1 bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+          <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2 mb-6">
+            <MessageSquare className="w-5 h-5 text-indigo-500" />
+            상담 기록
+          </h2>
+
+          {sessions.length === 0 ? (
+            <div className="p-10 text-center bg-gray-50 rounded-xl border border-gray-100">
+              <MessageSquare className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+              <p className="text-gray-500">아직 상담 기록이 없습니다.</p>
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
+              {[...sessions]
+                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                .map((session, index) => (
+                  <Fragment key={session.id}>
+                    <div
+                      className="border border-gray-200 bg-white hover:bg-gray-50 rounded-xl p-4 transition cursor-pointer"
+                      onClick={() => toggleChatLog(session.id)}
+                    >
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <p className="font-semibold text-gray-700">
+                            {new Date(session.created_at).toLocaleString('ko-KR', {
+                                year: 'numeric', month: 'long', day: 'numeric'
+                            })}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {/* 💡 [수정] 세션 ID 대신 타입 표시 */}
+                            {session.initiator_type === 'therapist' ? '상담사 처방' : (session.has_dialog ? 'AI 상담' : '작곡 체험')}
+                          </p>
+                        </div>
+                        <ChevronDown
+                          className={`w-5 h-5 text-gray-400 transition-transform ${
+                            chatLogs[session.id] ? 'rotate-180' : ''
+                          }`}
+                        />
+                      </div>
+
+                      {/* 미리보기 대화 */}
+                      {logLoading === session.id && (
+                        <div className="flex justify-center items-center pt-4 mt-4 border-t">
+                            <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                        </div>
+                      )}
+                      {chatLogs[session.id] && (
+                        <div className="mt-3 pt-3 border-t border-gray-200 space-y-2 max-h-40 overflow-y-auto">
+                          {chatLogs[session.id].map((msg) => (
+                            <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                              <div
+                                className={`p-2.5 rounded-lg text-xs leading-relaxed ${
+                                  msg.role === 'user'
+                                    ? 'bg-blue-100 text-blue-800'
+                                    : 'bg-gray-200 text-gray-700'
+                                }`}
+                              >
+                                <p className="whitespace-pre-wrap">{msg.content}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* 버튼 영역 */}
+                      <div className="flex items-center gap-2 mt-4 pt-3 border-t border-gray-100">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // 💡 [수정] 'has_dialog' 여부로 상담/작곡 페이지 분기
+                            const path = session.has_dialog ? '/counsel' : '/compose';
+                            // 💡 [수정] patientId 제거 (본인 세션이므로)
+                            router.push(`${path}?session=${session.id}`);
+                          }}
+                          disabled={deletingId === session.id}
+                          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white text-indigo-600 text-xs font-medium rounded-md border border-indigo-300 hover:bg-indigo-50 disabled:opacity-50"
+                        >
+                          <MessageSquare className="w-4 h-4" />
+                          {session.has_dialog ? '이어하기' : '결과보기'}
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteSession(session.id);
+                          }}
+                          disabled={deletingId === session.id}
+                          className="p-2 text-red-500 hover:bg-red-100 rounded-md disabled:opacity-50"
+                          aria-label="기록 삭제"
+                        >
+                          {deletingId === session.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-4 h-4" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </Fragment>
+                ))}
+            </div>
+          )}
+        </section>
+      </main>
     </div>
   );
 }
