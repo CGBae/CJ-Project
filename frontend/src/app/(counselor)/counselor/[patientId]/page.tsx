@@ -104,6 +104,7 @@ function getApiUrl() {
     return 'http://backend:8000';
 }
 
+const API_URL = getApiUrl();
 
 export default function PatientDetailPage() {
     const router = useRouter();
@@ -295,7 +296,7 @@ export default function PatientDetailPage() {
         if (!token) { setMemoError("인증 토큰이 없습니다."); setIsMemoLoading(false); return; }
 
         try {
-            const response = await fetch(`http://localhost:8000/therapist/patient/${patientId}/notes`, {
+            const response = await fetch(`${API_URL}/therapist/patient/${patientId}/notes`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (!response.ok) throw new Error('메모 목록 로딩 실패');
@@ -327,7 +328,7 @@ export default function PatientDetailPage() {
         if (!token) { setMemoError("인증 토큰이 없습니다."); setIsMemoLoading(false); return; }
 
         try {
-            const response = await fetch(`http://localhost:8000/therapist/patient/${patientId}/notes`, {
+            const response = await fetch(`${API_URL}/therapist/patient/${patientId}/notes`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ content: content })
@@ -356,7 +357,7 @@ export default function PatientDetailPage() {
         if (!token) { setMemoError("인증 토큰이 없습니다."); setIsMemoLoading(false); return; }
 
         try {
-            const response = await fetch(`http://localhost:8000/therapist/notes/${noteId}`, {
+            const response = await fetch(`${API_URL}/therapist/notes/${noteId}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
