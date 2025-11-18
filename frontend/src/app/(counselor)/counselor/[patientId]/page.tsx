@@ -410,7 +410,7 @@ export default function PatientDetailPage() {
         );
     }
 
-    // 💡 11. [핵심] JSX 렌더링 (생략 없음)
+    // 💡 9. [핵심] JSX 렌더링 (생략 없음)
     return (
         <div className="max-w-3xl mx-auto p-4 sm:p-6 bg-gray-50 min-h-screen">
             <header className="flex justify-between items-center pb-4 border-b border-gray-200 mb-6">
@@ -520,7 +520,6 @@ export default function PatientDetailPage() {
                                                 } text-white`}
                                             aria-label={currentTrackId === track.id ? '일시정지' : '재생'}
                                         >
-                                            {/* 💡 [수정] Pause 아이콘 사용 */}
                                             {currentTrackId === track.id ? <Pause className="h-5 w-5 fill-white" /> : <Play className="h-5 w-5 fill-white pl-0.5" />}
                                         </button>
                                     </div>
@@ -613,19 +612,19 @@ export default function PatientDetailPage() {
                             rows={4}
                             className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
                             placeholder={patient ? `${patient.name || '환자'}님에 대한 소견이나 다음 상담 계획을 기록하세요...` : '메모 작성...'}
-                            disabled={isSubmittingMemo} // 👈 [수정]
+                            disabled={isSubmittingMemo}
                          />
-                         {memoError && !isSubmittingMemo && ( // 👈 [수정]
+                         {memoError && !isSubmittingMemo && (
                             <p className="text-sm text-red-600 mt-2">{memoError}</p>
                          )}
                          <div className="flex justify-end mt-4">
                             <button
                                 type="submit"
-                                disabled={isSubmittingMemo || !newMemoContent.trim()} // 👈 [수정]
+                                disabled={isSubmittingMemo || !newMemoContent.trim()}
                                 className="flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg shadow hover:bg-indigo-700 transition-colors disabled:bg-gray-400"
                             >
-                                {isSubmittingMemo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} {/* 👈 [수정] */}
-                                {isSubmittingMemo ? '저장 중...' : '메모 저장'} {/* 👈 [수정] */}
+                                {isSubmittingMemo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                                {isSubmittingMemo ? '저장 중...' : '메모 저장'}
                             </button>
                          </div>
                     </form>
@@ -634,7 +633,7 @@ export default function PatientDetailPage() {
                     <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
                         <h2 className="text-xl font-semibold text-gray-800 flex items-center mb-5">
                             <ClipboardList className="w-5 h-5 mr-3 text-indigo-500"/>
-                            메모 기록
+                            메모 기록 (모든 상담사)
                         </h2>
                         {isMemoLoading && memos.length === 0 ? (
                              <div className="flex justify-center items-center p-4">
@@ -655,18 +654,29 @@ export default function PatientDetailPage() {
                                             {note.content}
                                         </p>
                                         <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-200">
+                                            {/* 💡 [핵심 수정] 작성자 이름 표시 */}
                                             <p className="text-xs text-gray-500">
+                                                <span className="font-medium text-gray-700">
+                                                    {note.therapist_name || '알 수 없음'}
+                                                    {/* 💡 현재 로그인한 유저(user)와 메모 작성자(note.therapist_id) 비교 */}
+                                                    {user && note.therapist_id === user.id && ' (나)'} 
+                                                </span>
+                                                <span className="mx-1.5">|</span>
                                                 {formatMemoTime(note.created_at)}
                                                 {note.created_at !== note.updated_at && ' (수정됨)'}
                                             </p>
-                                            <button
-                                                onClick={() => handleDeleteMemo(note.id)}
-                                                disabled={isDeletingMemoId === note.id} // 👈 [수정]
-                                                className="p-1 text-red-500 hover:bg-red-100 rounded-md disabled:opacity-50"
-                                                aria-label="메모 삭제"
-                                            >
-                                                {isDeletingMemoId === note.id ? <Loader2 className="w-4 h-4 animate-spin"/> : <Trash2 className="w-4 h-4" />}
-                                            </button>
+                                            
+                                            {/* 💡 [핵심 수정] 본인 메모만 삭제 버튼 표시 */}
+                                            {user && note.therapist_id === user.id && (
+                                                <button
+                                                    onClick={() => handleDeleteMemo(note.id)}
+                                                    disabled={isDeletingMemoId === note.id}
+                                                    className="p-1 text-red-500 hover:bg-red-100 rounded-md disabled:opacity-50"
+                                                    aria-label="메모 삭제"
+                                                >
+                                                    {isDeletingMemoId === note.id ? <Loader2 className="w-4 h-4 animate-spin"/> : <Trash2 className="w-4 h-4" />}
+                                                </button>
+                                            )}
                                         </div>
                                     </li>
                                 ))}
@@ -692,9 +702,8 @@ const Alert: React.FC<AlertProps> = ({ type, message, onClose }) => {
     switch (type) {
         case 'error':
             bgColor = 'bg-red-100 border-red-400 text-red-700'; Icon = AlertTriangle; break;
-        // 💡 [수정] 'success' 케이스 추가 (이전 코드 누락)
         case 'success':
-            bgColor = 'bg-green-100 border-green-400 text-green-700'; Icon = CheckCircle; break; // CheckCircle import 필요
+            bgColor = 'bg-green-100 border-green-400 text-green-700'; Icon = CheckCircle; break; 
         case 'info':
         default:
             bgColor = 'bg-blue-100 border-blue-400 text-blue-700'; Icon = Info; break;
