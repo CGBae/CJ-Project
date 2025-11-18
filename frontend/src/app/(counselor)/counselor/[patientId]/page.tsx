@@ -13,7 +13,7 @@ import { useAuth } from '@/lib/contexts/AuthContext';
 
 // 💡 2. 백엔드 API 응답 타입 정의
 interface ChatMessage {
-    id: string;
+    id: string | number;
     role: 'user' | 'assistant';
     content: string;
 }
@@ -41,7 +41,6 @@ interface SimpleIntakeData {
     vas: PatientIntakeVas | null;
     prefs: PatientIntakePrefs | null;
 }
-
 // 2. 상담사/작곡가 처방(Intake) 상세 정보 타입
 interface CounselorIntakeData { 
     genre?: string | null;
@@ -66,7 +65,7 @@ interface CounselorIntakeData {
     targetBPM?: number | 'Neutral' | null;
 }
 
-interface MusicTrackDetail { // 👈 [수정] (MusicTrackInfo -> MusicTrackDetail)
+interface MusicTrackDetail {
     id: number | string;
     title: string;
     prompt: string;
@@ -80,18 +79,17 @@ interface MusicTrackDetail { // 👈 [수정] (MusicTrackInfo -> MusicTrackDetai
     // (상세 정보)
     lyrics: string | null;
     intake_data: SimpleIntakeData | null; // 👈 1번 타입 사용
-    therapist_manual: CounselorIntakeData | null; // 👈 2번 타입 사용
+    therapist_manual: CounselorIntakeData | null; // 👈 4번 타입 사용
     chat_history: ChatMessage[];
 }
-
 
 interface PatientProfile {
     id: number | string;
     name: string | null;
-    age: number | null; // 👈 age 필드
+    age: number | null; 
     email: string | null;
     role: string;
-    social_provider: string | null; // 👈 [추가] 카카오 여부
+    social_provider: string | null;
 }
 interface CounselorNote {
     id: number;
@@ -102,14 +100,11 @@ interface CounselorNote {
     updated_at: string;
     therapist_name: string | null;
 }
-
 // 💡 3. 헬퍼 함수: 동적 제목 (세션 ID/번호 제거)
 const getDynamicTitle = (track: MusicTrackDetail): string => {
     if (track.title && !track.title.includes("AI 생성 트랙")) {
-        // 백엔드 title이 "상담사 처방 음악 (세션 123)" 형태일 수 있으므로 (세션) 부분 제거
         return track.title.split(' (')[0];
     }
-    // (폴백)
     if (track.initiator_type === "therapist") {
         return `상담사 처방 음악`;
     } else if (track.initiator_type === "patient") {
@@ -122,14 +117,14 @@ const getDynamicTitle = (track: MusicTrackDetail): string => {
     return track.title ? track.title.split(' (')[0] : `AI 트랙 #${track.id}`;
 };
 
-// 💡 4. 헬퍼 함수: 메모 시간 포맷
+// 💡 7. 헬퍼 함수: 메모 시간 포맷
 const formatMemoTime = (dateString: string): string => {
     return new Date(dateString).toLocaleString('ko-KR', {
         year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
     });
 };
 
-// 💡 5. 헬퍼 함수: 환자 식별자 (카카오/이메일)
+// 💡 8. 헬퍼 함수: 환자 식별자 (카카오/이메일)
 const getPatientIdentifier = (patient: PatientProfile | null) => {
     if (!patient) return '';
     if (patient.email) {
@@ -180,12 +175,8 @@ export default function PatientDetailPage() {
     // 💡 [추가] 음악 상세정보 펼치기 상태
     const [expandedTrackId, setExpandedTrackId] = useState<string | number | null>(null);
     const [detailLoadingId, setDetailLoadingId] = useState<string | number | null>(null);
-    // (trackDetail은 music state 안에 이미 포함됨)
+    const [trackDetail, setTrackDetail] = useState<MusicTrackDetail | null>(null); 
 
-    const [chatLogs, setChatLogs] = useState<Record<number, ChatMessage[]>>({});
-    const [logLoading, setLogLoading] = useState<number | null>(null);
-
-    // 💡 7. [추가] 메모 탭 상태
     const [memos, setMemos] = useState<CounselorNote[]>([]);
     const [newMemoContent, setNewMemoContent] = useState("");
     const [isMemoLoading, setIsMemoLoading] = useState(false);
@@ -310,54 +301,26 @@ export default function PatientDetailPage() {
         }
     };
 
-    const handleToggleDetails = async (trackId: number | string) => {
-        // (music state에 이미 모든 정보가 로드되어 있으므로, API 재호출 불필요)
+   const handleToggleDetails = async (trackId: number | string) => {
         if (expandedTrackId === trackId) {
             setExpandedTrackId(null);
+            setTrackDetail(null); 
+            return;
+        }
+        
+        // 💡 music state에서 이미 로드된 상세정보를 찾음
+        const existingTrackDetail = music.find(m => m.id === trackId);
+        
+        if (existingTrackDetail) {
+             setTrackDetail(existingTrackDetail); // 👈 찾은 정보로 state 설정
+             setExpandedTrackId(trackId);
         } else {
-            setExpandedTrackId(trackId);
+            // (이 코드는 실행되지 않아야 함)
+            setError("트랙 상세 정보를 찾을 수 없습니다.");
         }
     };
 
-    // --- (fetchChatLog - 변경 없음) ---
-    const fetchChatLog = async (sessionId: number) => {
-        if (chatLogs[sessionId]) {
-            setChatLogs(prevLogs => {
-                const newLogs = { ...prevLogs };
-                delete newLogs[sessionId];
-                return newLogs;
-            });
-            return;
-        }
-        setLogLoading(sessionId);
-        setError(null);
-        const token = localStorage.getItem('accessToken');
-        if (!token) { setError("인증 토큰이 없습니다."); setLogLoading(null); return; }
-        try {
-            const response = await fetch(`${API_URL}/chat/history/${sessionId}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (response.status === 401) throw new Error('인증 실패');
-            if (response.status === 403) throw new Error('이 기록에 접근할 권한이 없습니다.');
-            if (!response.ok) {
-                const errData = await response.json();
-                throw new Error(errData.detail || "채팅 기록 로딩 실패");
-            }
-            const data = await response.json();
-            setChatLogs(prevLogs => ({
-                ...prevLogs,
-                [sessionId]: data.history.length > 0 ? data.history : [{ id: 'empty', role: 'assistant', content: '저장된 대화 기록이 없습니다.' }]
-            }));
-        } catch (error: unknown) {
-            setError(error instanceof Error ? error.message : "알 수 없는 오류");
-            if (error instanceof Error && (error.message.includes('인증 실패') || error.message.includes('401'))) {
-                localStorage.removeItem('accessToken');
-                router.push('/login?next=/counselor');
-            }
-        } finally {
-            setLogLoading(null);
-        }
-    };
+    
 
     // 💡 10. [핵심 추가] 메모 탭 관련 함수들
 
@@ -509,8 +472,8 @@ export default function PatientDetailPage() {
                      </div>
                  </div>
                  <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                     {/* 💡 [수정] sessions.length -> music.filter(m => m.has_dialog).length */}
                      <div className="text-gray-600">총 상담 횟수:</div>
+                     {/* 💡 [수정] sessions.length -> music.filter(...) */}
                      <div className="font-medium text-indigo-600">{music.filter(m => m.has_dialog).length}회</div>
                      <div className="text-gray-600">생성된 음악:</div>
                      <div className="font-medium text-green-600">{music.length}곡</div>
@@ -589,6 +552,7 @@ export default function PatientDetailPage() {
                                             >
                                                 {currentTrackId === track.id ? <Pause className="h-5 w-5 fill-white" /> : <Play className="h-5 w-5 fill-white pl-0.5" />}
                                             </button>
+                                            {/* 💡 [추가] 펼치기 아이콘 */}
                                             <ChevronDown className={`h-5 w-5 text-gray-400 transition-transform ${expandedTrackId === track.id ? 'rotate-180' : ''}`} />
                                         </div>
                                     </li>
@@ -596,32 +560,42 @@ export default function PatientDetailPage() {
                                     {/* 💡 [핵심 추가] 상세 정보 패널 */}
                                     {expandedTrackId === track.id && (
                                         <div className="border border-t-0 rounded-b-lg p-6 bg-white shadow-inner mb-3 -mt-2 animate-in fade-in duration-200">
-                                            <div className="space-y-5">
-                                                
-                                                {/* 1. 접수 내용 (Intake / Composer / Counselor) */}
-                                                {track.intake_data ? (
-                                                    <PatientIntakeView intake={track.intake_data} />
-                                                ) : track.therapist_manual ? (
-                                                    <CounselorIntakeView intake={track.therapist_manual} />
-                                                ) : (
-                                                    <Alert type="info" message="이 음악과 연결된 접수 기록이 없습니다." />
-                                                )}
+                                            {/* (로딩 스피너) */}
+                                            {detailLoadingId === track.id && (
+                                                <div className="flex justify-center items-center p-4">
+                                                    <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+                                                    <span className="ml-2 text-gray-500">상세 정보 로딩 중...</span>
+                                                </div>
+                                            )}
+                                            {/* (상세 정보 뷰) */}
+                                            {trackDetail && trackDetail.id === track.id && (
+                                                <div className="space-y-5">
+                                                    
+                                                    {/* 1. 접수 내용 (Intake / Composer / Counselor) */}
+                                                    {trackDetail.intake_data ? (
+                                                        <PatientIntakeView intake={trackDetail.intake_data} />
+                                                    ) : trackDetail.therapist_manual ? (
+                                                        <CounselorIntakeView intake={trackDetail.therapist_manual} />
+                                                    ) : (
+                                                        <Alert type="info" message="이 음악과 연결된 접수 기록이 없습니다." />
+                                                    )}
 
-                                                {/* 2. 가사 */}
-                                                {track.lyrics && (
-                                                    <div>
-                                                        <h4 className="font-semibold text-gray-800 flex items-center"><FileText className="w-4 h-4 mr-2 text-indigo-600"/>생성된 가사</h4>
-                                                        <pre className="mt-2 p-3 bg-gray-50 rounded-md text-sm text-gray-600 whitespace-pre-wrap font-sans overflow-y-auto max-h-40 border">
-                                                            {track.lyrics}
-                                                        </pre>
-                                                    </div>
-                                                )}
+                                                    {/* 2. 가사 */}
+                                                    {trackDetail.lyrics && (
+                                                        <div>
+                                                            <h4 className="font-semibold text-gray-800 flex items-center"><FileText className="w-4 h-4 mr-2 text-indigo-600"/>생성된 가사</h4>
+                                                            <pre className="mt-2 p-3 bg-gray-50 rounded-md text-sm text-gray-600 whitespace-pre-wrap font-sans overflow-y-auto max-h-40 border">
+                                                                {trackDetail.lyrics}
+                                                            </pre>
+                                                        </div>
+                                                    )}
 
-                                                {/* 3. 채팅 요약 */}
-                                                {track.chat_history && track.chat_history.length > 0 && (
-                                                    <ChatHistoryView chatHistory={track.chat_history} />
-                                                )}
-                                            </div>
+                                                    {/* 3. 채팅 요약 */}
+                                                    {trackDetail.chat_history && trackDetail.chat_history.length > 0 && (
+                                                        <ChatHistoryView chatHistory={trackDetail.chat_history} />
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </Fragment>
@@ -632,7 +606,6 @@ export default function PatientDetailPage() {
             )}
 
             {/* --- 상담 기록 탭 (제거됨) --- */}
-            {/* {activeTab === 'logs' && ( ... )} */}
             
             {/* --- 상담사 메모 탭 (UI 수정됨) --- */}
             {activeTab === 'memos' && (
@@ -718,6 +691,7 @@ export default function PatientDetailPage() {
                     </div>
                 </section>
             )}
+
         </div>
     );
 }
@@ -795,8 +769,8 @@ const PatientIntakeView: React.FC<{ intake: SimpleIntakeData }> = ({ intake }) =
                 <div>
                     <h5 className="font-medium text-gray-700 text-sm">음악 선호도</h5>
                     <ul className="list-none space-y-1 mt-2 text-sm text-gray-600">
-                        <li><strong>선호 장르:</strong> {prefs.genres.join(', ') || '없음'}</li>
-                        <li><strong>비선호 장르:</strong> {prefs.contraindications.join(', ') || '없음'}</li>
+                        <li><strong>선호 장르:</strong> {prefs.genres?.join(', ') || '없음'}</li>
+                        <li><strong>비선호 장르:</strong> {prefs.contraindications?.join(', ') || '없음'}</li>
                         <li><strong>보컬:</strong> {prefs.lyrics_allowed ? '포함' : '미포함(연주곡)'}</li>
                     </ul>
                 </div>
