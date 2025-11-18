@@ -733,8 +733,8 @@ const Alert: React.FC<AlertProps> = ({ type, message, onClose }) => {
 
 // (1) 환자 접수(Intake) 상세 뷰
 const PatientIntakeView: React.FC<{ intake: SimpleIntakeData }> = ({ intake }) => {
-    const vas = intake.vas;
-    const prefs = intake.prefs;
+    const vas = intake?.vas;
+    const prefs = intake?.prefs;
     
     return (
         <div className="space-y-4">
@@ -769,8 +769,9 @@ const PatientIntakeView: React.FC<{ intake: SimpleIntakeData }> = ({ intake }) =
                 <div>
                     <h5 className="font-medium text-gray-700 text-sm">음악 선호도</h5>
                     <ul className="list-none space-y-1 mt-2 text-sm text-gray-600">
-                        <li><strong>선호 장르:</strong> {prefs.genres?.join(', ') || '없음'}</li>
-                        <li><strong>비선호 장르:</strong> {prefs.contraindications?.join(', ') || '없음'}</li>
+                        {/* 💡 [수정] 배열인지 확인하고 join */}
+                        <li><strong>선호 장르:</strong> {Array.isArray(prefs.genres) ? prefs.genres.join(', ') : (prefs.genres || '없음')}</li>
+                        <li><strong>비선호 장르:</strong> {Array.isArray(prefs.contraindications) ? prefs.contraindications.join(', ') : (prefs.contraindications || '없음')}</li>
                         <li><strong>보컬:</strong> {prefs.lyrics_allowed ? '포함' : '미포함(연주곡)'}</li>
                     </ul>
                 </div>
@@ -795,10 +796,8 @@ const CounselorIntakeView: React.FC<{ intake: CounselorIntakeData }> = ({ intake
                 <h5 className="font-medium text-gray-700 text-sm">음악 파라미터</h5>
                 <ul className="list-none space-y-1 mt-2 text-sm text-gray-600 grid grid-cols-2 gap-x-4">
                     <li><strong>분위기:</strong> {intake.mood || 'N/A'}</li>
-                    {/* 💡 [수정] 'mainInstrument' -> 'include_instruments' */}
-                    <li><strong>메인 악기:</strong> {intake.include_instruments?.join(', ') || intake.mainInstrument || 'N/A'}</li>
-                    {/* 💡 [수정] 'targetBPM' -> 'bpm_min/max' */}
-                    <li><strong>BPM:</strong> {intake.bpm_min ? `${intake.bpm_min}-${intake.bpm_max}` : 'N/A'}</li>
+                    <li><strong>메인 악기:</strong> {Array.isArray(intake.include_instruments) ? intake.include_instruments.join(', ') : (intake.mainInstrument || 'N/A')}</li>
+                    <li><strong>BPM:</strong> {intake.targetBPM ? `${intake.targetBPM} (근처)` : (intake.bpm_min ? `${intake.bpm_min}-${intake.bpm_max}` : 'N/A')}</li>
                     <li><strong>조성:</strong> {intake.key_signature || 'N/A'}</li>
                     <li><strong>보컬:</strong> {intake.vocals_allowed ? '포함' : '미포함'}</li>
                     <li><strong>리듬:</strong> {intake.rhythm_complexity || 'N/A'}</li>

@@ -281,10 +281,10 @@ async def get_track_details(
         select(Track)
         .where(Track.id == track_id)
         .options(
-            joinedload(Track.session).options(
-                joinedload(Session.patient_intake), # 👈 환자 Intake
-                joinedload(Session.therapist_manual), # 👈 [추가] 상담사/작곡가 Intake
-                selectinload(Session.messages) # 👈 채팅 내역
+            joinedload(Track.session).options( # 1. 세션 로드
+                joinedload(Session.patient_intake), # 2-1. 환자 Intake 로드
+                joinedload(Session.therapist_manual), # 2-2. 상담사 처방 로드
+                selectinload(Session.messages) # 2-3. 채팅 내역 로드
             )
         )
     )
@@ -292,24 +292,20 @@ async def get_track_details(
     result = await db.execute(query)
     track = result.scalars().unique().first()
 
-    if not track:
-        raise HTTPException(status_code=404, detail="트랙을 찾을 수 없습니다.")
+    if not track or not track.session:
+        raise HTTPException(status_code=404, detail="트랙 또는 세션 정보를 찾을 수 없습니다.")
         
     session = track.session
-    if not session:
-        raise HTTPException(status_code=404, detail="연결된 세션을 찾을 수 없습니다.")
-
     # 2. 보안 검사: 이 트랙이 현재 로그인한 사용자의 것인지 확인
     # (또는 이 사용자가 환자를 담당하는 상담사인지 확인 - therapist.py의 check_counselor_patient_access 로직)
     if session.created_by != current_user.id:
         if current_user.role == "therapist":
             try:
-                # 💡 [수정] therapist.py의 헬퍼 함수 사용
                 await check_counselor_patient_access(session.created_by, current_user.id, db)
             except HTTPException:
-                 raise HTTPException(status_code=403, detail="이 트랙에 접근할 권한이 없습니다.")
+                 raise HTTPException(status_code=403, detail="권한 없음")
         else:
-            raise HTTPException(status_code=403, detail="이 트랙에 접근할 권한이 없습니다.")
+            raise HTTPException(status_code=403, detail="권한 없음")
     # 3. 데이터 가공
     
     # 가사 (Session.prompt JSON에서 추출)
@@ -320,15 +316,19 @@ async def get_track_details(
     # 접수 기록 (SimpleIntakeData 스키마로 변환)
     intake_data = None
     if session.patient_intake:
+        # 💡 [수정] session.patient_intake가 로드되었는지 확인
+        print(f"DEBUG: Patient Intake Found for Session {session.id}")
         intake_data = SimpleIntakeData(
             goal_text=session.patient_intake.goal.get("text") if isinstance(session.patient_intake.goal, dict) else "N/A",
-            vas=session.patient_intake.vas, # 👈 [추가] VAS 전체
-            prefs=session.patient_intake.prefs # 👈 [추가] Prefs 전체
+            vas=session.patient_intake.vas, 
+            prefs=session.patient_intake.prefs 
         )
+    else:
+        print(f"DEBUG: No Patient Intake for Session {session.id}")
 
     therapist_manual = None
     if session.therapist_manual:
-        # 💡 [수정] schemas.py의 TherapistManualInput으로 변환
+        print(f"DEBUG: Therapist Manual Found for Session {session.id}")
         therapist_manual = TherapistManualInput.model_validate(session.therapist_manual)
         
     # 채팅 기록 (SimpleChatMessage 스키마 리스트로 변환)
