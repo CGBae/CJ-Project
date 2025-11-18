@@ -4,15 +4,15 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, update, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
-from app.schemas import MusicTrackInfo, MusicTrackDetail, SimpleIntakeData, SimpleChatMessage
+from app.schemas import MusicTrackInfo, MusicTrackDetail, SimpleChatMessage, SimpleIntakeData, TherapistManualInput
 from app.db import get_db
 # 💡 2. Connection, SessionPatientIntake 모델 import 추가
-from app.models import Session, SessionPrompt, Track, User, Connection, SessionPatientIntake, ConversationMessage
+from app.models import Session, SessionPrompt, Track, User, Connection, SessionPatientIntake, ConversationMessage, TherapistManualInputs
 from app.services.auth_service import get_current_user
 from sqlalchemy.orm import joinedload, selectinload
 # 1. 함수 이름을 'compose_and_save'으로 변경합니다.
 from app.services.elevenlabs_client import compose_and_save, ElevenLabsError
-
+from app.api.routers.therapist import check_counselor_patient_access
 router = APIRouter(prefix="/music", tags=["music"])
 
 # --- (ComposeReq, ComposeResp 클래스는 변경 없음) ---
@@ -280,11 +280,11 @@ async def get_track_details(
     query = (
         select(Track)
         .where(Track.id == track_id)
-        # N+1 방지: 관련된 엔티티를 미리 로드
         .options(
             joinedload(Track.session).options(
-                joinedload(Session.patient_intake), # 👈 접수 기록
-                selectinload(Session.messages)  # 👈 채팅 기록
+                joinedload(Session.patient_intake), # 👈 환자 Intake
+                joinedload(Session.therapist_manual), # 👈 [추가] 상담사/작곡가 Intake
+                selectinload(Session.messages) # 👈 채팅 내역
             )
         )
     )
@@ -302,17 +302,14 @@ async def get_track_details(
     # 2. 보안 검사: 이 트랙이 현재 로그인한 사용자의 것인지 확인
     # (또는 이 사용자가 환자를 담당하는 상담사인지 확인 - therapist.py의 check_counselor_patient_access 로직)
     if session.created_by != current_user.id:
-        # (상담사 권한 체크 로직)
         if current_user.role == "therapist":
             try:
-                # (therapist.py의 헬퍼 함수를 여기에 가져오거나 import해야 함)
-                # await check_counselor_patient_access(session.created_by, current_user.id, db)
-                pass # (임시로 상담사는 통과)
+                # 💡 [수정] therapist.py의 헬퍼 함수 사용
+                await check_counselor_patient_access(session.created_by, current_user.id, db)
             except HTTPException:
                  raise HTTPException(status_code=403, detail="이 트랙에 접근할 권한이 없습니다.")
         else:
             raise HTTPException(status_code=403, detail="이 트랙에 접근할 권한이 없습니다.")
-            
     # 3. 데이터 가공
     
     # 가사 (Session.prompt JSON에서 추출)
@@ -324,9 +321,15 @@ async def get_track_details(
     intake_data = None
     if session.patient_intake:
         intake_data = SimpleIntakeData(
-            goal_text=session.patient_intake.goal.get("text") if isinstance(session.patient_intake.goal, dict) else "N/A"
-            # (필요시 VAS 점수 등도 추가)
+            goal_text=session.patient_intake.goal.get("text") if isinstance(session.patient_intake.goal, dict) else "N/A",
+            vas=session.patient_intake.vas, # 👈 [추가] VAS 전체
+            prefs=session.patient_intake.prefs # 👈 [추가] Prefs 전체
         )
+
+    therapist_manual = None
+    if session.therapist_manual:
+        # 💡 [수정] schemas.py의 TherapistManualInput으로 변환
+        therapist_manual = TherapistManualInput.model_validate(session.therapist_manual)
         
     # 채팅 기록 (SimpleChatMessage 스키마 리스트로 변환)
     chat_history = []
@@ -362,5 +365,6 @@ async def get_track_details(
         is_favorite=track.is_favorite,
         lyrics=lyrics,
         intake_data=intake_data,
+        therapist_manual=therapist_manual,
         chat_history=chat_history
     )

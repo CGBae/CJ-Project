@@ -3,10 +3,11 @@
 // 💡 1. [핵심 수정] 필요한 모든 React 훅과 아이콘을 import
 import React, { useState, useEffect, useRef, FormEvent, useCallback, Fragment } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import {
-    Play, Pause, CheckCircle,// 👈 [추가] Pause 아이콘 (handlePlay 오류 수정용)
-    ArrowLeft, Volume2, Loader2, User, MessageSquare, Music,
-    AlertTriangle, ChevronDown, Plus, ClipboardList, Send, Trash2, XCircle, Info
+import { 
+    Play, Pause, CheckCircle,
+    ArrowLeft, Volume2, Loader2, User, MessageSquare, Music, 
+    AlertTriangle, ChevronDown, Plus, ClipboardList, Send, Trash2, XCircle, Info,
+    FileText // 👈 [추가]
 } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 
@@ -22,18 +23,68 @@ interface SessionInfo {
     initiator_type: string | null;
     has_dialog: boolean | null;
 }
-interface MusicTrackInfo {
+
+interface PatientIntakeVas {
+    anxiety: number;
+    depression: number;
+    pain: number;
+}
+interface PatientIntakePrefs {
+    genres: string[];
+    contraindications: string[];
+    lyrics_allowed: boolean;
+}
+
+// 1. 환자 접수(Intake) 상세 정보 타입
+interface SimpleIntakeData {
+    goal_text: string | null;
+    vas: PatientIntakeVas | null;
+    prefs: PatientIntakePrefs | null;
+}
+
+// 2. 상담사/작곡가 처방(Intake) 상세 정보 타입
+interface CounselorIntakeData { 
+    genre?: string | null;
+    mood?: string | null;
+    bpm_min?: number | null;
+    bpm_max?: number | null;
+    key_signature?: string | null;
+    vocals_allowed?: boolean | null;
+    include_instruments?: string[] | null;
+    exclude_instruments?: string[] | null;
+    duration_sec?: number | null;
+    notes?: string | null;
+    
+    // (snake_case로 일치, camelCase 아님)
+    harmonic_dissonance?: string | null;
+    rhythm_complexity?: string | null;
+    melody_contour?: string | null;
+    texture_density?: string | null;
+    
+    // 💡 [추가] 누락되었던 필드
+    mainInstrument?: string | null;
+    targetBPM?: number | 'Neutral' | null;
+}
+
+interface MusicTrackDetail { // 👈 [수정] (MusicTrackInfo -> MusicTrackDetail)
     id: number | string;
     title: string;
     prompt: string;
-    audioUrl: string; // schemas.py의 'audioUrl' 필드
+    audioUrl: string;
     track_url?: string;
-    created_at: string; // 👈 날짜
+    created_at: string;
     session_id: number;
     initiator_type: string | null;
     has_dialog: boolean | null;
-    is_favorite: boolean; // 👈 (환자 페이지와 타입 동기화)
+    is_favorite: boolean;
+    // (상세 정보)
+    lyrics: string | null;
+    intake_data: SimpleIntakeData | null; // 👈 1번 타입 사용
+    therapist_manual: CounselorIntakeData | null; // 👈 2번 타입 사용
+    chat_history: ChatMessage[];
 }
+
+
 interface PatientProfile {
     id: number | string;
     name: string | null;
@@ -53,7 +104,7 @@ interface CounselorNote {
 }
 
 // 💡 3. 헬퍼 함수: 동적 제목 (세션 ID/번호 제거)
-const getDynamicTitle = (track: MusicTrackInfo): string => {
+const getDynamicTitle = (track: MusicTrackDetail): string => {
     if (track.title && !track.title.includes("AI 생성 트랙")) {
         // 백엔드 title이 "상담사 처방 음악 (세션 123)" 형태일 수 있으므로 (세션) 부분 제거
         return track.title.split(' (')[0];
@@ -115,8 +166,8 @@ export default function PatientDetailPage() {
 
     // --- State 정의 ---
     const [patient, setPatient] = useState<PatientProfile | null>(null);
-    const [sessions, setSessions] = useState<SessionInfo[]>([]);
-    const [music, setMusic] = useState<MusicTrackInfo[]>([]);
+    const [sessions, setSessions] = useState<SessionInfo[]>([]); // 👈 [수정] 이젠 '상담 기록' 탭이 없으므로, 음악 카운트용으로만 사용
+    const [music, setMusic] = useState<MusicTrackDetail[]>([]); // 👈 [수정] MusicTrackInfo -> MusicTrackDetail
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -124,7 +175,12 @@ export default function PatientDetailPage() {
     const audioRef = useRef<HTMLAudioElement | null>(null);
 
     // 💡 6. [핵심 수정] 탭 상태에 'memos' 추가
-    const [activeTab, setActiveTab] = useState<'music' | 'logs' | 'memos'>('music');
+    const [activeTab, setActiveTab] = useState<'music' | 'memos'>('music');
+    
+    // 💡 [추가] 음악 상세정보 펼치기 상태
+    const [expandedTrackId, setExpandedTrackId] = useState<string | number | null>(null);
+    const [detailLoadingId, setDetailLoadingId] = useState<string | number | null>(null);
+    // (trackDetail은 music state 안에 이미 포함됨)
 
     const [chatLogs, setChatLogs] = useState<Record<number, ChatMessage[]>>({});
     const [logLoading, setLogLoading] = useState<number | null>(null);
@@ -171,29 +227,34 @@ export default function PatientDetailPage() {
 
             try {
                 // (API 호출 - 변경 없음)
-                const [profileRes, sessionsRes, musicRes] = await Promise.all([
+                const [profileRes, musicRes] = await Promise.all([
                     fetch(`${API_URL}/therapist/patient/${patientId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-                    fetch(`${API_URL}/therapist/patient/${patientId}/sessions`, { headers: { 'Authorization': `Bearer ${token}` } }),
                     fetch(`${API_URL}/therapist/patient/${patientId}/music`, { headers: { 'Authorization': `Bearer ${token}` } })
                 ]);
 
                 // (에러 처리 - 변경 없음)
-                if (profileRes.status === 401 || sessionsRes.status === 401 || musicRes.status === 401) throw new Error('인증 실패. 다시 로그인해주세요.');
-                if (profileRes.status === 403 || sessionsRes.status === 403 || musicRes.status === 403) throw new Error('이 환자에 대한 접근 권한이 없습니다.');
+                if (profileRes.status === 401 || musicRes.status === 401) throw new Error('인증 실패. 다시 로그인해주세요.');
+                if (profileRes.status === 403 || musicRes.status === 403) throw new Error('이 환자에 대한 접근 권한이 없습니다.');
 
                 // (데이터 set)
                 if (!profileRes.ok) throw new Error(`환자 정보 로딩 실패 (${profileRes.status})`);
                 setPatient(await profileRes.json());
 
-                if (!sessionsRes.ok) throw new Error(`상담 기록 로딩 실패 (${sessionsRes.status})`);
-                setSessions(await sessionsRes.json());
+                
 
                 if (!musicRes.ok) throw new Error(`음악 목록 로딩 실패 (${musicRes.status})`);
-                const musicData: MusicTrackInfo[] = await musicRes.json();
+                // 💡 [수정] music state가 이제 MusicTrackDetail[] 타입을 가짐
+                const musicData: MusicTrackDetail[] = await musicRes.json();
                 setMusic(musicData.map(t => ({
-                    ...t,
+                    ...t, 
                     audioUrl: t.audioUrl || t.track_url || '',
                 })));
+
+                // 💡 [수정] 세션 카운트는 musicData에서 유추 (has_dialog 기준)
+                const dialogSessions = musicData.filter(m => m.has_dialog).map(m => m.session_id);
+                const uniqueSessionIds = [...new Set(dialogSessions)];
+                // (세션 카운트 방식은 참고용. 지금은 sessions.length를 사용하지 않음)
+                // setSessions(uniqueSessionIds.map(id => ...));
 
             } catch (err: unknown) {
                 // (catch 블록 - 변경 없음)
@@ -221,7 +282,8 @@ export default function PatientDetailPage() {
     }, [patientId, isAuthed, router]);
 
     // 💡 9. [수정] handlePlay (async/await 적용)
-    const handlePlay = async (track: MusicTrackInfo) => {
+    const handlePlay = async (e: React.MouseEvent, track: MusicTrackDetail) => {
+        e.stopPropagation(); // 👈 [추가] 상세정보 펼치기 방지
         const audio = audioRef.current;
         if (!audio) return;
         if (currentTrackId === track.id) {
@@ -245,6 +307,15 @@ export default function PatientDetailPage() {
             console.error("Audio playback failed", error);
             setError(error instanceof Error ? error.message : `음악 재생/로드 실패: ${track.title}`);
             setCurrentTrackId(null);
+        }
+    };
+
+    const handleToggleDetails = async (trackId: number | string) => {
+        // (music state에 이미 모든 정보가 로드되어 있으므로, API 재호출 불필요)
+        if (expandedTrackId === trackId) {
+            setExpandedTrackId(null);
+        } else {
+            setExpandedTrackId(trackId);
         }
     };
 
@@ -410,7 +481,7 @@ export default function PatientDetailPage() {
         );
     }
 
-    // 💡 9. [핵심] JSX 렌더링 (생략 없음)
+    // 💡 11. [핵심 수정] JSX 렌더링 (탭 수정, 상세정보 뷰 추가)
     return (
         <div className="max-w-3xl mx-auto p-4 sm:p-6 bg-gray-50 min-h-screen">
             <header className="flex justify-between items-center pb-4 border-b border-gray-200 mb-6">
@@ -419,33 +490,34 @@ export default function PatientDetailPage() {
                 </button>
             </header>
 
-            {/* 환자 정보 섹션 */}
+            {/* 환자 정보 섹션 (age, 카카오ID 표시) */}
             <section className="bg-white p-6 border rounded-xl shadow-md mb-8">
-                <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden border">
-                        <User className="w-8 h-8 text-gray-400" />
-                    </div>
-                    <div>
-                        <h1 className="text-3xl font-bold text-gray-900">
-                            {patient.name || '이름 없음'}
-                            {patient.age && (
-                                <span className="text-2xl font-medium text-gray-500 ml-2">(만 {patient.age}세)</span>
-                            )}
-                        </h1>
-                        <p className="text-md text-gray-500">
-                            {getPatientIdentifier(patient)}
-                        </p>
-                    </div>
-                </div>
-                <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                    <div className="text-gray-600">총 상담 횟수:</div>
-                    <div className="font-medium text-indigo-600">{sessions.length}회</div>
-                    <div className="text-gray-600">생성된 음악:</div>
-                    <div className="font-medium text-green-600">{music.length}곡</div>
-                </div>
+                 <div className="flex items-center gap-4">
+                     <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden border">
+                         <User className="w-8 h-8 text-gray-400" />
+                     </div>
+                     <div>
+                         <h1 className="text-3xl font-bold text-gray-900">
+                             {patient.name || '이름 없음'}
+                             {patient.age && (
+                                 <span className="text-2xl font-medium text-gray-500 ml-2">(만 {patient.age}세)</span>
+                             )}
+                         </h1>
+                         <p className="text-md text-gray-500">
+                             {getPatientIdentifier(patient)}
+                         </p>
+                     </div>
+                 </div>
+                 <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                     {/* 💡 [수정] sessions.length -> music.filter(m => m.has_dialog).length */}
+                     <div className="text-gray-600">총 상담 횟수:</div>
+                     <div className="font-medium text-indigo-600">{music.filter(m => m.has_dialog).length}회</div>
+                     <div className="text-gray-600">생성된 음악:</div>
+                     <div className="font-medium text-green-600">{music.length}곡</div>
+                 </div>
             </section>
 
-            {/* 탭 메뉴 UI (메모 탭 추가) */}
+            {/* 💡 [수정] 탭 메뉴 UI ('logs' 탭 제거) */}
             <div className="mb-6">
                  <div className="border-b border-gray-200">
                      <nav className="-mb-px flex space-x-8" aria-label="Tabs">
@@ -455,13 +527,6 @@ export default function PatientDetailPage() {
                                  }`}
                          >
                              음악 목록 ({music.length})
-                         </button>
-                         <button
-                             onClick={() => setActiveTab('logs')}
-                             className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'logs' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-                                 }`}
-                         >
-                             상담 기록 ({sessions.length})
                          </button>
                          <button
                              onClick={() => setActiveTab('memos')}
@@ -474,7 +539,7 @@ export default function PatientDetailPage() {
                  </div>
             </div>
             
-            {/* --- 음악 목록 탭 (UI 수정됨) --- */}
+            {/* --- 음악 목록 탭 (상세보기 기능 추가) --- */}
             {activeTab === 'music' && (
                 <section>
                     <div className="flex justify-between items-center mb-4">
@@ -495,109 +560,81 @@ export default function PatientDetailPage() {
                     ) : (
                         <ul className="space-y-3">
                             {music.map((track) => (
-                                <li
-                                    key={track.id}
-                                    className={`p-4 bg-white border border-gray-200 rounded-lg shadow-sm transition-all flex items-center justify-between ${currentTrackId === track.id ? 'border-indigo-300 shadow-md' : 'hover:bg-gray-50'
+                                <Fragment key={track.id}>
+                                    <li
+                                        onClick={() => handleToggleDetails(track.id)} // 👈 [추가]
+                                        className={`p-4 bg-white border border-gray-200 rounded-lg shadow-sm transition-all flex items-center justify-between cursor-pointer ${
+                                            expandedTrackId === track.id ? 'border-indigo-300 shadow-md rounded-b-none' : 'hover:bg-gray-50'
                                         }`}
-                                >
-                                    <div className="flex items-center gap-4 min-w-0">
-                                        <div className={`flex-shrink-0 p-3 rounded-full ${currentTrackId === track.id ? 'bg-indigo-600' : 'bg-indigo-100'}`}>
-                                             <Music className={`w-5 h-5 ${currentTrackId === track.id ? 'text-white' : 'text-indigo-600'}`} />
+                                    >
+                                        <div className="flex items-center gap-4 min-w-0">
+                                            <div className={`flex-shrink-0 p-3 rounded-full ${currentTrackId === track.id ? 'bg-indigo-600' : 'bg-indigo-100'}`}>
+                                                 <Music className={`w-5 h-5 ${currentTrackId === track.id ? 'text-white' : 'text-indigo-600'}`} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className={`font-semibold text-gray-900 truncate ${currentTrackId === track.id ? 'text-indigo-700' : ''}`}>
+                                                    {getDynamicTitle(track)}
+                                                </p>
+                                                <p className="text-xs text-gray-500 mt-1">
+                                                    {new Date(track.created_at).toLocaleString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                                </p>
+                                            </div>
                                         </div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className={`font-semibold text-gray-900 truncate ${currentTrackId === track.id ? 'text-indigo-700' : ''}`}>
-                                                {getDynamicTitle(track)}
-                                            </p>
-                                            <p className="text-xs text-gray-500 mt-1">
-                                                {new Date(track.created_at).toLocaleString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                            </p>
+                                        <div className="flex-shrink-0 ml-4 flex items-center gap-2">
+                                            <button
+                                                onClick={(e) => handlePlay(e, track)}
+                                                className={`p-3 rounded-full transition-colors shadow-sm ${currentTrackId === track.id ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-600 hover:bg-indigo-700'
+                                                    } text-white`}
+                                                aria-label={currentTrackId === track.id ? '일시정지' : '재생'}
+                                            >
+                                                {currentTrackId === track.id ? <Pause className="h-5 w-5 fill-white" /> : <Play className="h-5 w-5 fill-white pl-0.5" />}
+                                            </button>
+                                            <ChevronDown className={`h-5 w-5 text-gray-400 transition-transform ${expandedTrackId === track.id ? 'rotate-180' : ''}`} />
                                         </div>
-                                    </div>
-                                    <div className="flex-shrink-0 ml-4">
-                                        <button
-                                            onClick={() => handlePlay(track)}
-                                            className={`p-3 rounded-full transition-colors shadow-sm ${currentTrackId === track.id ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-600 hover:bg-indigo-700'
-                                                } text-white`}
-                                            aria-label={currentTrackId === track.id ? '일시정지' : '재생'}
-                                        >
-                                            {currentTrackId === track.id ? <Pause className="h-5 w-5 fill-white" /> : <Play className="h-5 w-5 fill-white pl-0.5" />}
-                                        </button>
-                                    </div>
-                                </li>
+                                    </li>
+                                    
+                                    {/* 💡 [핵심 추가] 상세 정보 패널 */}
+                                    {expandedTrackId === track.id && (
+                                        <div className="border border-t-0 rounded-b-lg p-6 bg-white shadow-inner mb-3 -mt-2 animate-in fade-in duration-200">
+                                            <div className="space-y-5">
+                                                
+                                                {/* 1. 접수 내용 (Intake / Composer / Counselor) */}
+                                                {track.intake_data ? (
+                                                    <PatientIntakeView intake={track.intake_data} />
+                                                ) : track.therapist_manual ? (
+                                                    <CounselorIntakeView intake={track.therapist_manual} />
+                                                ) : (
+                                                    <Alert type="info" message="이 음악과 연결된 접수 기록이 없습니다." />
+                                                )}
+
+                                                {/* 2. 가사 */}
+                                                {track.lyrics && (
+                                                    <div>
+                                                        <h4 className="font-semibold text-gray-800 flex items-center"><FileText className="w-4 h-4 mr-2 text-indigo-600"/>생성된 가사</h4>
+                                                        <pre className="mt-2 p-3 bg-gray-50 rounded-md text-sm text-gray-600 whitespace-pre-wrap font-sans overflow-y-auto max-h-40 border">
+                                                            {track.lyrics}
+                                                        </pre>
+                                                    </div>
+                                                )}
+
+                                                {/* 3. 채팅 요약 */}
+                                                {track.chat_history && track.chat_history.length > 0 && (
+                                                    <ChatHistoryView chatHistory={track.chat_history} />
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </Fragment>
                             ))}
                         </ul>
                     )}
                 </section>
             )}
 
-            {/* --- 상담 기록 탭 (UI 수정됨) --- */}
-            {activeTab === 'logs' && (
-                <section>
-                    <h2 className="text-xl font-semibold text-gray-800 mb-4">과거 상담 기록</h2>
-                    {sessions.length === 0 ? (
-                        <div className="text-center p-8 border-2 border-dashed border-gray-300 rounded-lg bg-white">
-                            <MessageSquare className="mx-auto h-12 w-12 text-gray-400" />
-                            <h3 className="mt-2 text-sm font-semibold text-gray-900">상담 기록 없음</h3>
-                            <p className="mt-1 text-sm text-gray-500">이 환자는 아직 상담 기록이 없습니다.</p>
-                        </div>
-                    ) : (
-                        <div className="space-y-4">
-                            {sessions.map((session) => (
-                                <div key={session.id} className="bg-white border rounded-lg shadow-sm overflow-hidden">
-                                    <button
-                                        onClick={() => fetchChatLog(session.id)}
-                                        className="w-full p-4 text-left font-medium text-gray-800 flex justify-between items-center hover:bg-gray-50"
-                                    >
-                                        <div className="flex flex-col">
-                                            <span className="font-semibold text-indigo-700">
-                                                {new Date(session.created_at).toLocaleString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                            </span>
-                                            <span className="text-xs text-gray-500 font-normal mt-1">
-                                                (ID: {session.id})
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            {logLoading === session.id ? <Loader2 className="w-4 h-4 animate-spin text-indigo-500" /> : <ChevronDown className={`w-5 h-5 text-gray-500 transition-transform ${chatLogs[session.id] ? 'rotate-180' : ''}`} />}
-                                        </div>
-                                    </button>
-                                    
-                                    {chatLogs[session.id] && (
-                                        <Fragment>
-                                            <div className="p-4 border-t border-gray-200 bg-gray-50 max-h-96 overflow-y-auto space-y-3">
-                                                {chatLogs[session.id].map((msg, msgIndex) => (
-                                                    <div key={msg.id || msgIndex} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                                        <div className={`p-3 max-w-lg rounded-xl shadow-sm ${msg.role === 'user' 
-                                                            ? 'bg-blue-100 text-blue-900 rounded-br-none' 
-                                                            : 'bg-gray-200 text-gray-800 rounded-tl-none'
-                                                        }`}>
-                                                            <p className="whitespace-pre-wrap text-sm">{msg.content}</p>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                            {/* 💡 [추가] 이어하기 버튼 */}
-                                            <div className="flex items-center gap-2 p-3 border-t border-gray-200 bg-gray-50">
-                                                <button
-                                                    onClick={() => {
-                                                        const path = session.has_dialog ? '/counsel' : '/compose';
-                                                        router.push(`${path}?session=${session.id}`);
-                                                    }}
-                                                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white text-indigo-600 text-xs font-medium rounded-md border border-indigo-300 hover:bg-indigo-50"
-                                                >
-                                                    <MessageSquare className="w-4 h-4" />
-                                                    {session.has_dialog ? '상담 이어하기' : '작곡 결과보기'}
-                                                </button>
-                                            </div>
-                                        </Fragment>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </section>
-            )}
+            {/* --- 상담 기록 탭 (제거됨) --- */}
+            {/* {activeTab === 'logs' && ( ... )} */}
             
-            {/* 💡 [핵심 추가] --- 상담사 메모 탭 --- */}
+            {/* --- 상담사 메모 탭 (UI 수정됨) --- */}
             {activeTab === 'memos' && (
                 <section className="space-y-6">
                     {/* 1. 새 메모 작성 폼 */}
@@ -629,7 +666,7 @@ export default function PatientDetailPage() {
                          </div>
                     </form>
 
-                    {/* 2. 메모 목록 */}
+                    {/* 2. 메모 목록 (작성자 표시) */}
                     <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
                         <h2 className="text-xl font-semibold text-gray-800 flex items-center mb-5">
                             <ClipboardList className="w-5 h-5 mr-3 text-indigo-500"/>
@@ -654,19 +691,15 @@ export default function PatientDetailPage() {
                                             {note.content}
                                         </p>
                                         <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-200">
-                                            {/* 💡 [핵심 수정] 작성자 이름 표시 */}
                                             <p className="text-xs text-gray-500">
                                                 <span className="font-medium text-gray-700">
                                                     {note.therapist_name || '알 수 없음'}
-                                                    {/* 💡 현재 로그인한 유저(user)와 메모 작성자(note.therapist_id) 비교 */}
                                                     {user && note.therapist_id === user.id && ' (나)'} 
                                                 </span>
                                                 <span className="mx-1.5">|</span>
                                                 {formatMemoTime(note.created_at)}
                                                 {note.created_at !== note.updated_at && ' (수정됨)'}
                                             </p>
-                                            
-                                            {/* 💡 [핵심 수정] 본인 메모만 삭제 버튼 표시 */}
                                             {user && note.therapist_id === user.id && (
                                                 <button
                                                     onClick={() => handleDeleteMemo(note.id)}
@@ -685,12 +718,11 @@ export default function PatientDetailPage() {
                     </div>
                 </section>
             )}
-
         </div>
     );
 }
 
-// 💡 12. [추가] Alert 컴포넌트 (메모 탭 에러 표시용)
+// 💡 12. [추가] Alert 컴포넌트
 interface AlertProps {
     type: 'error' | 'info' | 'success';
     message: string | null;
@@ -719,6 +751,108 @@ const Alert: React.FC<AlertProps> = ({ type, message, onClose }) => {
                     <XCircle className="w-4 h-4" />
                 </button>
             )}
+        </div>
+    );
+};
+
+// 💡 13. [추가] 상세정보 뷰 헬퍼 컴포넌트
+
+// (1) 환자 접수(Intake) 상세 뷰
+const PatientIntakeView: React.FC<{ intake: SimpleIntakeData }> = ({ intake }) => {
+    const vas = intake.vas;
+    const prefs = intake.prefs;
+    
+    return (
+        <div className="space-y-4">
+            <div>
+                <h4 className="font-semibold text-gray-800 flex items-center"><User className="w-4 h-4 mr-2 text-green-600"/>환자 접수 내용</h4>
+                <div className="mt-2 p-3 bg-gray-50 rounded-md text-sm text-gray-600 italic border">
+                    
+                    {intake.goal_text || '기록된 상담 목표가 없습니다.'}
+                    
+                </div>
+            </div>
+            {vas && (
+                <div>
+                    <h5 className="font-medium text-gray-700 text-sm">사전 VAS 점수</h5>
+                    <div className="grid grid-cols-3 gap-2 mt-2 text-center">
+                        <div className="p-2 bg-blue-50 rounded border border-blue-100">
+                            <span className="text-xs text-blue-700">불안</span>
+                            <p className="font-bold text-lg text-blue-800">{vas.anxiety}/10</p>
+                        </div>
+                        <div className="p-2 bg-yellow-50 rounded border border-yellow-100">
+                            <span className="text-xs text-yellow-700">기분(우울)</span>
+                            <p className="font-bold text-lg text-yellow-800">{vas.depression}/10</p>
+                        </div>
+                        <div className="p-2 bg-red-50 rounded border border-red-100">
+                            <span className="text-xs text-red-700">통증</span>
+                            <p className="font-bold text-lg text-red-800">{vas.pain}/10</p>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {prefs && (
+                <div>
+                    <h5 className="font-medium text-gray-700 text-sm">음악 선호도</h5>
+                    <ul className="list-none space-y-1 mt-2 text-sm text-gray-600">
+                        <li><strong>선호 장르:</strong> {prefs.genres.join(', ') || '없음'}</li>
+                        <li><strong>비선호 장르:</strong> {prefs.contraindications.join(', ') || '없음'}</li>
+                        <li><strong>보컬:</strong> {prefs.lyrics_allowed ? '포함' : '미포함(연주곡)'}</li>
+                    </ul>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// (2) 상담사/작곡가 처방(Intake) 상세 뷰
+const CounselorIntakeView: React.FC<{ intake: CounselorIntakeData }> = ({ intake }) => {
+    return (
+        <div className="space-y-4">
+            <div>
+                <h4 className="font-semibold text-gray-800 flex items-center"><User className="w-4 h-4 mr-2 text-blue-600"/>작곡/처방 내용</h4>
+                {intake.notes && (
+                    <div className="mt-2 p-3 bg-gray-50 rounded-md text-sm text-gray-600 italic border">
+                        {intake.notes}
+                    </div>
+                )}
+            </div>
+            <div>
+                <h5 className="font-medium text-gray-700 text-sm">음악 파라미터</h5>
+                <ul className="list-none space-y-1 mt-2 text-sm text-gray-600 grid grid-cols-2 gap-x-4">
+                    <li><strong>분위기:</strong> {intake.mood || 'N/A'}</li>
+                    {/* 💡 [수정] 'mainInstrument' -> 'include_instruments' */}
+                    <li><strong>메인 악기:</strong> {intake.include_instruments?.join(', ') || intake.mainInstrument || 'N/A'}</li>
+                    {/* 💡 [수정] 'targetBPM' -> 'bpm_min/max' */}
+                    <li><strong>BPM:</strong> {intake.bpm_min ? `${intake.bpm_min}-${intake.bpm_max}` : 'N/A'}</li>
+                    <li><strong>조성:</strong> {intake.key_signature || 'N/A'}</li>
+                    <li><strong>보컬:</strong> {intake.vocals_allowed ? '포함' : '미포함'}</li>
+                    <li><strong>리듬:</strong> {intake.rhythm_complexity || 'N/A'}</li>
+                    <li><strong>선율:</strong> {intake.melody_contour || 'N/A'}</li>
+                    <li><strong>밀도:</strong> {intake.texture_density || 'N/A'}</li>
+                    <li><strong>불협화음:</strong> {intake.harmonic_dissonance || 'N/A'}</li>
+                </ul>
+            </div>
+        </div>
+    );
+};
+
+// (3) 채팅 기록 뷰
+const ChatHistoryView: React.FC<{ chatHistory: ChatMessage[] }> = ({ chatHistory }) => {
+    return (
+        <div>
+            <h4 className="font-semibold text-gray-800 flex items-center"><MessageSquare className="w-4 h-4 mr-2 text-blue-500"/>관련 대화</h4>
+            <div className="mt-2 space-y-2 p-3 bg-gray-50 rounded-md max-h-48 overflow-y-auto border">
+                {chatHistory.map(msg => ( 
+                    <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`p-2 rounded-lg text-sm max-w-[80%] ${
+                            msg.role === 'user' ? 'bg-blue-100 text-blue-900' : 'bg-gray-200 text-gray-800'
+                        }`}>
+                            <p className="whitespace-pre-wrap">{msg.content}</p>
+                        </div>
+                    </div>
+                ))}
+            </div>
         </div>
     );
 };
