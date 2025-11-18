@@ -3,11 +3,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import select, insert, delete
 from sqlalchemy.ext.asyncio import AsyncSession
+# 💡 1. [수정] typing.List, Optional 추가
 from typing import List, Optional
 import json
 
 from app.db import get_db
-# 💡 1. [수정] 필요한 모델과 스키마 import
+# 💡 2. [수정] 필요한 모델과 스키마 import
 from app.models import Session, ConversationMessage, SessionPatientIntake, User
 from app.schemas import SessionInfo 
 from app.services.auth_service import get_current_user

@@ -116,9 +116,9 @@ export default function PatientDashboardPage() {
       try {
         // 💡 3개 API 병렬 호출 (즐겨찾기 API 추가)
         const [sessionsRes, musicRes, favRes] = await Promise.all([
-          fetch(`${API_URL}/sessions/my`, { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch(`${API_URL}/sessions/my?has_dialog=true`, { headers: { 'Authorization': `Bearer ${token}` } }),
           fetch(`${API_URL}/music/my?limit=3`, { headers: { 'Authorization': `Bearer ${token}` } }),
-          fetch(`${API_URL}/music/my/favorites`, { headers: { 'Authorization': `Bearer ${token}` } }) // 👈 [추가]
+          fetch(`${API_URL}/music/my/favorites`, { headers: { 'Authorization': `Bearer ${token}` } })
         ]);
 
         if (sessionsRes.status === 401 || musicRes.status === 401 || favRes.status === 401) throw new Error('인증 실패');
@@ -387,7 +387,7 @@ export default function PatientDashboardPage() {
           </section>
         </div>
 
-        {/* 2-2. 사이드바 (과거 상담 기록) (변경 없음) */}
+        {/* 2-2. 사이드바 (과거 상담 기록) */}
         <section className="lg:col-span-1 bg-white p-6 rounded-xl shadow-lg border border-gray-200">
           <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2 mb-6">
             <MessageSquare className="w-5 h-5 text-indigo-500" />
@@ -397,7 +397,8 @@ export default function PatientDashboardPage() {
           {sessions.length === 0 ? (
             <div className="p-10 text-center bg-gray-50 rounded-xl border border-gray-100">
               <MessageSquare className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-              <p className="text-gray-500">아직 상담 기록이 없습니다.</p>
+              {/* 💡 [수정] 텍스트 변경 */}
+              <p className="text-gray-500">아직 완료된 AI 상담이 없습니다.</p>
             </div>
           ) : (
             <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
@@ -417,8 +418,8 @@ export default function PatientDashboardPage() {
                             })}
                           </p>
                           <p className="text-xs text-gray-500">
-                            {/* 💡 [수정] 세션 ID 대신 타입 표시 */}
-                            {session.initiator_type === 'therapist' ? '상담사 처방' : (session.has_dialog ? 'AI 상담' : '작곡 체험')}
+                            {/* 💡 [수정] 이제 항상 'AI 상담'만 표시됨 */}
+                            AI 상담
                           </p>
                         </div>
                         <ChevronDown
@@ -439,8 +440,8 @@ export default function PatientDashboardPage() {
                             <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                               <div
                                 className={`p-2.5 rounded-lg text-xs leading-relaxed ${msg.role === 'user'
-                                    ? 'bg-blue-100 text-blue-800'
-                                    : 'bg-gray-200 text-gray-700'
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : 'bg-gray-200 text-gray-700'
                                   }`}
                               >
                                 <p className="whitespace-pre-wrap">{msg.content}</p>
@@ -450,31 +451,20 @@ export default function PatientDashboardPage() {
                         </div>
                       )}
 
-                      {/* 버튼 영역 */}
+                      {/* 💡 [핵심 수정] 버튼 영역 */}
                       <div className="flex items-center gap-2 mt-4 pt-3 border-t border-gray-100">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-
-                            if (session.has_dialog) {
-                              // 1. AI 상담 (has_dialog: true) -> /counsel (이어하기)
-                              router.push(`/counsel?session=${session.id}`);
-                            } else {
-                              // 2. 작곡 체험 (has_dialog: false) -> /music (결과보기)
-                              // (이 세션에서 생성된 음악을 찾아야 함)
-                              // (간단한 구현: /music 페이지로 이동하여 해당 세션의 트랙을 찾도록 유도)
-                              // (더 좋은 구현: /music/my API를 호출하여 이 session.id에 연결된 track.id를 찾아냄)
-
-                              // 💡 [수정] /music 페이지로 이동 (세션 ID 대신 트랙 ID가 필요하지만, 
-                              // 이 컴포넌트는 트랙 ID를 모르므로 /music의 목록에서 찾도록 유도)
-                              router.push(`/music?sessionHighlight=${session.id}`);
-                            }
+                            // 💡 [수정] 이 목록의 세션은 항상 has_dialog: true 이므로 /counsel로 이동
+                            router.push(`/counsel?session=${session.id}`);
                           }}
                           disabled={deletingId === session.id}
                           className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white text-indigo-600 text-xs font-medium rounded-md border border-indigo-300 hover:bg-indigo-50 disabled:opacity-50"
                         >
                           <MessageSquare className="w-4 h-4" />
-                          {session.has_dialog ? '이어하기' : '결과보기'}
+                          {/* 💡 [수정] 버튼 텍스트 '이어하기'로 고정 */}
+                          이어하기
                         </button>
                         <button
                           onClick={(e) => {
