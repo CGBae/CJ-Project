@@ -455,9 +455,20 @@ export default function PatientDashboardPage() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            // has_dialog 여부로 페이지 분기
-                            const path = session.has_dialog ? '/counsel' : '/music'; // 👈 compose → music으로 수정
-                            router.push(`${path}?track=${session.id}`); // track=query param으로 상세페이지 열기
+
+                            if (session.has_dialog) {
+                              // 1. AI 상담 (has_dialog: true) -> /counsel (이어하기)
+                              router.push(`/counsel?session=${session.id}`);
+                            } else {
+                              // 2. 작곡 체험 (has_dialog: false) -> /music (결과보기)
+                              // (이 세션에서 생성된 음악을 찾아야 함)
+                              // (간단한 구현: /music 페이지로 이동하여 해당 세션의 트랙을 찾도록 유도)
+                              // (더 좋은 구현: /music/my API를 호출하여 이 session.id에 연결된 track.id를 찾아냄)
+
+                              // 💡 [수정] /music 페이지로 이동 (세션 ID 대신 트랙 ID가 필요하지만, 
+                              // 이 컴포넌트는 트랙 ID를 모르므로 /music의 목록에서 찾도록 유도)
+                              router.push(`/music?sessionHighlight=${session.id}`);
+                            }
                           }}
                           disabled={deletingId === session.id}
                           className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white text-indigo-600 text-xs font-medium rounded-md border border-indigo-300 hover:bg-indigo-50 disabled:opacity-50"
