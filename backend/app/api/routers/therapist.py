@@ -504,34 +504,54 @@ async def get_counselor_notes_for_patient(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """(신규) 이 상담사가 특정 환자에 대해 작성한 모든 메모를 조회합니다."""
+    """(수정됨) 이 환자를 담당하는 '모든' 상담사가 작성한 메모를 조회합니다."""
     if current_user.role != "therapist":
         raise HTTPException(status_code=403, detail="상담사 전용 기능입니다.")
     
-    # (환자 접근 권한 확인)
+    # (환자 접근 권한 확인 - 이 상담사가 이 환자를 볼 권한이 있는가?)
     await check_counselor_patient_access(patient_id, current_user.id, db)
     
+    # 💡 [핵심 수정] models.py를 건드리지 않고 수동으로 JOIN
     query = (
-        select(CounselorNote)
+        select(
+            CounselorNote, # 👈 CounselorNote 객체
+            User.name.label("therapist_name") # 👈 User 테이블의 name
+        )
+        .join(User, CounselorNote.therapist_id == User.id) # 👈 수동 JOIN
         .where(
-            CounselorNote.patient_id == patient_id,
-            CounselorNote.therapist_id == current_user.id
+            CounselorNote.patient_id == patient_id
+            # 💡 [삭제] therapist_id == current_user.id (본인 메모 필터) 삭제!
         )
         .order_by(CounselorNote.created_at.desc()) # 최신순
     )
+    
     result = await db.execute(query)
-    notes = result.scalars().all()
-    return notes
+    rows = result.all() # 👈 .all()로 (Note, name) 튜플을 가져옴
 
-# 💡 3. (POST) 특정 환자에 대한 메모 생성
+    # 💡 [수정] 스키마에 therapist_name 매핑
+    response_notes = []
+    for note, therapist_name in rows: # 👈 (note, therapist_name) 튜플
+        response_notes.append(NotePublic(
+            id=note.id,
+            patient_id=note.patient_id,
+            therapist_id=note.therapist_id,
+            content=note.content,
+            created_at=note.created_at,
+            updated_at=note.updated_at,
+            therapist_name=therapist_name or "알 수 없음" # 👈 JOIN한 이름 사용
+        ))
+
+    return response_notes
+
+# 💡 3. (POST) 특정 환자에 대한 메모 생성 (작성자 이름 반환)
 @router.post("/patient/{patient_id}/notes", response_model=NotePublic, status_code=status.HTTP_201_CREATED)
 async def create_counselor_note_for_patient(
     patient_id: int,
-    note_in: NoteCreate, # 👈 schemas.py에 정의한 Input
+    note_in: NoteCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """(신규) 특정 환자에 대한 새 메모를 생성합니다."""
+    """(수정됨) 특정 환자에 대한 새 메모를 생성하고, 작성자 이름을 포함하여 반환합니다."""
     if current_user.role != "therapist":
         raise HTTPException(status_code=403, detail="상담사 전용 기능입니다.")
     
@@ -539,7 +559,7 @@ async def create_counselor_note_for_patient(
     
     new_note = CounselorNote(
         patient_id=patient_id,
-        therapist_id=current_user.id,
+        therapist_id=current_user.id, # 👈 작성자는 current_user
         content=note_in.content
     )
     
@@ -547,13 +567,22 @@ async def create_counselor_note_for_patient(
         db.add(new_note)
         await db.commit()
         await db.refresh(new_note)
+        
+        # 💡 [수정] 반환 시 therapist_name을 채우기 위해 current_user 정보 사용
+        return NotePublic(
+            id=new_note.id,
+            patient_id=new_note.patient_id,
+            therapist_id=new_note.therapist_id,
+            content=new_note.content,
+            created_at=new_note.created_at,
+            updated_at=new_note.updated_at,
+            therapist_name=current_user.name or current_user.email # 👈 본인 이름 추가
+        )
     except Exception as e:
         await db.rollback()
         raise HTTPException(500, f"메모 저장 실패: {e}")
-        
-    return new_note
 
-# 💡 4. (DELETE) 특정 메모 삭제
+# 💡 4. (DELETE) 특정 메모 삭제 (변경 없음 - 본인만 삭제 가능)
 @router.delete("/notes/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_counselor_note(
     note_id: int,
@@ -580,4 +609,4 @@ async def delete_counselor_note(
         await db.rollback()
         raise HTTPException(500, f"메모 삭제 실패: {e}")
     
-    return None # 204 No Content
+    return None

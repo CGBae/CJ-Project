@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useRef, FormEvent, useCallback, Fragment } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import {
-    Play, Pause, // 👈 [추가] Pause 아이콘 (handlePlay 오류 수정용)
+    Play, Pause, CheckCircle,// 👈 [추가] Pause 아이콘 (handlePlay 오류 수정용)
     ArrowLeft, Volume2, Loader2, User, MessageSquare, Music,
     AlertTriangle, ChevronDown, Plus, ClipboardList, Send, Trash2, XCircle, Info
 } from 'lucide-react';
@@ -49,6 +49,7 @@ interface CounselorNote {
     content: string;
     created_at: string;
     updated_at: string;
+    therapist_name: string | null;
 }
 
 // 💡 3. 헬퍼 함수: 동적 제목 (세션 ID/번호 제거)
@@ -110,7 +111,7 @@ export default function PatientDetailPage() {
     const router = useRouter();
     const params = useParams();
     const patientId = params.patientId as string;
-    const { isAuthed } = useAuth();
+    const { isAuthed, user } = useAuth();
 
     // --- State 정의 ---
     const [patient, setPatient] = useState<PatientProfile | null>(null);
@@ -133,8 +134,10 @@ export default function PatientDetailPage() {
     const [newMemoContent, setNewMemoContent] = useState("");
     const [isMemoLoading, setIsMemoLoading] = useState(false);
     const [memoError, setMemoError] = useState<string | null>(null);
+    const [isSubmittingMemo, setIsSubmittingMemo] = useState(false);
+    const [isDeletingMemoId, setIsDeletingMemoId] = useState<number | null>(null);
 
-    const API_URL = getApiUrl();
+    
 
     // 💡 8. [수정] useEffect (API 3개 호출)
     useEffect(() => {
@@ -322,7 +325,7 @@ export default function PatientDetailPage() {
         const content = newMemoContent.trim();
         if (!content || !patientId) return;
 
-        setIsMemoLoading(true);
+        setIsSubmittingMemo(true);
         setMemoError(null);
         const token = localStorage.getItem('accessToken');
         if (!token) { setMemoError("인증 토큰이 없습니다."); setIsMemoLoading(false); return; }
@@ -337,13 +340,12 @@ export default function PatientDetailPage() {
                 const errData = await response.json();
                 throw new Error(errData.detail || "메모 생성 실패");
             }
-            const newNote: CounselorNote = await response.json();
-            setMemos([newNote, ...memos]);
             setNewMemoContent("");
+            await loadMemos();
         } catch (err: unknown) {
             setMemoError(err instanceof Error ? err.message : "메모 생성 오류");
         } finally {
-            setIsMemoLoading(false);
+            setIsSubmittingMemo(false);
         }
     };
 
@@ -351,7 +353,7 @@ export default function PatientDetailPage() {
     const handleDeleteMemo = async (noteId: number) => {
         if (!window.confirm("이 메모를 정말 삭제하시겠습니까?")) return;
 
-        setIsMemoLoading(true);
+        setIsDeletingMemoId(noteId);
         setMemoError(null);
         const token = localStorage.getItem('accessToken');
         if (!token) { setMemoError("인증 토큰이 없습니다."); setIsMemoLoading(false); return; }
@@ -365,11 +367,11 @@ export default function PatientDetailPage() {
             if (response.status === 404) throw new Error('메모를 찾을 수 없습니다.');
             if (!response.ok) throw new Error('메모 삭제 실패');
 
-            setMemos(memos.filter(m => m.id !== noteId));
+            setMemos(memos.filter(m => m.id !== noteId)); //;
         } catch (err: unknown) {
             setMemoError(err instanceof Error ? err.message : "메모 삭제 오류");
         } finally {
-            setIsMemoLoading(false);
+            setIsDeletingMemoId(null);
         }
     };
 
@@ -426,13 +428,11 @@ export default function PatientDetailPage() {
                     <div>
                         <h1 className="text-3xl font-bold text-gray-900">
                             {patient.name || '이름 없음'}
-                            {/* 💡 [추가] 나이 표시 */}
                             {patient.age && (
-                                <span className="text-2xl font-medium text-gray-500 ml-2">({patient.age}세)</span>
+                                <span className="text-2xl font-medium text-gray-500 ml-2">(만 {patient.age}세)</span>
                             )}
                         </h1>
                         <p className="text-md text-gray-500">
-                            {/* 💡 [수정] 카카오 로그인 여부 표시 */}
                             {getPatientIdentifier(patient)}
                         </p>
                     </div>
@@ -447,40 +447,40 @@ export default function PatientDetailPage() {
 
             {/* 탭 메뉴 UI (메모 탭 추가) */}
             <div className="mb-6">
-                <div className="border-b border-gray-200">
-                    <nav className="-mb-px flex space-x-8" aria-label="Tabs">
-                        <button
-                            onClick={() => setActiveTab('music')}
-                            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'music' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-                                }`}
-                        >
-                            음악 목록 ({music.length})
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('logs')}
-                            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'logs' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-                                }`}
-                        >
-                            상담 기록 ({sessions.length})
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('memos')}
-                            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'memos' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-                                }`}
-                        >
-                            상담사 메모
-                        </button>
-                    </nav>
-                </div>
+                 <div className="border-b border-gray-200">
+                     <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+                         <button
+                             onClick={() => setActiveTab('music')}
+                             className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'music' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+                                 }`}
+                         >
+                             음악 목록 ({music.length})
+                         </button>
+                         <button
+                             onClick={() => setActiveTab('logs')}
+                             className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'logs' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+                                 }`}
+                         >
+                             상담 기록 ({sessions.length})
+                         </button>
+                         <button
+                             onClick={() => setActiveTab('memos')}
+                             className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'memos' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+                                 }`}
+                         >
+                             상담사 메모
+                         </button>
+                     </nav>
+                 </div>
             </div>
-
+            
             {/* --- 음악 목록 탭 (UI 수정됨) --- */}
             {activeTab === 'music' && (
                 <section>
                     <div className="flex justify-between items-center mb-4">
                         <h2 className="text-xl font-semibold text-gray-800">생성된 음악</h2>
-                        <button
-                            onClick={() => router.push(`/intake/counselor?patientId=${patient.id}`)}
+                        <button 
+                            onClick={() => router.push(`/intake/counselor?patientId=${patient.id}`)} 
                             className="flex items-center gap-2 px-3 py-1.5 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600 transition-colors shadow-sm font-medium"
                         >
                             <Plus className="w-4 h-4" /> 음악 처방하기
@@ -502,7 +502,7 @@ export default function PatientDetailPage() {
                                 >
                                     <div className="flex items-center gap-4 min-w-0">
                                         <div className={`flex-shrink-0 p-3 rounded-full ${currentTrackId === track.id ? 'bg-indigo-600' : 'bg-indigo-100'}`}>
-                                            <Music className={`w-5 h-5 ${currentTrackId === track.id ? 'text-white' : 'text-indigo-600'}`} />
+                                             <Music className={`w-5 h-5 ${currentTrackId === track.id ? 'text-white' : 'text-indigo-600'}`} />
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <p className={`font-semibold text-gray-900 truncate ${currentTrackId === track.id ? 'text-indigo-700' : ''}`}>
@@ -520,7 +520,8 @@ export default function PatientDetailPage() {
                                                 } text-white`}
                                             aria-label={currentTrackId === track.id ? '일시정지' : '재생'}
                                         >
-                                            {currentTrackId === track.id ? <Volume2 className="h-5 w-5" /> : <Play className="h-5 w-5 fill-white pl-0.5" />}
+                                            {/* 💡 [수정] Pause 아이콘 사용 */}
+                                            {currentTrackId === track.id ? <Pause className="h-5 w-5 fill-white" /> : <Play className="h-5 w-5 fill-white pl-0.5" />}
                                         </button>
                                     </div>
                                 </li>
@@ -560,20 +561,35 @@ export default function PatientDetailPage() {
                                             {logLoading === session.id ? <Loader2 className="w-4 h-4 animate-spin text-indigo-500" /> : <ChevronDown className={`w-5 h-5 text-gray-500 transition-transform ${chatLogs[session.id] ? 'rotate-180' : ''}`} />}
                                         </div>
                                     </button>
-
+                                    
                                     {chatLogs[session.id] && (
-                                        <div className="p-4 border-t border-gray-200 bg-gray-50 max-h-96 overflow-y-auto space-y-3">
-                                            {chatLogs[session.id].map((msg, msgIndex) => (
-                                                <div key={msg.id || msgIndex} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                                    <div className={`p-3 max-w-lg rounded-xl shadow-sm ${msg.role === 'user'
-                                                        ? 'bg-blue-100 text-blue-900 rounded-br-none'
-                                                        : 'bg-gray-200 text-gray-800 rounded-tl-none'
+                                        <Fragment>
+                                            <div className="p-4 border-t border-gray-200 bg-gray-50 max-h-96 overflow-y-auto space-y-3">
+                                                {chatLogs[session.id].map((msg, msgIndex) => (
+                                                    <div key={msg.id || msgIndex} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                                        <div className={`p-3 max-w-lg rounded-xl shadow-sm ${msg.role === 'user' 
+                                                            ? 'bg-blue-100 text-blue-900 rounded-br-none' 
+                                                            : 'bg-gray-200 text-gray-800 rounded-tl-none'
                                                         }`}>
-                                                        <p className="whitespace-pre-wrap text-sm">{msg.content}</p>
+                                                            <p className="whitespace-pre-wrap text-sm">{msg.content}</p>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            ))}
-                                        </div>
+                                                ))}
+                                            </div>
+                                            {/* 💡 [추가] 이어하기 버튼 */}
+                                            <div className="flex items-center gap-2 p-3 border-t border-gray-200 bg-gray-50">
+                                                <button
+                                                    onClick={() => {
+                                                        const path = session.has_dialog ? '/counsel' : '/compose';
+                                                        router.push(`${path}?session=${session.id}`);
+                                                    }}
+                                                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white text-indigo-600 text-xs font-medium rounded-md border border-indigo-300 hover:bg-indigo-50"
+                                                >
+                                                    <MessageSquare className="w-4 h-4" />
+                                                    {session.has_dialog ? '상담 이어하기' : '작곡 결과보기'}
+                                                </button>
+                                            </div>
+                                        </Fragment>
                                     )}
                                 </div>
                             ))}
@@ -581,52 +597,52 @@ export default function PatientDetailPage() {
                     )}
                 </section>
             )}
-
+            
             {/* 💡 [핵심 추가] --- 상담사 메모 탭 --- */}
             {activeTab === 'memos' && (
                 <section className="space-y-6">
                     {/* 1. 새 메모 작성 폼 */}
                     <form onSubmit={handleCreateMemo} className="bg-white p-6 border rounded-xl shadow-md">
-                        <h2 className="text-xl font-semibold text-gray-800 flex items-center mb-4">
-                            <Plus className="w-5 h-5 mr-3 text-indigo-600" />
+                         <h2 className="text-xl font-semibold text-gray-800 flex items-center mb-4">
+                            <Plus className="w-5 h-5 mr-3 text-indigo-600"/>
                             새 메모 추가
-                        </h2>
-                        <textarea
+                         </h2>
+                         <textarea
                             value={newMemoContent}
                             onChange={(e) => setNewMemoContent(e.target.value)}
                             rows={4}
                             className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
                             placeholder={patient ? `${patient.name || '환자'}님에 대한 소견이나 다음 상담 계획을 기록하세요...` : '메모 작성...'}
-                            disabled={isMemoLoading}
-                        />
-                        {memoError && !isMemoLoading && ( // 👈 로딩 중 아닐 때만 에러 표시
+                            disabled={isSubmittingMemo} // 👈 [수정]
+                         />
+                         {memoError && !isSubmittingMemo && ( // 👈 [수정]
                             <p className="text-sm text-red-600 mt-2">{memoError}</p>
-                        )}
-                        <div className="flex justify-end mt-4">
+                         )}
+                         <div className="flex justify-end mt-4">
                             <button
                                 type="submit"
-                                disabled={isMemoLoading || !newMemoContent.trim()}
+                                disabled={isSubmittingMemo || !newMemoContent.trim()} // 👈 [수정]
                                 className="flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg shadow hover:bg-indigo-700 transition-colors disabled:bg-gray-400"
                             >
-                                {isMemoLoading && <Loader2 className="w-4 h-4 animate-spin" />}
-                                메모 저장
+                                {isSubmittingMemo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} {/* 👈 [수정] */}
+                                {isSubmittingMemo ? '저장 중...' : '메모 저장'} {/* 👈 [수정] */}
                             </button>
-                        </div>
+                         </div>
                     </form>
 
                     {/* 2. 메모 목록 */}
                     <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
                         <h2 className="text-xl font-semibold text-gray-800 flex items-center mb-5">
-                            <ClipboardList className="w-5 h-5 mr-3 text-indigo-500" />
+                            <ClipboardList className="w-5 h-5 mr-3 text-indigo-500"/>
                             메모 기록
                         </h2>
                         {isMemoLoading && memos.length === 0 ? (
-                            <div className="flex justify-center items-center p-4">
+                             <div className="flex justify-center items-center p-4">
                                 <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
                                 <span className="ml-2 text-gray-500">메모 로딩 중...</span>
-                            </div>
+                             </div>
                         ) : !isMemoLoading && memoError && memos.length === 0 ? (
-                            <Alert type="error" message={memoError} />
+                             <Alert type="error" message={memoError} />
                         ) : memos.length === 0 ? (
                             <div className="p-6 text-center bg-gray-50 rounded-lg border border-gray-200">
                                 <p className="text-gray-500">아직 작성된 메모가 없습니다.</p>
@@ -645,11 +661,11 @@ export default function PatientDetailPage() {
                                             </p>
                                             <button
                                                 onClick={() => handleDeleteMemo(note.id)}
-                                                disabled={isMemoLoading}
+                                                disabled={isDeletingMemoId === note.id} // 👈 [수정]
                                                 className="p-1 text-red-500 hover:bg-red-100 rounded-md disabled:opacity-50"
                                                 aria-label="메모 삭제"
                                             >
-                                                {isMemoLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                                                {isDeletingMemoId === note.id ? <Loader2 className="w-4 h-4 animate-spin"/> : <Trash2 className="w-4 h-4" />}
                                             </button>
                                         </div>
                                     </li>
@@ -676,7 +692,9 @@ const Alert: React.FC<AlertProps> = ({ type, message, onClose }) => {
     switch (type) {
         case 'error':
             bgColor = 'bg-red-100 border-red-400 text-red-700'; Icon = AlertTriangle; break;
-        // 💡 [수정] 'info' 케이스 추가 (기본값과 동일)
+        // 💡 [수정] 'success' 케이스 추가 (이전 코드 누락)
+        case 'success':
+            bgColor = 'bg-green-100 border-green-400 text-green-700'; Icon = CheckCircle; break; // CheckCircle import 필요
         case 'info':
         default:
             bgColor = 'bg-blue-100 border-blue-400 text-blue-700'; Icon = Info; break;
@@ -688,10 +706,7 @@ const Alert: React.FC<AlertProps> = ({ type, message, onClose }) => {
                 <p className="text-sm">{message}</p>
             </div>
             {onClose && (
-                <button
-                    onClick={onClose}
-                    className="absolute top-2 right-2 p-1 rounded-full hover:bg-black hover:bg-opacity-10"
-                >
+                <button onClick={onClose} className="absolute top-2 right-2 p-1 rounded-full hover:bg-black hover:bg-opacity-10">
                     <XCircle className="w-4 h-4" />
                 </button>
             )}

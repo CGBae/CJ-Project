@@ -83,13 +83,15 @@ export default function ComposePage() {
         if (name === 'instrument') setInstrument(value);
         else if (name === 'duration') setDuration(Number(value));
         else if (name === 'notes') setNotes(value);
-        else if (type === 'checkbox') setVocalsAllowed((e.target as HTMLInputElement).checked);
+        else if (type === 'checkbox' && name === 'vocalsAllowed') { // 👈 [수정] name='vocalsAllowed' 확인
+            setVocalsAllowed((e.target as HTMLInputElement).checked);
+        }
     };
-    const handleExcludeToggle = (instrument: string) => {
+    const handleExcludeToggle = (soundValue: string) => {
         setExcludedInstruments(prev =>
-            prev.includes(instrument)
-                ? prev.filter(item => item !== instrument)
-                : [...prev, instrument]
+            prev.includes(soundValue)
+                ? prev.filter(item => item !== soundValue)
+                : [...prev, soundValue]
         );
     };
 
@@ -120,6 +122,7 @@ export default function ComposePage() {
                 dialog: []
             };
             const sessionResponse = await fetch(`${API_URL}/patient/intake`, { // ✅ API 경로 확인
+                method: 'POST', // 👈 [추가] POST 메소드
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
@@ -151,6 +154,7 @@ export default function ComposePage() {
                 }
             };
             const generateResponse = await fetch(`${API_URL}/therapist/manual-generate`, { // ✅ API 경로 확인
+                method: 'POST', // 👈 [추가] POST 메소드
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify(manualPayload)
             });
@@ -169,13 +173,13 @@ export default function ComposePage() {
             // --- 3단계: 음악 생성 (/music/compose 사용) ---
             setLoadingStatus('ElevenLabs에서 음악 생성 중...');
             const musicResponse = await fetch(`${API_URL}/music/compose`, { // ✅ API 경로 확인
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({
-                    session_id: newSessionId,
-                    music_length_ms: duration * 1000,
-                    force_instrumental: !vocalsAllowed,
-                }),
+                method: 'POST', // 👈 [추가] POST 메소드
+                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                 body: JSON.stringify({
+                     session_id: newSessionId,
+                     music_length_ms: duration * 1000,
+                     force_instrumental: !vocalsAllowed,
+                 }),
             });
             if (musicResponse.status === 401) throw new Error('인증 실패(음악생성)');
             if (!musicResponse.ok) {

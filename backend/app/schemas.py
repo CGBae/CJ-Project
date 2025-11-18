@@ -254,6 +254,7 @@ class NotePublic(NoteBase):
     therapist_id: int
     created_at: datetime
     updated_at: datetime
+    therapist_name: Optional[str] = None
 
     class Config:
         from_attributes = True
