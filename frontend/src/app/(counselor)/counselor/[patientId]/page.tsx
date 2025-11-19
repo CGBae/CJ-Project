@@ -7,9 +7,38 @@ import {
     Play, Pause, CheckCircle,
     ArrowLeft, Loader2, User, MessageSquare, Music,
     AlertTriangle, ChevronDown, Plus, ClipboardList, Send, Trash2, XCircle, Info,
-    FileText // 👈 [추가]
+    FileText, // 👈 [추가]
+    Brain,
+    HeartPulse
 } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext';
+
+const TRANSLATIONS: Record<string, string> = {
+    // 분위기
+    calming: '차분한', uplifting: '기분 좋아지는', energetic: '활기찬', 
+    reflective: '사색적인', warm: '따뜻한', soothing: '위로하는', 
+    bright: '밝은', focusing: '집중 잘 되는', dreamy: '몽환적인', hopeful: '희망찬',
+    
+    // 악기
+    Piano: '피아노', 'Acoustic Guitar': '통기타', Violin: '바이올린', 
+    'Music Box': '오르골', Flute: '플룻', 'Nature Sounds': '자연의 소리',
+    Drums: '드럼', Bass: '베이스', 'Synth Pad': '신디사이저', 'Electric Guitar': '일렉기타',
+
+    // 조성
+    Major: '밝음 (Major)', Minor: '차분함 (Minor)', Neutral: 'AI 추천',
+
+    // 복잡도 등
+    Simple: '단순함', Medium: '보통', Complex: '복잡함',
+    Low: '낮음', High: '높음', None: '없음',
+    Ascending: '상승하는', Descending: '하강하는', Wavy: '물결치는', Flat: '평탄한',
+    Sparse: '여유로운', Dense: '꽉 찬',
+};
+
+// 영어 -> 한글 변환 헬퍼 함수
+const t = (key: string | null | undefined) => {
+    if (!key) return '-';
+    return TRANSLATIONS[key] || key; // 매핑 없으면 원본 출력
+};
 
 // 💡 2. 백엔드 API 응답 타입 정의
 interface ChatMessage {
@@ -769,166 +798,170 @@ const Alert: React.FC<AlertProps> = ({ type, message, onClose }) => {
 
 // (1) 환자 접수(Intake) 상세 뷰
 const PatientIntakeView: React.FC<{ intake: SimpleIntakeData }> = ({ intake }) => {
-    const vas = intake.vas;
-    const prefs = intake.prefs;
+    const vas = intake?.vas;
+    const prefs = intake?.prefs;
 
-    return (
-        <div className="space-y-4">
-            <div>
-                <h4 className="font-semibold text-gray-800 flex items-center"><User className="w-4 h-4 mr-2 text-green-600" />환자 접수 내용</h4>
-                <div className="mt-2 p-3 bg-gray-50 rounded-md text-sm text-gray-600 italic border">
-
-                    {intake.goal_text || '기록된 상담 목표가 없습니다.'}
-
-                </div>
-            </div>
-            {vas && (
-                <div>
-                    <h5 className="font-medium text-gray-700 text-sm">사전 VAS 점수</h5>
-                    <div className="grid grid-cols-3 gap-2 mt-2 text-center">
-                        <div className="p-2 bg-blue-50 rounded border border-blue-100">
-                            <span className="text-xs text-blue-700">불안</span>
-                            <p className="font-bold text-lg text-blue-800">{vas.anxiety}/10</p>
-                        </div>
-                        <div className="p-2 bg-yellow-50 rounded border border-yellow-100">
-                            <span className="text-xs text-yellow-700">기분(우울)</span>
-                            <p className="font-bold text-lg text-yellow-800">{vas.depression}/10</p>
-                        </div>
-                        <div className="p-2 bg-red-50 rounded border border-red-100">
-                            <span className="text-xs text-red-700">통증</span>
-                            <p className="font-bold text-lg text-red-800">{vas.pain}/10</p>
-                        </div>
-                    </div>
-                </div>
-            )}
-            {prefs && (
-                <div>
-                    <h5 className="font-medium text-gray-700 text-sm">음악 선호도</h5>
-                    <ul className="list-none space-y-1 mt-2 text-sm text-gray-600">
-                        <li><strong>선호 장르:</strong> {prefs.genres?.join(', ') || '없음'}</li>
-                        <li><strong>비선호 장르:</strong> {prefs.contraindications?.join(', ') || '없음'}</li>
-                        <li><strong>보컬:</strong> {prefs.lyrics_allowed ? '포함' : '미포함(연주곡)'}</li>
-                    </ul>
-                </div>
-            )}
-        </div>
-    );
-};
-
-// (2) 상담사/작곡가 처방(Intake) 상세 뷰
-const CounselorIntakeView: React.FC<{ intake: CounselorIntakeData }> = ({ intake }) => {
-    if (!intake) return <div className="text-gray-500">처방 정보 로딩 실패</div>;
-
-    // 💡 헬퍼 함수: 값이 유효하고 'Neutral'이 아닐 때만 <li> 렌더링
-    const renderParam = (label: string, value: string | number | undefined | null) => {
-        if (!value || value === 'Neutral' || value === 'N/A') return null;
-        return <li><strong>{label}:</strong> {value}</li>;
+    // VAS 점수별 색상/라벨 헬퍼
+    const getVasColor = (score: number) => {
+        if (score <= 3) return 'bg-green-500';
+        if (score <= 7) return 'bg-yellow-400';
+        return 'bg-red-500';
     };
 
-    // 💡 VAS 데이터 존재 여부 확인
-    const hasVas = (intake.anxiety !== undefined && intake.anxiety !== null) ||
-                   (intake.depression !== undefined && intake.depression !== null) ||
-                   (intake.pain !== undefined && intake.pain !== null);
-
     return (
-        <div className="space-y-5">
-            {/* 1. 상담사/작곡가 메모 및 제목 */}
-            <div>
-                <h4 className="font-semibold text-gray-800 flex items-center">
-                    <User className="w-4 h-4 mr-2 text-blue-600"/>
-                    작곡/처방 상세 내용
-                </h4>
-                {intake.notes && (
-                    <div className="mt-2 p-3 bg-gray-50 rounded-md text-sm text-gray-600 italic border border-gray-200">
-                        {intake.notes}
-                    </div>
-                )}
+        <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+            <h4 className="font-bold text-gray-800 flex items-center mb-4">
+                <Brain className="w-5 h-5 mr-2 text-indigo-500"/>
+                환자 자가 진단 (AI 상담)
+            </h4>
+            
+            <div className="mb-6">
+                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">상담 목표</span>
+                <div className="mt-1.5 p-3 bg-indigo-50 rounded-lg text-sm text-indigo-900 font-medium">
+                    {intake.goal_text || '기록 없음'}
+                </div>
             </div>
 
-            {/* 2. 💡 [추가] VAS 점수 (데이터가 있는 경우에만 표시) */}
-            {hasVas && (
-                <div>
-                    <h5 className="font-medium text-gray-700 text-sm mb-2">기록된 환자 상태 (VAS)</h5>
-                    <div className="grid grid-cols-3 gap-2 text-center">
-                        {intake.anxiety !== null && intake.anxiety !== undefined && (
-                            <div className="p-2 bg-blue-50 rounded border border-blue-100">
-                                <span className="text-xs text-blue-700">불안</span>
-                                <p className="font-bold text-lg text-blue-800">{intake.anxiety}</p>
+            {vas && (
+                <div className="mb-6">
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">현재 상태 (VAS)</span>
+                    <div className="grid grid-cols-3 gap-4 mt-2">
+                        {[
+                            { label: '불안', val: vas.anxiety },
+                            { label: '우울', val: vas.depression },
+                            { label: '통증', val: vas.pain }
+                        ].map((item) => (
+                            <div key={item.label} className="text-center">
+                                <div className="text-xs text-gray-500 mb-1">{item.label}</div>
+                                <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
+                                    <div className={`h-full ${getVasColor(item.val)}`} style={{ width: `${item.val * 10}%` }}></div>
+                                </div>
+                                <div className="text-sm font-bold text-gray-800 mt-1">{item.val}</div>
                             </div>
-                        )}
-                        {intake.depression !== null && intake.depression !== undefined && (
-                            <div className="p-2 bg-yellow-50 rounded border border-yellow-100">
-                                <span className="text-xs text-yellow-700">우울</span>
-                                <p className="font-bold text-lg text-yellow-800">{intake.depression}</p>
-                            </div>
-                        )}
-                        {intake.pain !== null && intake.pain !== undefined && (
-                            <div className="p-2 bg-red-50 rounded border border-red-100">
-                                <span className="text-xs text-red-700">통증</span>
-                                <p className="font-bold text-lg text-red-800">{intake.pain}</p>
-                            </div>
-                        )}
+                        ))}
                     </div>
                 </div>
             )}
 
-            {/* 3. 음악 파라미터 (Neutral 숨김 적용) */}
-            <div>
-                <h5 className="font-medium text-gray-700 text-sm mb-2">적용된 음악 요소</h5>
-                <ul className="list-none space-y-1 mt-2 text-sm text-gray-600 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
-                    {renderParam("분위기", intake.mood)}
-                    
-                    {/* 악기 */}
-                    <li>
-                        <strong>메인 악기:</strong>{' '}
-                        {Array.isArray(intake.include_instruments) && intake.include_instruments.length > 0 
-                            ? intake.include_instruments.join(', ') 
-                            : (intake.mainInstrument || 'N/A')}
-                    </li>
-
-                    {/* BPM */}
-                    {(intake.targetBPM && intake.targetBPM !== 'Neutral') || (intake.bpm_min && intake.bpm_max) ? (
-                        <li>
-                            <strong>BPM:</strong>{' '}
-                            {intake.targetBPM && intake.targetBPM !== 'Neutral' 
-                                ? `${intake.targetBPM} (타겟)` 
-                                : `${intake.bpm_min}~${intake.bpm_max}`}
-                        </li>
-                    ) : null}
-
-                    {renderParam("조성", intake.key_signature)}
-                    
-                    {/* 보컬 여부 */}
-                    <li><strong>보컬:</strong> {intake.vocals_allowed ? '포함' : '미포함 (Instrumental)'}</li>
-                    
-                    {/* 고급 설정 (Neutral이면 숨김) */}
-                    {renderParam("리듬 복잡도", intake.rhythm_complexity)}
-                    {renderParam("선율 윤곽", intake.melody_contour)}
-                    {renderParam("음악적 밀도", intake.texture_density)}
-                    {renderParam("불협화음", intake.harmonic_dissonance)}
-                    
-                    {/* 제외된 악기/소리 */}
-                    {Array.isArray(intake.exclude_instruments) && intake.exclude_instruments.length > 0 && (
-                        <li className="col-span-1 sm:col-span-2 mt-1 text-red-500">
-                            <strong>제외됨:</strong> {intake.exclude_instruments.join(', ')}
-                        </li>
-                    )}
-                </ul>
-            </div>
+            {prefs && (
+                <div>
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">음악 선호도</span>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                        {prefs.genres?.map(g => <span key={g} className="px-2 py-1 bg-green-50 text-green-700 text-xs rounded-md font-medium">👍 {t(g)}</span>)}
+                        {prefs.contraindications?.map(g => <span key={g} className="px-2 py-1 bg-red-50 text-red-700 text-xs rounded-md font-medium">🚫 {t(g)}</span>)}
+                        <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-md">
+                            🎤 {prefs.lyrics_allowed ? '보컬 포함' : '연주곡만'}
+                        </span>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
-// (3) 채팅 기록 뷰
+
+// 2. 상담사 처방 내용 (작곡 체험)
+const CounselorIntakeView: React.FC<{ intake: CounselorIntakeData }> = ({ intake }) => {
+    // 유효한 필드만 렌더링하는 헬퍼
+    const Field = ({ label, value, icon }: { 
+        label: string, 
+        value: string | number | boolean | null | undefined, 
+        icon?: React.ReactNode 
+    }) => {
+        // 💡 [수정] any 캐스팅 제거 및 타입 안전하게 처리
+        let displayVal: string | number | null = null;
+
+        if (value === null || value === undefined) {
+            displayVal = null;
+        } else if (typeof value === 'boolean') {
+             displayVal = value ? '예' : '아니오';
+        } else {
+             // string이나 number인 경우
+             displayVal = t(String(value)); // t함수는 string을 받으므로 String()으로 변환
+        }
+
+        // 값이 없거나 Neutral/N/A면 렌더링 안 함
+        if (!value && value !== false && value !== 0) return null; // false나 0은 유효한 값이므로 제외
+        if (value === 'Neutral' || value === 'N/A') return null;
+        
+        return (
+            <div className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                <span className="text-sm text-gray-500 flex items-center gap-2">
+                    {icon && <span>{icon}</span>}
+                    {label}
+                </span>
+                <span className="text-sm font-medium text-gray-800 text-right">{displayVal}</span>
+            </div>
+        );
+    };
+
+    return (
+        <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+            <h4 className="font-bold text-gray-800 flex items-center mb-4">
+                <HeartPulse className="w-5 h-5 mr-2 text-rose-500"/>
+                음악 처방 상세 (Manual)
+            </h4>
+
+            {intake.notes && (
+                 <div className="mb-5 p-3 bg-rose-50 rounded-lg text-sm text-rose-900 border border-rose-100">
+                    <span className="block text-xs font-bold text-rose-400 mb-1">📝 처방 노트</span>
+                    {intake.notes}
+                </div>
+            )}
+            
+            {/* VAS (상담사가 기록한 경우) */}
+            {(intake.anxiety !== undefined || intake.depression !== undefined) && (
+                <div className="mb-5 p-3 bg-gray-50 rounded-lg">
+                     <span className="text-xs font-semibold text-gray-500 uppercase block mb-2">환자 상태 기록</span>
+                     <div className="flex gap-4 text-sm">
+                         {intake.anxiety !== undefined && <span>😰 불안: <strong>{intake.anxiety}</strong></span>}
+                         {intake.depression !== undefined && <span>💧 우울: <strong>{intake.depression}</strong></span>}
+                         {intake.pain !== undefined && <span>⚡ 통증: <strong>{intake.pain}</strong></span>}
+                     </div>
+                </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1">
+                <Field label="분위기" value={intake.mood} icon="✨"/>
+                <Field label="메인 악기" value={Array.isArray(intake.include_instruments) ? intake.include_instruments.join(', ') : intake.mainInstrument} icon="🎹"/>
+                <Field label="템포 (BPM)" value={intake.targetBPM && intake.targetBPM !== 'Neutral' ? intake.targetBPM : (intake.bpm_min ? `${intake.bpm_min}~${intake.bpm_max}` : null)} icon="🥁"/>
+                <Field label="조성" value={intake.key_signature} icon="🎼"/>
+                <Field label="보컬" value={intake.vocals_allowed ? '포함' : '미포함'} icon="🎤"/>
+                
+                {/* 고급 설정 */}
+                <Field label="리듬" value={intake.rhythm_complexity} />
+                <Field label="선율" value={intake.melody_contour} />
+                <Field label="밀도" value={intake.texture_density} />
+                <Field label="불협화음" value={intake.harmonic_dissonance} />
+            </div>
+
+             {Array.isArray(intake.exclude_instruments) && intake.exclude_instruments.length > 0 && (
+                <div className="mt-4 pt-3 border-t border-gray-100">
+                    <span className="text-xs font-bold text-red-400 uppercase">제외된 소리</span>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                        {intake.exclude_instruments.map(inst => (
+                            <span key={inst} className="px-2 py-1 bg-red-50 text-red-600 text-xs rounded-md border border-red-100">{t(inst)}</span>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// 3. 채팅 내역
 const ChatHistoryView: React.FC<{ chatHistory: ChatMessage[] }> = ({ chatHistory }) => {
     return (
-        <div>
-            <h4 className="font-semibold text-gray-800 flex items-center"><MessageSquare className="w-4 h-4 mr-2 text-blue-500" />관련 대화</h4>
-            <div className="mt-2 space-y-2 p-3 bg-gray-50 rounded-md max-h-48 overflow-y-auto border">
+        <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+            <h4 className="font-bold text-gray-800 flex items-center mb-4"><MessageSquare className="w-5 h-5 mr-2 text-blue-500"/>상담 대화 기록</h4>
+            <div className="space-y-3 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
                 {chatHistory.map(msg => (
                     <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`p-2 rounded-lg text-sm max-w-[80%] ${msg.role === 'user' ? 'bg-blue-100 text-blue-900' : 'bg-gray-200 text-gray-800'
-                            }`}>
-                            <p className="whitespace-pre-wrap">{msg.content}</p>
+                        <div className={`max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed ${
+                            msg.role === 'user' 
+                            ? 'bg-indigo-600 text-white rounded-tr-none shadow-md' 
+                            : 'bg-gray-100 text-gray-800 rounded-tl-none'
+                        }`}>
+                            {msg.content}
                         </div>
                     </div>
                 ))}
