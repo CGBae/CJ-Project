@@ -296,36 +296,47 @@ export default function PatientDetailPage() {
     };
 
     const handleToggleDetails = async (trackId: number | string) => {
+        // 1. 이미 열려있는 거면 닫기
         if (expandedTrackId === trackId) {
             setExpandedTrackId(null);
             setTrackDetail(null); 
             return;
         }
         
-        // 이미 music state에 상세 정보가 있는지 확인
-        const existingTrackDetail = music.find(m => m.id === trackId);
-        
-        // 상세 정보(가사 등)가 없으면 API 호출
-        if (existingTrackDetail && !existingTrackDetail.lyrics && !existingTrackDetail.intake_data && !existingTrackDetail.therapist_manual) {
-            setDetailLoadingId(String(trackId)); // 👈 [수정] detailLoadingId 사용 (경고 해결)
-            try {
-                const token = localStorage.getItem('accessToken');
-                const response = await fetch(`${API_URL}/music/track/${trackId}`, { 
-                     headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (!response.ok) throw new Error("상세 정보 로딩 실패");
-                const data: MusicTrackDetail = await response.json();
-                setTrackDetail(data);
-                setExpandedTrackId(trackId);
-            } catch (e) {
-                console.error(e);
-                setError("상세 정보를 불러올 수 없습니다.");
-            } finally {
-                setDetailLoadingId(null); // 👈 [수정] detailLoadingId 초기화
+        // 2. 로딩 시작
+        setExpandedTrackId(trackId); // 패널을 먼저 열고
+        setDetailLoadingId(String(trackId)); // 로딩 스피너 표시
+        setTrackDetail(null); // 기존 데이터 비우기 (깜빡임 방지)
+        setError(null);
+
+        const token = localStorage.getItem('accessToken');
+        if (!token) { 
+            setError("인증 토큰이 없습니다."); 
+            setDetailLoadingId(null); 
+            return; 
+        }
+
+        try {
+            // 3. 무조건 상세 API 호출 (목록에 있는 정보 무시)
+            const response = await fetch(`${API_URL}/music/track/${trackId}`, { 
+                 headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.detail || "상세 정보 로딩 실패");
             }
-        } else if (existingTrackDetail) {
-             setTrackDetail(existingTrackDetail);
-             setExpandedTrackId(trackId);
+
+            const data: MusicTrackDetail = await response.json();
+            console.log("상세 정보 수신:", data); // 👈 디버깅용 로그
+            setTrackDetail(data); // 4. 꽉 찬 데이터 저장
+            
+        } catch (e: unknown) {
+            console.error(e);
+            setError(e instanceof Error ? e.message : "상세 정보를 불러올 수 없습니다.");
+            setExpandedTrackId(null); // 에러 나면 다시 닫기
+        } finally {
+            setDetailLoadingId(null); // 로딩 끝
         }
     };
 
