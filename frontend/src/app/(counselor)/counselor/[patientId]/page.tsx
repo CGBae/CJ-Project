@@ -840,7 +840,7 @@ const CounselorIntakeView: React.FC<{ intake: CounselorIntakeData }> = ({ intake
                 </h4>
                 {intake.notes && (
                     <div className="mt-2 p-3 bg-gray-50 rounded-md text-sm text-gray-600 italic border border-gray-200">
-                        "{intake.notes}"
+                        {intake.notes}
                     </div>
                 )}
             </div>
