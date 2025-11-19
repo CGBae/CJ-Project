@@ -271,33 +271,27 @@ async def get_track_details(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    (신규) 트랙 ID 1개로 음악 상세 정보 (트랙, 가사, 접수 기록, 채팅 내역)를
-    가져옵니다.
-    """
-    
-    # 1. 트랙 및 관련 세션, 접수 기록, 채팅 기록을 한 번에 조인(join)해서 가져옴
+    # 1. 트랙과 세션 로드
     query = (
         select(Track)
         .where(Track.id == track_id)
         .options(
-            joinedload(Track.session).options( # 1. 세션 로드
-                joinedload(Session.patient_intake), # 2-1. 환자 Intake 로드
-                joinedload(Session.therapist_manual), # 2-2. 상담사 처방 로드
-                selectinload(Session.messages) # 2-3. 채팅 내역 로드
+            joinedload(Track.session).options(
+                joinedload(Session.patient_intake), 
+                joinedload(Session.therapist_manual),
+                selectinload(Session.messages) 
             )
         )
     )
-    
     result = await db.execute(query)
     track = result.scalars().unique().first()
 
     if not track or not track.session:
-        raise HTTPException(status_code=404, detail="트랙 또는 세션 정보를 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="트랙 정보를 찾을 수 없습니다.")
         
     session = track.session
-    # 2. 보안 검사: 이 트랙이 현재 로그인한 사용자의 것인지 확인
-    # (또는 이 사용자가 환자를 담당하는 상담사인지 확인 - therapist.py의 check_counselor_patient_access 로직)
+
+    # 2. 보안 검사
     if session.created_by != current_user.id:
         if current_user.role == "therapist":
             try:
@@ -306,65 +300,69 @@ async def get_track_details(
                  raise HTTPException(status_code=403, detail="권한 없음")
         else:
             raise HTTPException(status_code=403, detail="권한 없음")
-    # 3. 데이터 가공
-    
-    # 가사 (Session.prompt JSON에서 추출)
-    lyrics = None
-    if isinstance(session.prompt, dict):
-        lyrics = session.prompt.get("lyrics_text")
 
-    # 접수 기록 (SimpleIntakeData 스키마로 변환)
+    # --- 💡 [핵심] 데이터 로딩 안전장치 (Fallback) ---
+    
+    # A. 환자 Intake 데이터 확보
+    p_intake = session.patient_intake
+    if not p_intake:
+        # (관계 로딩 실패 시 직접 DB 조회)
+        print(f"DEBUG: Relationship load failed for patient_intake. Trying direct query...")
+        q_pi = select(SessionPatientIntake).where(SessionPatientIntake.session_id == session.id)
+        p_intake = (await db.execute(q_pi)).scalar_one_or_none()
+
     intake_data = None
-    if session.patient_intake:
-        # 💡 [수정] session.patient_intake가 로드되었는지 확인
-        print(f"DEBUG: Patient Intake Found for Session {session.id}")
+    if p_intake:
+        # (데이터가 있으면 변환)
         intake_data = SimpleIntakeData(
-            goal_text=session.patient_intake.goal.get("text") if isinstance(session.patient_intake.goal, dict) else "N/A",
-            vas=session.patient_intake.vas, 
-            prefs=session.patient_intake.prefs 
+            goal_text=p_intake.goal.get("text") if isinstance(p_intake.goal, dict) else "N/A",
+            vas=p_intake.vas, 
+            prefs=p_intake.prefs 
         )
-    else:
-        print(f"DEBUG: No Patient Intake for Session {session.id}")
+
+    # B. 상담사/작곡가 처방 데이터 확보
+    t_manual = session.therapist_manual
+    if not t_manual:
+        # (관계 로딩 실패 시 직접 DB 조회)
+        print(f"DEBUG: Relationship load failed for therapist_manual. Trying direct query...")
+        q_tm = select(TherapistManualInputs).where(TherapistManualInputs.session_id == session.id)
+        t_manual = (await db.execute(q_tm)).scalar_one_or_none()
 
     therapist_manual = None
-    if session.therapist_manual:
-        print(f"DEBUG: Therapist Manual Found for Session {session.id}")
-        therapist_manual = TherapistManualInput.model_validate(session.therapist_manual)
-        
-    # 채팅 기록 (SimpleChatMessage 스키마 리스트로 변환)
-    chat_history = []
-    if session.messages: # 👈 [수정] chat_history -> messages
-        chat_history = [
-            SimpleChatMessage(id=msg.id, role=msg.role, content=msg.content)
-            for msg in session.messages # 👈 [수정] chat_history -> messages
-        ]
+    if t_manual:
+        therapist_manual = TherapistManualInput.model_validate(t_manual)
+
+    # C. 채팅 내역
+    chat_history = [SimpleChatMessage.model_validate(msg) for msg in session.messages] if session.messages else []
     
-    # 💡 4. [핵심 수정] NameError 해결: 'title' 변수 정의를 return 위로 이동
-    intake = session.patient_intake
-    title = f"AI 트랙 (세션 {track.session_id})" # 기본값
-    if session.initiator_type == "therapist":
-        title = f"상담사 처방 음악 (세션 {track.session_id})"
+    # D. 가사 및 프롬프트
+    prompt_data = session.prompt if isinstance(session.prompt, dict) else {}
+    lyrics = prompt_data.get("lyrics_text")
+    prompt_text = prompt_data.get("music_prompt") or prompt_data.get("text") or "프롬프트 없음"
+
+    # E. 제목 생성
+    title = f"AI 트랙 (세션 {session.id})"
+    if session.initiator_type == "therapist": 
+        title = f"상담사 처방 음악"
     elif session.initiator_type == "patient":
-        if intake and intake.has_dialog:
-            title = f"AI 상담 기반 음악 (세션 {track.session_id})"
-        else:
-            title = f"작곡 체험 음악 (세션 {track.session_id})"
-        
-    # 4. 최종 응답 반환 (MusicTrackDetail 스키마)
+        if p_intake and p_intake.has_dialog: 
+            title = f"AI 상담 기반 음악"
+        else: 
+            title = f"작곡 체험 음악"
+
     return MusicTrackDetail(
         id=track.id,
-        title=title, # 👈 동적 제목
-        prompt=session.prompt.get("music_prompt") or session.prompt.get("text") or "프롬프트 없음" if isinstance(session.prompt, dict) else "프롬프트 없음",
+        title=title, 
+        prompt=prompt_text,
         track_url=track.track_url,
         audioUrl=track.track_url,
-        
-        session_id=session.id, # 👈 세션 ID
-        initiator_type=session.initiator_type, # 👈 세션 타입
-        has_dialog=intake.has_dialog if intake else False, # 👈 대화 유무
-        created_at=track.created_at,
+        session_id=session.id,
+        initiator_type=session.initiator_type,
+        has_dialog=bool(p_intake and p_intake.has_dialog),
+        created_at=track.created_at, 
         is_favorite=track.is_favorite,
         lyrics=lyrics,
         intake_data=intake_data,
-        therapist_manual=therapist_manual,
+        therapist_manual=therapist_manual, 
         chat_history=chat_history
     )
