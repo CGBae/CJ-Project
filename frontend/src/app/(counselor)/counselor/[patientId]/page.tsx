@@ -63,6 +63,10 @@ interface CounselorIntakeData {
     // 💡 [추가] 누락되었던 필드
     mainInstrument?: string | null;
     targetBPM?: number | 'Neutral' | null;
+
+    anxiety?: number | null;
+    depression?: number | null;
+    pain?: number | null;
 }
 interface MusicTrackDetail {
     id: number | string;
@@ -813,37 +817,107 @@ const PatientIntakeView: React.FC<{ intake: SimpleIntakeData }> = ({ intake }) =
 
 // (2) 상담사/작곡가 처방(Intake) 상세 뷰
 const CounselorIntakeView: React.FC<{ intake: CounselorIntakeData }> = ({ intake }) => {
+    if (!intake) return <div className="text-gray-500">처방 정보 로딩 실패</div>;
+
+    // 💡 헬퍼 함수: 값이 유효하고 'Neutral'이 아닐 때만 <li> 렌더링
+    const renderParam = (label: string, value: string | number | undefined | null) => {
+        if (!value || value === 'Neutral' || value === 'N/A') return null;
+        return <li><strong>{label}:</strong> {value}</li>;
+    };
+
+    // 💡 VAS 데이터 존재 여부 확인
+    const hasVas = (intake.anxiety !== undefined && intake.anxiety !== null) ||
+                   (intake.depression !== undefined && intake.depression !== null) ||
+                   (intake.pain !== undefined && intake.pain !== null);
+
     return (
-        <div className="space-y-4">
+        <div className="space-y-5">
+            {/* 1. 상담사/작곡가 메모 및 제목 */}
             <div>
-                <h4 className="font-semibold text-gray-800 flex items-center"><User className="w-4 h-4 mr-2 text-blue-600" />작곡/처방 내용</h4>
+                <h4 className="font-semibold text-gray-800 flex items-center">
+                    <User className="w-4 h-4 mr-2 text-blue-600"/>
+                    작곡/처방 상세 내용
+                </h4>
                 {intake.notes && (
-                    <div className="mt-2 p-3 bg-gray-50 rounded-md text-sm text-gray-600 italic border">
-                        {intake.notes}
+                    <div className="mt-2 p-3 bg-gray-50 rounded-md text-sm text-gray-600 italic border border-gray-200">
+                        "{intake.notes}"
                     </div>
                 )}
             </div>
+
+            {/* 2. 💡 [추가] VAS 점수 (데이터가 있는 경우에만 표시) */}
+            {hasVas && (
+                <div>
+                    <h5 className="font-medium text-gray-700 text-sm mb-2">기록된 환자 상태 (VAS)</h5>
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                        {intake.anxiety !== null && intake.anxiety !== undefined && (
+                            <div className="p-2 bg-blue-50 rounded border border-blue-100">
+                                <span className="text-xs text-blue-700">불안</span>
+                                <p className="font-bold text-lg text-blue-800">{intake.anxiety}</p>
+                            </div>
+                        )}
+                        {intake.depression !== null && intake.depression !== undefined && (
+                            <div className="p-2 bg-yellow-50 rounded border border-yellow-100">
+                                <span className="text-xs text-yellow-700">우울</span>
+                                <p className="font-bold text-lg text-yellow-800">{intake.depression}</p>
+                            </div>
+                        )}
+                        {intake.pain !== null && intake.pain !== undefined && (
+                            <div className="p-2 bg-red-50 rounded border border-red-100">
+                                <span className="text-xs text-red-700">통증</span>
+                                <p className="font-bold text-lg text-red-800">{intake.pain}</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* 3. 음악 파라미터 (Neutral 숨김 적용) */}
             <div>
-                <h5 className="font-medium text-gray-700 text-sm">음악 파라미터</h5>
-                <ul className="list-none space-y-1 mt-2 text-sm text-gray-600 grid grid-cols-2 gap-x-4">
-                    <li><strong>분위기:</strong> {intake.mood || 'N/A'}</li>
-                    {/* 💡 [수정] 'mainInstrument' -> 'include_instruments' */}
-                    <li><strong>메인 악기:</strong> {intake.include_instruments?.join(', ') || intake.mainInstrument || 'N/A'}</li>
-                    {/* 💡 [수정] 'targetBPM' -> 'bpm_min/max' */}
-                    <li><strong>BPM:</strong> {intake.targetBPM ? `${intake.targetBPM} (근처)` : (intake.bpm_min ? `${intake.bpm_min}-${intake.bpm_max}` : 'N/A')}</li>
-                    <li><strong>조성:</strong> {intake.key_signature || 'N/A'}</li>
-                    <li><strong>보컬:</strong> {intake.vocals_allowed ? '포함' : '미포함'}</li>
-                    {/* 💡 [수정] camelCase -> snake_case */}
-                    <li><strong>리듬:</strong> {intake.rhythm_complexity || 'N/A'}</li>
-                    <li><strong>선율:</strong> {intake.melody_contour || 'N/A'}</li>
-                    <li><strong>밀도:</strong> {intake.texture_density || 'N/A'}</li>
-                    <li><strong>불협화음:</strong> {intake.harmonic_dissonance || 'N/A'}</li>
+                <h5 className="font-medium text-gray-700 text-sm mb-2">적용된 음악 요소</h5>
+                <ul className="list-none space-y-1 mt-2 text-sm text-gray-600 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+                    {renderParam("분위기", intake.mood)}
+                    
+                    {/* 악기 */}
+                    <li>
+                        <strong>메인 악기:</strong>{' '}
+                        {Array.isArray(intake.include_instruments) && intake.include_instruments.length > 0 
+                            ? intake.include_instruments.join(', ') 
+                            : (intake.mainInstrument || 'N/A')}
+                    </li>
+
+                    {/* BPM */}
+                    {(intake.targetBPM && intake.targetBPM !== 'Neutral') || (intake.bpm_min && intake.bpm_max) ? (
+                        <li>
+                            <strong>BPM:</strong>{' '}
+                            {intake.targetBPM && intake.targetBPM !== 'Neutral' 
+                                ? `${intake.targetBPM} (타겟)` 
+                                : `${intake.bpm_min}~${intake.bpm_max}`}
+                        </li>
+                    ) : null}
+
+                    {renderParam("조성", intake.key_signature)}
+                    
+                    {/* 보컬 여부 */}
+                    <li><strong>보컬:</strong> {intake.vocals_allowed ? '포함' : '미포함 (Instrumental)'}</li>
+                    
+                    {/* 고급 설정 (Neutral이면 숨김) */}
+                    {renderParam("리듬 복잡도", intake.rhythm_complexity)}
+                    {renderParam("선율 윤곽", intake.melody_contour)}
+                    {renderParam("음악적 밀도", intake.texture_density)}
+                    {renderParam("불협화음", intake.harmonic_dissonance)}
+                    
+                    {/* 제외된 악기/소리 */}
+                    {Array.isArray(intake.exclude_instruments) && intake.exclude_instruments.length > 0 && (
+                        <li className="col-span-1 sm:col-span-2 mt-1 text-red-500">
+                            <strong>제외됨:</strong> {intake.exclude_instruments.join(', ')}
+                        </li>
+                    )}
                 </ul>
             </div>
         </div>
     );
 };
-
 // (3) 채팅 기록 뷰
 const ChatHistoryView: React.FC<{ chatHistory: ChatMessage[] }> = ({ chatHistory }) => {
     return (
