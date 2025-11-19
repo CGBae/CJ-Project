@@ -5,7 +5,7 @@ import React, { useState, useEffect, useRef, FormEvent, useCallback, Fragment } 
 import { useRouter, useParams } from 'next/navigation';
 import {
     Play, Pause, CheckCircle,
-    ArrowLeft, Volume2, Loader2, User, MessageSquare, Music,
+    ArrowLeft, Loader2, User, MessageSquare, Music,
     AlertTriangle, ChevronDown, Plus, ClipboardList, Send, Trash2, XCircle, Info,
     FileText // 👈 [추가]
 } from 'lucide-react';
@@ -17,12 +17,12 @@ interface ChatMessage {
     role: 'user' | 'assistant';
     content: string;
 }
-interface SessionInfo {
-    id: number;
-    created_at: string;
-    initiator_type: string | null;
-    has_dialog: boolean | null;
-}
+// interface SessionInfo {
+//     id: number;
+//     created_at: string;
+//     initiator_type: string | null;
+//     has_dialog: boolean | null;
+// }
 
 interface PatientIntakeVas {
     anxiety: number;
@@ -160,7 +160,7 @@ export default function PatientDetailPage() {
     // --- State 정의 ---
     const [patient, setPatient] = useState<PatientProfile | null>(null);
     // 💡 [수정] 'logs' 탭이 사라지므로, 'sessions' state는 카운트용
-    const [sessions, setSessions] = useState<SessionInfo[]>([]);
+    
     const [music, setMusic] = useState<MusicTrackDetail[]>([]); // 👈 [수정] MusicTrackDetail[]
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -239,15 +239,7 @@ export default function PatientDetailPage() {
                     audioUrl: t.audioUrl || t.track_url || '',
                 })));
 
-                // 💡 [수정] 세션 카운트는 musicData에서 유추 (has_dialog 기준)
-                const dialogSessionIds = new Set(musicData.filter(m => m.has_dialog).map(m => m.session_id));
-                // (SessionInfo[] 타입으로 변환)
-                setSessions(Array.from(dialogSessionIds).map((id, index) => ({
-                    id: id,
-                    created_at: musicData.find(m => m.session_id === id)?.created_at || new Date().toISOString(), // (날짜는 근사값)
-                    initiator_type: 'patient',
-                    has_dialog: true
-                })));
+                
 
             } catch (err: unknown) {
                 // (catch 블록 - 변경 없음)
@@ -306,19 +298,34 @@ export default function PatientDetailPage() {
     const handleToggleDetails = async (trackId: number | string) => {
         if (expandedTrackId === trackId) {
             setExpandedTrackId(null);
-            setTrackDetail(null);
+            setTrackDetail(null); 
             return;
         }
-
-        // 💡 music state에서 이미 로드된 상세정보를 찾음
+        
+        // 이미 music state에 상세 정보가 있는지 확인
         const existingTrackDetail = music.find(m => m.id === trackId);
-
-        if (existingTrackDetail) {
-            setTrackDetail(existingTrackDetail); // 👈 찾은 정보로 state 설정
-            setExpandedTrackId(trackId);
-        } else {
-            // (이론상 /music API가 모든 정보를 가져오므로 이 코드는 실행되지 않아야 함)
-            setError("트랙 상세 정보를 찾을 수 없습니다.");
+        
+        // 상세 정보(가사 등)가 없으면 API 호출
+        if (existingTrackDetail && !existingTrackDetail.lyrics && !existingTrackDetail.intake_data && !existingTrackDetail.therapist_manual) {
+            setDetailLoadingId(String(trackId)); // 👈 [수정] detailLoadingId 사용 (경고 해결)
+            try {
+                const token = localStorage.getItem('accessToken');
+                const response = await fetch(`${API_URL}/music/track/${trackId}`, { 
+                     headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!response.ok) throw new Error("상세 정보 로딩 실패");
+                const data: MusicTrackDetail = await response.json();
+                setTrackDetail(data);
+                setExpandedTrackId(trackId);
+            } catch (e) {
+                console.error(e);
+                setError("상세 정보를 불러올 수 없습니다.");
+            } finally {
+                setDetailLoadingId(null); // 👈 [수정] detailLoadingId 초기화
+            }
+        } else if (existingTrackDetail) {
+             setTrackDetail(existingTrackDetail);
+             setExpandedTrackId(trackId);
         }
     };
 
