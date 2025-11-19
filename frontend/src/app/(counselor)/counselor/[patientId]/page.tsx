@@ -64,7 +64,6 @@ interface CounselorIntakeData {
     mainInstrument?: string | null;
     targetBPM?: number | 'Neutral' | null;
 }
-
 interface MusicTrackDetail {
     id: number | string;
     title: string;
@@ -82,7 +81,6 @@ interface MusicTrackDetail {
     therapist_manual: CounselorIntakeData | null; // 👈 4번 타입 사용
     chat_history: ChatMessage[];
 }
-
 interface PatientProfile {
     id: number | string;
     name: string | null;
@@ -157,22 +155,21 @@ export default function PatientDetailPage() {
     const router = useRouter();
     const params = useParams();
     const patientId = params.patientId as string;
-    const { isAuthed, user } = useAuth();
+    const { isAuthed, user } = useAuth(); 
 
     // --- State 정의 ---
     const [patient, setPatient] = useState<PatientProfile | null>(null);
-    const [sessions, setSessions] = useState<SessionInfo[]>([]); // 👈 [수정] 이젠 '상담 기록' 탭이 없으므로, 음악 카운트용으로만 사용
-    const [music, setMusic] = useState<MusicTrackDetail[]>([]); // 👈 [수정] MusicTrackInfo -> MusicTrackDetail
+    // 💡 [수정] 'logs' 탭이 사라지므로, 'sessions' state는 카운트용
+    const [sessions, setSessions] = useState<SessionInfo[]>([]); 
+    const [music, setMusic] = useState<MusicTrackDetail[]>([]); // 👈 [수정] MusicTrackDetail[]
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     const [currentTrackId, setCurrentTrackId] = useState<string | number | null>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
-
-    // 💡 6. [핵심 수정] 탭 상태에 'memos' 추가
+    
     const [activeTab, setActiveTab] = useState<'music' | 'memos'>('music');
     
-    // 💡 [추가] 음악 상세정보 펼치기 상태
     const [expandedTrackId, setExpandedTrackId] = useState<string | number | null>(null);
     const [detailLoadingId, setDetailLoadingId] = useState<string | number | null>(null);
     const [trackDetail, setTrackDetail] = useState<MusicTrackDetail | null>(null); 
@@ -217,9 +214,10 @@ export default function PatientDetailPage() {
             }
 
             try {
-                // (API 호출 - 변경 없음)
+                // 💡 [수정] 'sessions' API는 'music' API가 반환하므로 제거
                 const [profileRes, musicRes] = await Promise.all([
                     fetch(`${API_URL}/therapist/patient/${patientId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+                    // 💡 [수정] /music API가 상세정보까지 모두 가져옴
                     fetch(`${API_URL}/therapist/patient/${patientId}/music`, { headers: { 'Authorization': `Bearer ${token}` } })
                 ]);
 
@@ -242,10 +240,14 @@ export default function PatientDetailPage() {
                 })));
 
                 // 💡 [수정] 세션 카운트는 musicData에서 유추 (has_dialog 기준)
-                const dialogSessions = musicData.filter(m => m.has_dialog).map(m => m.session_id);
-                const uniqueSessionIds = [...new Set(dialogSessions)];
-                // (세션 카운트 방식은 참고용. 지금은 sessions.length를 사용하지 않음)
-                // setSessions(uniqueSessionIds.map(id => ...));
+                const dialogSessionIds = new Set(musicData.filter(m => m.has_dialog).map(m => m.session_id));
+                // (SessionInfo[] 타입으로 변환)
+                setSessions(Array.from(dialogSessionIds).map((id, index) => ({ 
+                    id: id, 
+                    created_at: musicData.find(m => m.session_id === id)?.created_at || new Date().toISOString(), // (날짜는 근사값)
+                    initiator_type: 'patient', 
+                    has_dialog: true 
+                })));
 
             } catch (err: unknown) {
                 // (catch 블록 - 변경 없음)
@@ -315,7 +317,7 @@ export default function PatientDetailPage() {
              setTrackDetail(existingTrackDetail); // 👈 찾은 정보로 state 설정
              setExpandedTrackId(trackId);
         } else {
-            // (이 코드는 실행되지 않아야 함)
+            // (이론상 /music API가 모든 정보를 가져오므로 이 코드는 실행되지 않아야 함)
             setError("트랙 상세 정보를 찾을 수 없습니다.");
         }
     };
@@ -604,8 +606,6 @@ export default function PatientDetailPage() {
                     )}
                 </section>
             )}
-
-            {/* --- 상담 기록 탭 (제거됨) --- */}
             
             {/* --- 상담사 메모 탭 (UI 수정됨) --- */}
             {activeTab === 'memos' && (
@@ -733,8 +733,8 @@ const Alert: React.FC<AlertProps> = ({ type, message, onClose }) => {
 
 // (1) 환자 접수(Intake) 상세 뷰
 const PatientIntakeView: React.FC<{ intake: SimpleIntakeData }> = ({ intake }) => {
-    const vas = intake?.vas;
-    const prefs = intake?.prefs;
+    const vas = intake.vas;
+    const prefs = intake.prefs;
     
     return (
         <div className="space-y-4">
@@ -769,9 +769,8 @@ const PatientIntakeView: React.FC<{ intake: SimpleIntakeData }> = ({ intake }) =
                 <div>
                     <h5 className="font-medium text-gray-700 text-sm">음악 선호도</h5>
                     <ul className="list-none space-y-1 mt-2 text-sm text-gray-600">
-                        {/* 💡 [수정] 배열인지 확인하고 join */}
-                        <li><strong>선호 장르:</strong> {Array.isArray(prefs.genres) ? prefs.genres.join(', ') : (prefs.genres || '없음')}</li>
-                        <li><strong>비선호 장르:</strong> {Array.isArray(prefs.contraindications) ? prefs.contraindications.join(', ') : (prefs.contraindications || '없음')}</li>
+                        <li><strong>선호 장르:</strong> {prefs.genres?.join(', ') || '없음'}</li>
+                        <li><strong>비선호 장르:</strong> {prefs.contraindications?.join(', ') || '없음'}</li>
                         <li><strong>보컬:</strong> {prefs.lyrics_allowed ? '포함' : '미포함(연주곡)'}</li>
                     </ul>
                 </div>
@@ -796,10 +795,13 @@ const CounselorIntakeView: React.FC<{ intake: CounselorIntakeData }> = ({ intake
                 <h5 className="font-medium text-gray-700 text-sm">음악 파라미터</h5>
                 <ul className="list-none space-y-1 mt-2 text-sm text-gray-600 grid grid-cols-2 gap-x-4">
                     <li><strong>분위기:</strong> {intake.mood || 'N/A'}</li>
-                    <li><strong>메인 악기:</strong> {Array.isArray(intake.include_instruments) ? intake.include_instruments.join(', ') : (intake.mainInstrument || 'N/A')}</li>
+                    {/* 💡 [수정] 'mainInstrument' -> 'include_instruments' */}
+                    <li><strong>메인 악기:</strong> {intake.include_instruments?.join(', ') || intake.mainInstrument || 'N/A'}</li>
+                    {/* 💡 [수정] 'targetBPM' -> 'bpm_min/max' */}
                     <li><strong>BPM:</strong> {intake.targetBPM ? `${intake.targetBPM} (근처)` : (intake.bpm_min ? `${intake.bpm_min}-${intake.bpm_max}` : 'N/A')}</li>
                     <li><strong>조성:</strong> {intake.key_signature || 'N/A'}</li>
                     <li><strong>보컬:</strong> {intake.vocals_allowed ? '포함' : '미포함'}</li>
+                    {/* 💡 [수정] camelCase -> snake_case */}
                     <li><strong>리듬:</strong> {intake.rhythm_complexity || 'N/A'}</li>
                     <li><strong>선율:</strong> {intake.melody_contour || 'N/A'}</li>
                     <li><strong>밀도:</strong> {intake.texture_density || 'N/A'}</li>
