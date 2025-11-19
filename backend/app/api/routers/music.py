@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, update, insert, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
+import json
 from app.schemas import MusicTrackInfo, MusicTrackDetail, SimpleChatMessage, SimpleIntakeData, TherapistManualInput
 from app.db import get_db
 # 💡 2. Connection, SessionPatientIntake 모델 import 추가
@@ -271,7 +272,7 @@ async def get_track_details(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # 1. 트랙 조회 (기존 코드 유지)
+    # 1. 트랙과 세션 기본 정보 로드
     query = (
         select(Track)
         .where(Track.id == track_id)
@@ -291,7 +292,7 @@ async def get_track_details(
         
     session = track.session
 
-    # 2. 보안 검사 (기존 코드 유지)
+    # 2. 보안 검사
     if session.created_by != current_user.id:
         if current_user.role == "therapist":
             try:
@@ -301,93 +302,107 @@ async def get_track_details(
         else:
             raise HTTPException(status_code=403, detail="권한 없음")
 
-    # --- 3. 데이터 로딩 (3중 안전장치 + 매핑 강화) ---
+    # --- 3. 데이터 로딩 (JSON 스냅샷 우선 전략) ---
     
-    # (A) 환자 Intake 데이터 (기존 코드 유지)
-    p_intake = session.patient_intake
-    if not p_intake:
-        q_pi = select(SessionPatientIntake).where(SessionPatientIntake.session_id == session.id)
-        p_intake = (await db.execute(q_pi)).scalar_one_or_none()
-
+    # (A) 환자 Intake 데이터 복구
     intake_data = None
-    if p_intake:
-        # Snapshot 복구 로직 (기존 코드 유지)
-        if not p_intake.goal or not p_intake.vas:
-             q_prompt = select(SessionPrompt).where(SessionPrompt.session_id == session.id, SessionPrompt.stage == "user_input").order_by(desc(SessionPrompt.created_at)).limit(1)
-             snapshot = (await db.execute(q_prompt)).scalar_one_or_none()
-             if snapshot and snapshot.data:
-                 data = snapshot.data
-                 # DB 업데이트 (선택 사항)
-                 # p_intake.goal = data.get("goal")
-                 # p_intake.vas = data.get("vas")
-                 # p_intake.prefs = data.get("prefs")
-                 
-                 intake_data = SimpleIntakeData(
-                    goal_text=data.get("goal", {}).get("text", "N/A"),
-                    vas=data.get("vas"),
-                    prefs=data.get("prefs")
-                )
-        else:
+    
+    # 1순위: SessionPrompt (user_input) JSON 로그 확인
+    q_prompt = select(SessionPrompt).where(SessionPrompt.session_id == session.id, SessionPrompt.stage == "user_input").order_by(desc(SessionPrompt.created_at)).limit(1)
+    snapshot = (await db.execute(q_prompt)).scalar_one_or_none()
+    
+    if snapshot and snapshot.data:
+        # JSON 데이터가 있으면 이걸 사용 (가장 정확함)
+        data = snapshot.data
+        goal = data.get("goal", {})
+        intake_data = SimpleIntakeData(
+            goal_text=goal.get("text") if isinstance(goal, dict) else "N/A",
+            vas=data.get("vas"),
+            prefs=data.get("prefs")
+        )
+    else:
+        # 2순위: DB 테이블 확인 (Fallback)
+        p_intake = session.patient_intake
+        if not p_intake:
+            q_pi = select(SessionPatientIntake).where(SessionPatientIntake.session_id == session.id)
+            p_intake = (await db.execute(q_pi)).scalar_one_or_none()
+            
+        if p_intake:
             intake_data = SimpleIntakeData(
                 goal_text=p_intake.goal.get("text") if isinstance(p_intake.goal, dict) else "N/A",
                 vas=p_intake.vas, 
                 prefs=p_intake.prefs 
             )
 
-    # (B) 상담사/작곡가 처방 데이터 (매핑 강화)
-    t_manual = session.therapist_manual
-    if not t_manual:
-        q_tm = select(TherapistManualInputs).where(TherapistManualInputs.session_id == session.id)
-        t_manual = (await db.execute(q_tm)).scalar_one_or_none()
-
+    # (B) 상담사/작곡가 처방 데이터 복구
     therapist_manual = None
-    if t_manual:
-        # 💡 [핵심 수정] Pydantic 모델로 수동 변환하여 필드 누락 방지
-        # (DB 모델 필드 -> Pydantic 스키마 필드)
-        therapist_manual = TherapistManualInput(
-            genre=t_manual.genre,
-            mood=t_manual.mood,
-            bpm_min=t_manual.bpm_min,
-            bpm_max=t_manual.bpm_max,
-            key_signature=t_manual.key_signature,
-            vocals_allowed=t_manual.vocals_allowed,
-            include_instruments=t_manual.include_instruments,
-            exclude_instruments=t_manual.exclude_instruments,
-            duration_sec=t_manual.duration_sec,
-            notes=t_manual.notes,
-            
-            # (상세 옵션 매핑)
-            harmonic_dissonance=getattr(t_manual, 'harmonic_dissonance', 'Neutral'), # getattr로 안전하게 접근
-            rhythm_complexity=getattr(t_manual, 'rhythm_complexity', 'Neutral'),
-            melody_contour=getattr(t_manual, 'melody_contour', 'Neutral'),
-            texture_density=getattr(t_manual, 'texture_density', 'Neutral'),
-            
-            # (Main Instrument는 include_instruments의 첫 번째 요소로 간주하거나 별도 필드가 있다면 사용)
-            mainInstrument=t_manual.include_instruments[0] if t_manual.include_instruments else "Piano"
-        )
     
-    # (스냅샷 복구 시도 - 기존 코드 유지)
-    if not therapist_manual:
-         q_manual_prompt = select(SessionPrompt).where(SessionPrompt.session_id == session.id, SessionPrompt.stage == "manual").order_by(desc(SessionPrompt.created_at)).limit(1)
-         manual_snapshot = (await db.execute(q_manual_prompt)).scalar_one_or_none()
-         if manual_snapshot and manual_snapshot.data:
-             therapist_manual = TherapistManualInput(**manual_snapshot.data)
+    # 1순위: SessionPrompt (manual) JSON 로그 확인 💡 [핵심]
+    q_manual_prompt = select(SessionPrompt).where(SessionPrompt.session_id == session.id, SessionPrompt.stage == "manual").order_by(desc(SessionPrompt.created_at)).limit(1)
+    manual_snapshot = (await db.execute(q_manual_prompt)).scalar_one_or_none()
+    
+    if manual_snapshot and manual_snapshot.data:
+        print(f"DEBUG: Manual Snapshot Found! Using JSON data.")
+        manual_data = manual_snapshot.data
+        
+        # (호환성 처리: mainInstrument가 없으면 include_instruments[0] 사용)
+        if "mainInstrument" not in manual_data:
+             if manual_data.get("include_instruments") and len(manual_data["include_instruments"]) > 0:
+                 manual_data["mainInstrument"] = manual_data["include_instruments"][0]
+             else:
+                 manual_data["mainInstrument"] = "Piano"
+        
+        # Pydantic 모델로 변환 (모든 필드 포함됨)
+        therapist_manual = TherapistManualInput(**manual_data)
+        
+    else:
+        # 2순위: DB 테이블 확인 (Fallback)
+        t_manual = session.therapist_manual
+        if not t_manual:
+            q_tm = select(TherapistManualInputs).where(TherapistManualInputs.session_id == session.id)
+            t_manual = (await db.execute(q_tm)).scalar_one_or_none()
 
-    # (C) 채팅 내역 (기존 코드 유지)
+        if t_manual:
+            print(f"DEBUG: Using DB Table for Manual Data")
+            # DB 객체 -> Pydantic 변환 (필드 누락 방지를 위해 수동 매핑)
+            therapist_manual = TherapistManualInput(
+                genre=t_manual.genre,
+                mood=t_manual.mood,
+                bpm_min=t_manual.bpm_min,
+                bpm_max=t_manual.bpm_max,
+                key_signature=t_manual.key_signature,
+                vocals_allowed=t_manual.vocals_allowed,
+                include_instruments=t_manual.include_instruments,
+                exclude_instruments=t_manual.exclude_instruments,
+                duration_sec=t_manual.duration_sec,
+                notes=t_manual.notes,
+                # DB에 컬럼이 없을 수 있으므로 getattr로 안전하게 접근
+                harmonic_dissonance=getattr(t_manual, 'harmonic_dissonance', 'Neutral'),
+                rhythm_complexity=getattr(t_manual, 'rhythm_complexity', 'Neutral'),
+                melody_contour=getattr(t_manual, 'melody_contour', 'Neutral'),
+                texture_density=getattr(t_manual, 'texture_density', 'Neutral'),
+                mainInstrument=t_manual.include_instruments[0] if t_manual.include_instruments else "Piano"
+            )
+
+    # (C) 채팅 내역
     chat_history = [SimpleChatMessage.model_validate(msg) for msg in session.messages] if session.messages else []
     
-    # (D) 가사 및 프롬프트 (기존 코드 유지)
+    # (D) 가사 및 프롬프트
     prompt_data = session.prompt if isinstance(session.prompt, dict) else {}
     lyrics = prompt_data.get("lyrics_text")
     prompt_text = prompt_data.get("music_prompt") or prompt_data.get("text") or "프롬프트 없음"
 
-    # (E) 제목 및 타입 (기존 코드 유지)
+    # (E) 제목 및 타입
     title = f"AI 트랙 (세션 {session.id})"
-    if session.initiator_type == "therapist": title = f"상담사 처방 음악"
+    if session.initiator_type == "therapist": 
+        title = f"상담사 처방 음악"
     elif session.initiator_type == "patient":
-        if intake_data and chat_history: title = f"AI 상담 기반 음악"
-        elif therapist_manual: title = f"작곡 체험 음악"
-        else: title = f"AI 생성 음악"
+        if intake_data and chat_history: 
+            title = f"AI 상담 기반 음악"
+        elif therapist_manual: 
+            title = f"작곡 체험 음악"
+        else:
+            title = f"AI 생성 음악"
 
     return MusicTrackDetail(
         id=track.id,
