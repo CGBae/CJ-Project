@@ -1,7 +1,7 @@
 from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, status # 💡 1. status 추가
 from pydantic import BaseModel, Field
-from sqlalchemy import select, update, insert
+from sqlalchemy import select, update, insert, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from app.schemas import MusicTrackInfo, MusicTrackDetail, SimpleChatMessage, SimpleIntakeData, TherapistManualInput
@@ -301,51 +301,74 @@ async def get_track_details(
         else:
             raise HTTPException(status_code=403, detail="권한 없음")
 
-    # --- 💡 [핵심] 데이터 로딩 안전장치 (Fallback) ---
+    # --- 💡 [핵심] 데이터 로딩 3중 안전장치 ---
     
-    # A. 환자 Intake 데이터 확보
+    # [1단계] ORM 관계 확인
     p_intake = session.patient_intake
+    
+    # [2단계] 테이블 직접 조회 (1단계 실패 시)
     if not p_intake:
-        # (관계 로딩 실패 시 직접 DB 조회)
-        print(f"DEBUG: Relationship load failed for patient_intake. Trying direct query...")
+        print(f"DEBUG: [Step 2] Direct Query for Session {session.id}")
         q_pi = select(SessionPatientIntake).where(SessionPatientIntake.session_id == session.id)
         p_intake = (await db.execute(q_pi)).scalar_one_or_none()
 
+    # 데이터 변환 시도
     intake_data = None
     if p_intake:
-        # (데이터가 있으면 변환)
         intake_data = SimpleIntakeData(
             goal_text=p_intake.goal.get("text") if isinstance(p_intake.goal, dict) else "N/A",
             vas=p_intake.vas, 
             prefs=p_intake.prefs 
         )
+    
+    # [3단계] 프롬프트 로그(Snapshot) 확인 (1, 2단계 모두 실패 시)
+    # (과거에 입력했던 'user_input' 로그를 찾아서 복구합니다)
+    if not intake_data:
+        print(f"DEBUG: [Step 3] Snapshot Log Query for Session {session.id}")
+        q_prompt = (
+            select(SessionPrompt)
+            .where(
+                SessionPrompt.session_id == session.id,
+                SessionPrompt.stage == "user_input" # 👈 환자가 입력했던 초기 데이터
+            )
+            .order_by(desc(SessionPrompt.created_at))
+            .limit(1)
+        )
+        snapshot = (await db.execute(q_prompt)).scalar_one_or_none()
+        
+        if snapshot and snapshot.data:
+            print(f"DEBUG: Snapshot Found! Restoring data...")
+            data = snapshot.data
+            # Snapshot 데이터 구조에 맞춰 매핑
+            goal = data.get("goal", {})
+            intake_data = SimpleIntakeData(
+                goal_text=goal.get("text") if isinstance(goal, dict) else "N/A",
+                vas=data.get("vas"),
+                prefs=data.get("prefs")
+            )
 
-    # B. 상담사/작곡가 처방 데이터 확보
+    # --- 상담사 처방 데이터 로딩 ---
     t_manual = session.therapist_manual
     if not t_manual:
-        # (관계 로딩 실패 시 직접 DB 조회)
-        print(f"DEBUG: Relationship load failed for therapist_manual. Trying direct query...")
-        q_tm = select(TherapistManualInputs).where(TherapistManualInputs.session_id == session.id)
-        t_manual = (await db.execute(q_tm)).scalar_one_or_none()
+         q_tm = select(TherapistManualInputs).where(TherapistManualInputs.session_id == session.id)
+         t_manual = (await db.execute(q_tm)).scalar_one_or_none()
 
     therapist_manual = None
     if t_manual:
         therapist_manual = TherapistManualInput.model_validate(t_manual)
 
-    # C. 채팅 내역
+    # --- 나머지 데이터 ---
     chat_history = [SimpleChatMessage.model_validate(msg) for msg in session.messages] if session.messages else []
     
-    # D. 가사 및 프롬프트
     prompt_data = session.prompt if isinstance(session.prompt, dict) else {}
     lyrics = prompt_data.get("lyrics_text")
     prompt_text = prompt_data.get("music_prompt") or prompt_data.get("text") or "프롬프트 없음"
 
-    # E. 제목 생성
     title = f"AI 트랙 (세션 {session.id})"
     if session.initiator_type == "therapist": 
         title = f"상담사 처방 음악"
     elif session.initiator_type == "patient":
-        if p_intake and p_intake.has_dialog: 
+        if intake_data or (session.messages and len(session.messages) > 0): 
             title = f"AI 상담 기반 음악"
         else: 
             title = f"작곡 체험 음악"
@@ -358,7 +381,7 @@ async def get_track_details(
         audioUrl=track.track_url,
         session_id=session.id,
         initiator_type=session.initiator_type,
-        has_dialog=bool(p_intake and p_intake.has_dialog),
+        has_dialog=bool(intake_data), # 👈 intake_data가 있으면 대화형으로 간주
         created_at=track.created_at, 
         is_favorite=track.is_favorite,
         lyrics=lyrics,
