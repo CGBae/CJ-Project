@@ -271,7 +271,7 @@ async def get_track_details(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # 1. 트랙과 세션 로드
+    # 1. 트랙과 세션 로드 (기본 관계 로딩)
     query = (
         select(Track)
         .where(Track.id == track_id)
@@ -301,18 +301,15 @@ async def get_track_details(
         else:
             raise HTTPException(status_code=403, detail="권한 없음")
 
-    # --- 💡 [핵심] 데이터 로딩 3중 안전장치 ---
+    # --- 💡 [핵심] 데이터 로딩 (모든 가능성 열어둠) ---
     
-    # [1단계] ORM 관계 확인
+    # (A) 환자 Intake 데이터 (AI 상담 케이스)
     p_intake = session.patient_intake
-    
-    # [2단계] 테이블 직접 조회 (1단계 실패 시)
+    # ORM 로딩 실패 시 직접 조회
     if not p_intake:
-        print(f"DEBUG: [Step 2] Direct Query for Session {session.id}")
         q_pi = select(SessionPatientIntake).where(SessionPatientIntake.session_id == session.id)
         p_intake = (await db.execute(q_pi)).scalar_one_or_none()
 
-    # 데이터 변환 시도
     intake_data = None
     if p_intake:
         intake_data = SimpleIntakeData(
@@ -320,58 +317,40 @@ async def get_track_details(
             vas=p_intake.vas, 
             prefs=p_intake.prefs 
         )
-    
-    # [3단계] 프롬프트 로그(Snapshot) 확인 (1, 2단계 모두 실패 시)
-    # (과거에 입력했던 'user_input' 로그를 찾아서 복구합니다)
-    if not intake_data:
-        print(f"DEBUG: [Step 3] Snapshot Log Query for Session {session.id}")
-        q_prompt = (
-            select(SessionPrompt)
-            .where(
-                SessionPrompt.session_id == session.id,
-                SessionPrompt.stage == "user_input" # 👈 환자가 입력했던 초기 데이터
-            )
-            .order_by(desc(SessionPrompt.created_at))
-            .limit(1)
-        )
-        snapshot = (await db.execute(q_prompt)).scalar_one_or_none()
-        
-        if snapshot and snapshot.data:
-            print(f"DEBUG: Snapshot Found! Restoring data...")
-            data = snapshot.data
-            # Snapshot 데이터 구조에 맞춰 매핑
-            goal = data.get("goal", {})
-            intake_data = SimpleIntakeData(
-                goal_text=goal.get("text") if isinstance(goal, dict) else "N/A",
-                vas=data.get("vas"),
-                prefs=data.get("prefs")
-            )
 
-    # --- 상담사 처방 데이터 로딩 ---
+    # (B) 상담사/작곡가 처방 데이터 (처방/체험 케이스)
     t_manual = session.therapist_manual
+    # ORM 로딩 실패 시 직접 조회
     if not t_manual:
-         q_tm = select(TherapistManualInputs).where(TherapistManualInputs.session_id == session.id)
-         t_manual = (await db.execute(q_tm)).scalar_one_or_none()
+        q_tm = select(TherapistManualInputs).where(TherapistManualInputs.session_id == session.id)
+        t_manual = (await db.execute(q_tm)).scalar_one_or_none()
 
     therapist_manual = None
     if t_manual:
         therapist_manual = TherapistManualInput.model_validate(t_manual)
 
-    # --- 나머지 데이터 ---
+    # (C) 채팅 내역 (AI 상담 케이스)
     chat_history = [SimpleChatMessage.model_validate(msg) for msg in session.messages] if session.messages else []
     
+    # (D) 가사 및 프롬프트
     prompt_data = session.prompt if isinstance(session.prompt, dict) else {}
     lyrics = prompt_data.get("lyrics_text")
     prompt_text = prompt_data.get("music_prompt") or prompt_data.get("text") or "프롬프트 없음"
 
+    # (E) 제목 및 타입 정리
     title = f"AI 트랙 (세션 {session.id})"
+    
+    # initiator_type에 따른 제목 설정
     if session.initiator_type == "therapist": 
         title = f"상담사 처방 음악"
     elif session.initiator_type == "patient":
-        if intake_data or (session.messages and len(session.messages) > 0): 
+        # patient라도 intake+dialog가 있으면 'AI 상담', 없으면 '작곡 체험'일 확률 높음
+        if intake_data and chat_history: 
             title = f"AI 상담 기반 음악"
-        else: 
+        elif therapist_manual: # manual이 있으면 작곡 체험
             title = f"작곡 체험 음악"
+        else:
+            title = f"AI 생성 음악" # 둘 다 모호할 때
 
     return MusicTrackDetail(
         id=track.id,
@@ -381,11 +360,13 @@ async def get_track_details(
         audioUrl=track.track_url,
         session_id=session.id,
         initiator_type=session.initiator_type,
-        has_dialog=bool(intake_data), # 👈 intake_data가 있으면 대화형으로 간주
+        has_dialog=bool(intake_data), # intake_data가 있으면 대화형으로 간주
         created_at=track.created_at, 
         is_favorite=track.is_favorite,
+        
+        # 👇 모든 데이터를 다 채워서 보냄
         lyrics=lyrics,
-        intake_data=intake_data,
-        therapist_manual=therapist_manual, 
-        chat_history=chat_history
+        intake_data=intake_data,         # AI 상담 데이터 (있으면)
+        therapist_manual=therapist_manual, # 작곡/처방 데이터 (있으면)
+        chat_history=chat_history        # 채팅 데이터 (있으면)
     )

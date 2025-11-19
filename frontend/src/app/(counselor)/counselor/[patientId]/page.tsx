@@ -3,9 +3,9 @@
 // 💡 1. [핵심 수정] 필요한 모든 React 훅과 아이콘을 import
 import React, { useState, useEffect, useRef, FormEvent, useCallback, Fragment } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { 
+import {
     Play, Pause, CheckCircle,
-    ArrowLeft, Volume2, Loader2, User, MessageSquare, Music, 
+    ArrowLeft, Volume2, Loader2, User, MessageSquare, Music,
     AlertTriangle, ChevronDown, Plus, ClipboardList, Send, Trash2, XCircle, Info,
     FileText // 👈 [추가]
 } from 'lucide-react';
@@ -42,7 +42,7 @@ interface SimpleIntakeData {
     prefs: PatientIntakePrefs | null;
 }
 // 2. 상담사/작곡가 처방(Intake) 상세 정보 타입
-interface CounselorIntakeData { 
+interface CounselorIntakeData {
     genre?: string | null;
     mood?: string | null;
     bpm_min?: number | null;
@@ -53,13 +53,13 @@ interface CounselorIntakeData {
     exclude_instruments?: string[] | null;
     duration_sec?: number | null;
     notes?: string | null;
-    
+
     // (snake_case로 일치, camelCase 아님)
     harmonic_dissonance?: string | null;
     rhythm_complexity?: string | null;
     melody_contour?: string | null;
     texture_density?: string | null;
-    
+
     // 💡 [추가] 누락되었던 필드
     mainInstrument?: string | null;
     targetBPM?: number | 'Neutral' | null;
@@ -84,7 +84,7 @@ interface MusicTrackDetail {
 interface PatientProfile {
     id: number | string;
     name: string | null;
-    age: number | null; 
+    age: number | null;
     email: string | null;
     role: string;
     social_provider: string | null;
@@ -155,24 +155,24 @@ export default function PatientDetailPage() {
     const router = useRouter();
     const params = useParams();
     const patientId = params.patientId as string;
-    const { isAuthed, user } = useAuth(); 
+    const { isAuthed, user } = useAuth();
 
     // --- State 정의 ---
     const [patient, setPatient] = useState<PatientProfile | null>(null);
     // 💡 [수정] 'logs' 탭이 사라지므로, 'sessions' state는 카운트용
-    const [sessions, setSessions] = useState<SessionInfo[]>([]); 
+    const [sessions, setSessions] = useState<SessionInfo[]>([]);
     const [music, setMusic] = useState<MusicTrackDetail[]>([]); // 👈 [수정] MusicTrackDetail[]
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     const [currentTrackId, setCurrentTrackId] = useState<string | number | null>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
-    
+
     const [activeTab, setActiveTab] = useState<'music' | 'memos'>('music');
-    
+
     const [expandedTrackId, setExpandedTrackId] = useState<string | number | null>(null);
     const [detailLoadingId, setDetailLoadingId] = useState<string | number | null>(null);
-    const [trackDetail, setTrackDetail] = useState<MusicTrackDetail | null>(null); 
+    const [trackDetail, setTrackDetail] = useState<MusicTrackDetail | null>(null);
 
     const [memos, setMemos] = useState<CounselorNote[]>([]);
     const [newMemoContent, setNewMemoContent] = useState("");
@@ -181,7 +181,7 @@ export default function PatientDetailPage() {
     const [isSubmittingMemo, setIsSubmittingMemo] = useState(false);
     const [isDeletingMemoId, setIsDeletingMemoId] = useState<number | null>(null);
 
-    
+
 
     // 💡 8. [수정] useEffect (API 3개 호출)
     useEffect(() => {
@@ -229,24 +229,24 @@ export default function PatientDetailPage() {
                 if (!profileRes.ok) throw new Error(`환자 정보 로딩 실패 (${profileRes.status})`);
                 setPatient(await profileRes.json());
 
-                
+
 
                 if (!musicRes.ok) throw new Error(`음악 목록 로딩 실패 (${musicRes.status})`);
                 // 💡 [수정] music state가 이제 MusicTrackDetail[] 타입을 가짐
                 const musicData: MusicTrackDetail[] = await musicRes.json();
                 setMusic(musicData.map(t => ({
-                    ...t, 
+                    ...t,
                     audioUrl: t.audioUrl || t.track_url || '',
                 })));
 
                 // 💡 [수정] 세션 카운트는 musicData에서 유추 (has_dialog 기준)
                 const dialogSessionIds = new Set(musicData.filter(m => m.has_dialog).map(m => m.session_id));
                 // (SessionInfo[] 타입으로 변환)
-                setSessions(Array.from(dialogSessionIds).map((id, index) => ({ 
-                    id: id, 
+                setSessions(Array.from(dialogSessionIds).map((id, index) => ({
+                    id: id,
                     created_at: musicData.find(m => m.session_id === id)?.created_at || new Date().toISOString(), // (날짜는 근사값)
-                    initiator_type: 'patient', 
-                    has_dialog: true 
+                    initiator_type: 'patient',
+                    has_dialog: true
                 })));
 
             } catch (err: unknown) {
@@ -303,26 +303,26 @@ export default function PatientDetailPage() {
         }
     };
 
-   const handleToggleDetails = async (trackId: number | string) => {
+    const handleToggleDetails = async (trackId: number | string) => {
         if (expandedTrackId === trackId) {
             setExpandedTrackId(null);
-            setTrackDetail(null); 
+            setTrackDetail(null);
             return;
         }
-        
+
         // 💡 music state에서 이미 로드된 상세정보를 찾음
         const existingTrackDetail = music.find(m => m.id === trackId);
-        
+
         if (existingTrackDetail) {
-             setTrackDetail(existingTrackDetail); // 👈 찾은 정보로 state 설정
-             setExpandedTrackId(trackId);
+            setTrackDetail(existingTrackDetail); // 👈 찾은 정보로 state 설정
+            setExpandedTrackId(trackId);
         } else {
             // (이론상 /music API가 모든 정보를 가져오므로 이 코드는 실행되지 않아야 함)
             setError("트랙 상세 정보를 찾을 수 없습니다.");
         }
     };
 
-    
+
 
     // 💡 10. [핵심 추가] 메모 탭 관련 함수들
 
@@ -457,60 +457,60 @@ export default function PatientDetailPage() {
 
             {/* 환자 정보 섹션 (age, 카카오ID 표시) */}
             <section className="bg-white p-6 border rounded-xl shadow-md mb-8">
-                 <div className="flex items-center gap-4">
-                     <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden border">
-                         <User className="w-8 h-8 text-gray-400" />
-                     </div>
-                     <div>
-                         <h1 className="text-3xl font-bold text-gray-900">
-                             {patient.name || '이름 없음'}
-                             {patient.age && (
-                                 <span className="text-2xl font-medium text-gray-500 ml-2">(만 {patient.age}세)</span>
-                             )}
-                         </h1>
-                         <p className="text-md text-gray-500">
-                             {getPatientIdentifier(patient)}
-                         </p>
-                     </div>
-                 </div>
-                 <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                     <div className="text-gray-600">총 상담 횟수:</div>
-                     {/* 💡 [수정] sessions.length -> music.filter(...) */}
-                     <div className="font-medium text-indigo-600">{music.filter(m => m.has_dialog).length}회</div>
-                     <div className="text-gray-600">생성된 음악:</div>
-                     <div className="font-medium text-green-600">{music.length}곡</div>
-                 </div>
+                <div className="flex items-center gap-4">
+                    <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden border">
+                        <User className="w-8 h-8 text-gray-400" />
+                    </div>
+                    <div>
+                        <h1 className="text-3xl font-bold text-gray-900">
+                            {patient.name || '이름 없음'}
+                            {patient.age && (
+                                <span className="text-2xl font-medium text-gray-500 ml-2">(만 {patient.age}세)</span>
+                            )}
+                        </h1>
+                        <p className="text-md text-gray-500">
+                            {getPatientIdentifier(patient)}
+                        </p>
+                    </div>
+                </div>
+                <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                    <div className="text-gray-600">총 상담 횟수:</div>
+                    {/* 💡 [수정] sessions.length -> music.filter(...) */}
+                    <div className="font-medium text-indigo-600">{music.filter(m => m.has_dialog).length}회</div>
+                    <div className="text-gray-600">생성된 음악:</div>
+                    <div className="font-medium text-green-600">{music.length}곡</div>
+                </div>
             </section>
 
             {/* 💡 [수정] 탭 메뉴 UI ('logs' 탭 제거) */}
             <div className="mb-6">
-                 <div className="border-b border-gray-200">
-                     <nav className="-mb-px flex space-x-8" aria-label="Tabs">
-                         <button
-                             onClick={() => setActiveTab('music')}
-                             className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'music' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-                                 }`}
-                         >
-                             음악 목록 ({music.length})
-                         </button>
-                         <button
-                             onClick={() => setActiveTab('memos')}
-                             className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'memos' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-                                 }`}
-                         >
-                             상담사 메모
-                         </button>
-                     </nav>
-                 </div>
+                <div className="border-b border-gray-200">
+                    <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+                        <button
+                            onClick={() => setActiveTab('music')}
+                            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'music' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+                                }`}
+                        >
+                            음악 목록 ({music.length})
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('memos')}
+                            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'memos' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+                                }`}
+                        >
+                            상담사 메모
+                        </button>
+                    </nav>
+                </div>
             </div>
-            
+
             {/* --- 음악 목록 탭 (상세보기 기능 추가) --- */}
             {activeTab === 'music' && (
                 <section>
                     <div className="flex justify-between items-center mb-4">
                         <h2 className="text-xl font-semibold text-gray-800">생성된 음악</h2>
-                        <button 
-                            onClick={() => router.push(`/intake/counselor?patientId=${patient.id}`)} 
+                        <button
+                            onClick={() => router.push(`/intake/counselor?patientId=${patient.id}`)}
                             className="flex items-center gap-2 px-3 py-1.5 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600 transition-colors shadow-sm font-medium"
                         >
                             <Plus className="w-4 h-4" /> 음악 처방하기
@@ -528,13 +528,12 @@ export default function PatientDetailPage() {
                                 <Fragment key={track.id}>
                                     <li
                                         onClick={() => handleToggleDetails(track.id)} // 👈 [추가]
-                                        className={`p-4 bg-white border border-gray-200 rounded-lg shadow-sm transition-all flex items-center justify-between cursor-pointer ${
-                                            expandedTrackId === track.id ? 'border-indigo-300 shadow-md rounded-b-none' : 'hover:bg-gray-50'
-                                        }`}
+                                        className={`p-4 bg-white border border-gray-200 rounded-lg shadow-sm transition-all flex items-center justify-between cursor-pointer ${expandedTrackId === track.id ? 'border-indigo-300 shadow-md rounded-b-none' : 'hover:bg-gray-50'
+                                            }`}
                                     >
                                         <div className="flex items-center gap-4 min-w-0">
                                             <div className={`flex-shrink-0 p-3 rounded-full ${currentTrackId === track.id ? 'bg-indigo-600' : 'bg-indigo-100'}`}>
-                                                 <Music className={`w-5 h-5 ${currentTrackId === track.id ? 'text-white' : 'text-indigo-600'}`} />
+                                                <Music className={`w-5 h-5 ${currentTrackId === track.id ? 'text-white' : 'text-indigo-600'}`} />
                                             </div>
                                             <div className="flex-1 min-w-0">
                                                 <p className={`font-semibold text-gray-900 truncate ${currentTrackId === track.id ? 'text-indigo-700' : ''}`}>
@@ -558,43 +557,58 @@ export default function PatientDetailPage() {
                                             <ChevronDown className={`h-5 w-5 text-gray-400 transition-transform ${expandedTrackId === track.id ? 'rotate-180' : ''}`} />
                                         </div>
                                     </li>
-                                    
+
                                     {/* 💡 [핵심 추가] 상세 정보 패널 */}
                                     {expandedTrackId === track.id && (
                                         <div className="border border-t-0 rounded-b-lg p-6 bg-white shadow-inner mb-3 -mt-2 animate-in fade-in duration-200">
-                                            {/* (로딩 스피너) */}
-                                            {detailLoadingId === track.id && (
+                                            {detailLoadingId === track.id ? (
                                                 <div className="flex justify-center items-center p-4">
                                                     <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
                                                     <span className="ml-2 text-gray-500">상세 정보 로딩 중...</span>
                                                 </div>
-                                            )}
-                                            {/* (상세 정보 뷰) */}
-                                            {trackDetail && trackDetail.id === track.id && (
-                                                <div className="space-y-5">
-                                                    
-                                                    {/* 1. 접수 내용 (Intake / Composer / Counselor) */}
-                                                    {trackDetail.intake_data ? (
-                                                        <PatientIntakeView intake={trackDetail.intake_data} />
-                                                    ) : trackDetail.therapist_manual ? (
-                                                        <CounselorIntakeView intake={trackDetail.therapist_manual} />
-                                                    ) : (
-                                                        <Alert type="info" message="이 음악과 연결된 접수 기록이 없습니다." />
+                                            ) : !trackDetail ? (
+                                                <Alert type="error" message="상세 정보를 불러오는데 실패했습니다." />
+                                            ) : (
+                                                <div className="space-y-6">
+
+                                                    {/* 1. [AI 상담] 환자 접수 내용이 있으면 표시 */}
+                                                    {trackDetail.intake_data && (
+                                                        <div className="border-b pb-4">
+                                                            <PatientIntakeView intake={trackDetail.intake_data} />
+                                                        </div>
                                                     )}
 
-                                                    {/* 2. 가사 */}
+                                                    {/* 2. [작곡/처방] 수동 설정 내용이 있으면 표시 */}
+                                                    {trackDetail.therapist_manual && (
+                                                        <div className="border-b pb-4">
+                                                            <CounselorIntakeView intake={trackDetail.therapist_manual} />
+                                                        </div>
+                                                    )}
+
+                                                    {/* 3. [가사] 가사가 있으면 표시 */}
                                                     {trackDetail.lyrics && (
-                                                        <div>
-                                                            <h4 className="font-semibold text-gray-800 flex items-center"><FileText className="w-4 h-4 mr-2 text-indigo-600"/>생성된 가사</h4>
-                                                            <pre className="mt-2 p-3 bg-gray-50 rounded-md text-sm text-gray-600 whitespace-pre-wrap font-sans overflow-y-auto max-h-40 border">
+                                                        <div className="border-b pb-4">
+                                                            <h4 className="font-semibold text-gray-800 flex items-center mb-2">
+                                                                <FileText className="w-4 h-4 mr-2 text-indigo-600" />생성된 가사
+                                                            </h4>
+                                                            <pre className="p-3 bg-gray-50 rounded-md text-sm text-gray-600 whitespace-pre-wrap font-sans overflow-y-auto max-h-60 border">
                                                                 {trackDetail.lyrics}
                                                             </pre>
                                                         </div>
                                                     )}
 
-                                                    {/* 3. 채팅 요약 */}
+                                                    {/* 4. [채팅] 대화 기록이 있으면 표시 */}
                                                     {trackDetail.chat_history && trackDetail.chat_history.length > 0 && (
-                                                        <ChatHistoryView chatHistory={trackDetail.chat_history} />
+                                                        <div>
+                                                            <ChatHistoryView chatHistory={trackDetail.chat_history} />
+                                                        </div>
+                                                    )}
+
+                                                    {/* 5. 데이터가 하나도 없는 경우 */}
+                                                    {!trackDetail.intake_data && !trackDetail.therapist_manual && !trackDetail.lyrics && (!trackDetail.chat_history || trackDetail.chat_history.length === 0) && (
+                                                        <div className="text-center py-4 text-gray-500 text-sm">
+                                                            표시할 상세 정보가 없습니다.
+                                                        </div>
                                                     )}
                                                 </div>
                                             )}
@@ -606,28 +620,28 @@ export default function PatientDetailPage() {
                     )}
                 </section>
             )}
-            
+
             {/* --- 상담사 메모 탭 (UI 수정됨) --- */}
             {activeTab === 'memos' && (
                 <section className="space-y-6">
                     {/* 1. 새 메모 작성 폼 */}
                     <form onSubmit={handleCreateMemo} className="bg-white p-6 border rounded-xl shadow-md">
-                         <h2 className="text-xl font-semibold text-gray-800 flex items-center mb-4">
-                            <Plus className="w-5 h-5 mr-3 text-indigo-600"/>
+                        <h2 className="text-xl font-semibold text-gray-800 flex items-center mb-4">
+                            <Plus className="w-5 h-5 mr-3 text-indigo-600" />
                             새 메모 추가
-                         </h2>
-                         <textarea
+                        </h2>
+                        <textarea
                             value={newMemoContent}
                             onChange={(e) => setNewMemoContent(e.target.value)}
                             rows={4}
                             className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
                             placeholder={patient ? `${patient.name || '환자'}님에 대한 소견이나 다음 상담 계획을 기록하세요...` : '메모 작성...'}
                             disabled={isSubmittingMemo}
-                         />
-                         {memoError && !isSubmittingMemo && (
+                        />
+                        {memoError && !isSubmittingMemo && (
                             <p className="text-sm text-red-600 mt-2">{memoError}</p>
-                         )}
-                         <div className="flex justify-end mt-4">
+                        )}
+                        <div className="flex justify-end mt-4">
                             <button
                                 type="submit"
                                 disabled={isSubmittingMemo || !newMemoContent.trim()}
@@ -636,22 +650,22 @@ export default function PatientDetailPage() {
                                 {isSubmittingMemo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                                 {isSubmittingMemo ? '저장 중...' : '메모 저장'}
                             </button>
-                         </div>
+                        </div>
                     </form>
 
                     {/* 2. 메모 목록 (작성자 표시) */}
                     <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
                         <h2 className="text-xl font-semibold text-gray-800 flex items-center mb-5">
-                            <ClipboardList className="w-5 h-5 mr-3 text-indigo-500"/>
+                            <ClipboardList className="w-5 h-5 mr-3 text-indigo-500" />
                             메모 기록 (모든 상담사)
                         </h2>
                         {isMemoLoading && memos.length === 0 ? (
-                             <div className="flex justify-center items-center p-4">
+                            <div className="flex justify-center items-center p-4">
                                 <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
                                 <span className="ml-2 text-gray-500">메모 로딩 중...</span>
-                             </div>
+                            </div>
                         ) : !isMemoLoading && memoError && memos.length === 0 ? (
-                             <Alert type="error" message={memoError} />
+                            <Alert type="error" message={memoError} />
                         ) : memos.length === 0 ? (
                             <div className="p-6 text-center bg-gray-50 rounded-lg border border-gray-200">
                                 <p className="text-gray-500">아직 작성된 메모가 없습니다.</p>
@@ -667,7 +681,7 @@ export default function PatientDetailPage() {
                                             <p className="text-xs text-gray-500">
                                                 <span className="font-medium text-gray-700">
                                                     {note.therapist_name || '알 수 없음'}
-                                                    {user && note.therapist_id === user.id && ' (나)'} 
+                                                    {user && note.therapist_id === user.id && ' (나)'}
                                                 </span>
                                                 <span className="mx-1.5">|</span>
                                                 {formatMemoTime(note.created_at)}
@@ -680,7 +694,7 @@ export default function PatientDetailPage() {
                                                     className="p-1 text-red-500 hover:bg-red-100 rounded-md disabled:opacity-50"
                                                     aria-label="메모 삭제"
                                                 >
-                                                    {isDeletingMemoId === note.id ? <Loader2 className="w-4 h-4 animate-spin"/> : <Trash2 className="w-4 h-4" />}
+                                                    {isDeletingMemoId === note.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                                                 </button>
                                             )}
                                         </div>
@@ -709,7 +723,7 @@ const Alert: React.FC<AlertProps> = ({ type, message, onClose }) => {
         case 'error':
             bgColor = 'bg-red-100 border-red-400 text-red-700'; Icon = AlertTriangle; break;
         case 'success':
-            bgColor = 'bg-green-100 border-green-400 text-green-700'; Icon = CheckCircle; break; 
+            bgColor = 'bg-green-100 border-green-400 text-green-700'; Icon = CheckCircle; break;
         case 'info':
         default:
             bgColor = 'bg-blue-100 border-blue-400 text-blue-700'; Icon = Info; break;
@@ -735,15 +749,15 @@ const Alert: React.FC<AlertProps> = ({ type, message, onClose }) => {
 const PatientIntakeView: React.FC<{ intake: SimpleIntakeData }> = ({ intake }) => {
     const vas = intake.vas;
     const prefs = intake.prefs;
-    
+
     return (
         <div className="space-y-4">
             <div>
-                <h4 className="font-semibold text-gray-800 flex items-center"><User className="w-4 h-4 mr-2 text-green-600"/>환자 접수 내용</h4>
+                <h4 className="font-semibold text-gray-800 flex items-center"><User className="w-4 h-4 mr-2 text-green-600" />환자 접수 내용</h4>
                 <div className="mt-2 p-3 bg-gray-50 rounded-md text-sm text-gray-600 italic border">
-                    
+
                     {intake.goal_text || '기록된 상담 목표가 없습니다.'}
-                    
+
                 </div>
             </div>
             {vas && (
@@ -784,7 +798,7 @@ const CounselorIntakeView: React.FC<{ intake: CounselorIntakeData }> = ({ intake
     return (
         <div className="space-y-4">
             <div>
-                <h4 className="font-semibold text-gray-800 flex items-center"><User className="w-4 h-4 mr-2 text-blue-600"/>작곡/처방 내용</h4>
+                <h4 className="font-semibold text-gray-800 flex items-center"><User className="w-4 h-4 mr-2 text-blue-600" />작곡/처방 내용</h4>
                 {intake.notes && (
                     <div className="mt-2 p-3 bg-gray-50 rounded-md text-sm text-gray-600 italic border">
                         {intake.notes}
@@ -816,13 +830,12 @@ const CounselorIntakeView: React.FC<{ intake: CounselorIntakeData }> = ({ intake
 const ChatHistoryView: React.FC<{ chatHistory: ChatMessage[] }> = ({ chatHistory }) => {
     return (
         <div>
-            <h4 className="font-semibold text-gray-800 flex items-center"><MessageSquare className="w-4 h-4 mr-2 text-blue-500"/>관련 대화</h4>
+            <h4 className="font-semibold text-gray-800 flex items-center"><MessageSquare className="w-4 h-4 mr-2 text-blue-500" />관련 대화</h4>
             <div className="mt-2 space-y-2 p-3 bg-gray-50 rounded-md max-h-48 overflow-y-auto border">
-                {chatHistory.map(msg => ( 
+                {chatHistory.map(msg => (
                     <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`p-2 rounded-lg text-sm max-w-[80%] ${
-                            msg.role === 'user' ? 'bg-blue-100 text-blue-900' : 'bg-gray-200 text-gray-800'
-                        }`}>
+                        <div className={`p-2 rounded-lg text-sm max-w-[80%] ${msg.role === 'user' ? 'bg-blue-100 text-blue-900' : 'bg-gray-200 text-gray-800'
+                            }`}>
                             <p className="whitespace-pre-wrap">{msg.content}</p>
                         </div>
                     </div>
