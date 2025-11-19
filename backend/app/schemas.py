@@ -37,11 +37,15 @@ class TherapistManualInput(BaseModel):
     exclude_instruments: Optional[list[str]] = []
     duration_sec: Optional[int] = 120
     notes: Optional[str] = None
+    
     harmonic_dissonance: Optional[str] = "Neutral"
     rhythm_complexity: Optional[str] = "Neutral"
     melody_contour: Optional[str] = "Neutral"
     texture_density: Optional[str] = "Neutral"
-    mainInstrument: Optional[str] = "Piano" # (이전 코드 호환용)
+    mainInstrument: Optional[str] = "Piano" 
+    
+    class Config:
+        from_attributes = True
 
 class TherapistPromptReq(BaseModel):
     session_id: int
@@ -229,10 +233,9 @@ class SimpleChatMessage(BaseModel):
 # 💡 [핵심 추가] 음악 '상세' 정보 응답 스키마
 class MusicTrackDetail(MusicTrackInfo):
     lyrics: Optional[str] = None
-    intake_data: Optional[SimpleIntakeData] = None # (환자 Intake용)
-    therapist_manual: Optional[TherapistManualInput] = None # 👈 [추가] (상담사/작곡가 처방용)
+    intake_data: Optional[SimpleIntakeData] = None # (환자 접수용)
+    therapist_manual: Optional[TherapistManualInput] = None # 👈 [추가] (처방/작곡용)
     chat_history: List[SimpleChatMessage] = []
-
 # 💡 [핵심 추가] 프로필 '수정' 시 받을 데이터 스키마
 class UserUpdate(BaseModel):
     # (name은 수정 불가로 가정, age만 받음)
