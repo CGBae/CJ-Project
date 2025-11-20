@@ -70,92 +70,92 @@ async def create_session_for_patient(
 
 
 # (환자/상담사 공용) 수동 프롬프트 생성
+# 💡 [핵심 수정] 수동 프롬프트 생성 (SQL 오류 방지 로직 추가)
 @router.post("/manual-generate", response_model=PromptResp)
 async def manual_generate(
     req: TherapistPromptReq,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # 1. 세션 확인
     session = await db.get(Session, req.session_id) 
-    if not session:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Session (ID: {req.session_id}) not found."
-        )
-    if not session.created_by: # 👈 created_by가 NULL인 경우 방어
-         raise HTTPException(status_code=403, detail="세션 소유자가 지정되지 않았습니다.")
+    if not session or not session.created_by:
+        raise HTTPException(status_code=404, detail=f"Session not found.")
 
-    # 💡 2. [핵심 수정] 권한 검사 (환자/상담사 분리)
+    # 1. 권한 검사 (기존 코드 유지)
     if current_user.role == "patient":
-        # "환자"는 "본인" 세션만 수정 가능
-        if session.created_by != current_user.id:
-            raise HTTPException(status_code=403, detail="Not authorized (Patient mismatch).")
+        if session.created_by != current_user.id: raise HTTPException(403, "권한 없음")
     elif current_user.role == "therapist":
-        # "상담사"는 "배정된 환자"의 세션만 수정 가능
-        try:
-            await check_counselor_patient_access(session.created_by, current_user.id, db)
-        except HTTPException:
-            # (추가) 상담사 본인이 만든 세션도 허용 (테스트용 등)
-            if session.created_by != current_user.id:
-                raise HTTPException(status_code=403, detail="Not authorized (Counselor mismatch).")
-    else:
-        # 그 외 역할
-         raise HTTPException(status_code=403, detail="Not authorized (Invalid role).")
-            
-    # 3. manual 입력 upsert (기존 로직)
-    await db.execute(
-        insert(TherapistManualInputs).values(
-            session_id=req.session_id,
-            genre=req.manual.genre,
-            mood=req.manual.mood,
-            bpm_min=req.manual.bpm_min,
-            bpm_max=req.manual.bpm_max,
-            key_signature=req.manual.key_signature,
-            vocals_allowed=req.manual.vocals_allowed,
-            include_instruments=req.manual.include_instruments,
-            exclude_instruments=req.manual.exclude_instruments,
-            duration_sec=req.manual.duration_sec,
-            notes=req.manual.notes
-        )
+        try: await check_counselor_patient_access(session.created_by, current_user.id, db)
+        except: 
+            if session.created_by != current_user.id: raise HTTPException(403, "권한 없음")
+    else: raise HTTPException(403, "권한 없음")
+
+    # 💡 2. 데이터 분리 저장 (DB 충돌 방지!)
+    full_manual_data = req.manual.model_dump() # 전체 데이터 (모든 필드 포함)
+    
+    # (A) SQL 테이블 저장용 데이터 정제
+    sql_manual_data = full_manual_data.copy()
+    
+    # 💥 제거할 필드 목록 (DB 테이블에 컬럼이 없는 것들)
+    fields_to_remove = [
+        # 1. VAS 점수 (DB에 없음)
+        'anxiety', 'depression', 'pain',       
+        # 2. 편의 필드 (DB에 없음)
+        'mainInstrument', 'targetBPM',
+        # 3. 💡 [추가] 고급 작곡 옵션 (DB에 컬럼을 안 만들었으므로 제거해야 함!)
+        'harmonic_dissonance', 'rhythm_complexity', 'melody_contour', 'texture_density'
+    ]
+    
+    for key in fields_to_remove:
+        sql_manual_data.pop(key, None) # 안전하게 제거
+
+    # 기존 데이터 삭제
+    await db.execute(delete(TherapistManualInputs).where(TherapistManualInputs.session_id == req.session_id))
+    
+    # SQL 저장 (이제 에러 안 남!)
+    manual_db = TherapistManualInputs(
+        session_id=req.session_id,
+        **sql_manual_data 
     )
-    # manual 스냅샷
+    db.add(manual_db)
+    
+    # (B) JSON 로그 저장 (전체 데이터 보존)
+    # 여기에 모든 필드(고급 옵션 포함)가 저장되므로, music.py가 나중에 불러올 수 있음!
     await db.execute(
         insert(SessionPrompt).values(
-            session_id=req.session_id, stage="manual", data=req.manual.model_dump()
+            session_id=req.session_id, stage="manual", data=full_manual_data
         )
     )
     await db.commit()
 
-    # 4. 상담사용 '추가 요구사항' 텍스트 구성 (기존 로직)
-    extra = build_extra_requirements_for_therapist(req.manual.model_dump())
+    # 3. AI 호출 준비
+    extra = build_extra_requirements_for_therapist(full_manual_data)
 
-    # 5. OpenAI 호출 (기존 로직)
+    # 4. OpenAI 호출
     prompt_dict = await generate_prompt_from_guideline(req.guideline_json, extra)
 
-    # 6. DB 저장 로직 (올바른 형식)
-    final_music_prompt = prompt_dict.get("music_prompt", "기본 프롬프트: 잔잔한 음악")
+    # 5. 결과 저장
+    final_music_prompt = prompt_dict.get("music_prompt", "기본 프롬프트")
     final_lyrics = prompt_dict.get("lyrics_text", "")
-    final_data_to_save = {
+    
+    final_data = {
         "text": final_music_prompt,
         "music_prompt": final_music_prompt,
         "lyrics_text": final_lyrics
     }
+    
     await db.execute(
-        insert(SessionPrompt).values(session_id=req.session_id, stage="final", data=final_data_to_save)
+        insert(SessionPrompt).values(session_id=req.session_id, stage="final", data=final_data)
     )
     await db.execute(
         update(Session).where(Session.id == req.session_id).values(
-            prompt=final_data_to_save,
+            prompt=final_data,
             input_source="therapist_manual"
         )
     )
     await db.commit()
 
-    # 7. 응답 반환 (기존 로직)
-    return {"session_id": req.session_id, "prompt_text": final_music_prompt}
-
-
+    return {"session_id": req.session_id, "prompt_text": final_music_prompt, "lyrics_text": final_lyrics}
 @router.post("/find-patient", response_model=FoundPatientResponse) 
 async def find_patient_by_email_or_id( 
     req: dict, 

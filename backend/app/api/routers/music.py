@@ -262,7 +262,7 @@ async def get_track_details(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # 1. 트랙과 세션 기본 정보 로드
+    # 1. 트랙/세션 조회 (기존과 동일)
     query = (
         select(Track)
         .where(Track.id == track_id)
@@ -279,10 +279,9 @@ async def get_track_details(
 
     if not track or not track.session:
         raise HTTPException(status_code=404, detail="트랙 정보를 찾을 수 없습니다.")
-        
     session = track.session
 
-    # 2. 보안 검사
+    # 2. 보안 검사 (기존과 동일)
     if session.created_by != current_user.id:
         if current_user.role == "therapist":
             try:
@@ -292,17 +291,15 @@ async def get_track_details(
         else:
             raise HTTPException(status_code=403, detail="권한 없음")
 
-    # --- 3. 데이터 로딩 (JSON 스냅샷 우선 전략) ---
+    # --- 3. 데이터 로딩 ---
     
-    # (A) 환자 Intake 데이터 복구
+    # (A) 환자 Intake (기존 코드 유지 - 생략 가능하지만 전체 코드 제공)
     intake_data = None
-    
-    # 1순위: SessionPrompt (user_input) JSON 로그 확인
+    # ... (JSON 스냅샷 우선 로직) ...
     q_prompt = select(SessionPrompt).where(SessionPrompt.session_id == session.id, SessionPrompt.stage == "user_input").order_by(desc(SessionPrompt.created_at)).limit(1)
     snapshot = (await db.execute(q_prompt)).scalar_one_or_none()
     
     if snapshot and snapshot.data:
-        # JSON 데이터가 있으면 이걸 사용 (가장 정확함)
         data = snapshot.data
         goal = data.get("goal", {})
         intake_data = SimpleIntakeData(
@@ -311,12 +308,10 @@ async def get_track_details(
             prefs=data.get("prefs")
         )
     else:
-        # 2순위: DB 테이블 확인 (Fallback)
         p_intake = session.patient_intake
         if not p_intake:
             q_pi = select(SessionPatientIntake).where(SessionPatientIntake.session_id == session.id)
             p_intake = (await db.execute(q_pi)).scalar_one_or_none()
-            
         if p_intake:
             intake_data = SimpleIntakeData(
                 goal_text=p_intake.goal.get("text") if isinstance(p_intake.goal, dict) else "N/A",
@@ -324,10 +319,11 @@ async def get_track_details(
                 prefs=p_intake.prefs 
             )
 
+
     # (B) 상담사/작곡가 처방 데이터 복구
     therapist_manual = None
     
-    # 1순위: SessionPrompt (manual) JSON 로그 확인 💡 [핵심]
+    # 1순위: JSON 스냅샷 확인 (여기에 VAS 점수가 들어있음!)
     q_manual_prompt = select(SessionPrompt).where(SessionPrompt.session_id == session.id, SessionPrompt.stage == "manual").order_by(desc(SessionPrompt.created_at)).limit(1)
     manual_snapshot = (await db.execute(q_manual_prompt)).scalar_one_or_none()
     
@@ -335,26 +331,26 @@ async def get_track_details(
         print(f"DEBUG: Manual Snapshot Found! Using JSON data.")
         manual_data = manual_snapshot.data
         
-        # (호환성 처리: mainInstrument가 없으면 include_instruments[0] 사용)
+        # 호환성 처리
         if "mainInstrument" not in manual_data:
              if manual_data.get("include_instruments") and len(manual_data["include_instruments"]) > 0:
                  manual_data["mainInstrument"] = manual_data["include_instruments"][0]
              else:
                  manual_data["mainInstrument"] = "Piano"
         
-        # Pydantic 모델로 변환 (모든 필드 포함됨)
+        # 💡 [핵심] JSON 데이터에는 anxiety, depression, pain 키가 그대로 들어있음
+        # Pydantic 모델로 변환 시 이 필드들이 자동으로 매핑됨
         therapist_manual = TherapistManualInput(**manual_data)
         
     else:
-        # 2순위: DB 테이블 확인 (Fallback)
+        # 2순위: DB 테이블 확인 (VAS 정보 없음)
         t_manual = session.therapist_manual
         if not t_manual:
             q_tm = select(TherapistManualInputs).where(TherapistManualInputs.session_id == session.id)
             t_manual = (await db.execute(q_tm)).scalar_one_or_none()
 
         if t_manual:
-            print(f"DEBUG: Using DB Table for Manual Data")
-            # DB 객체 -> Pydantic 변환 (필드 누락 방지를 위해 수동 매핑)
+            print(f"DEBUG: Using DB Table for Manual Data (VAS Info Missing)")
             therapist_manual = TherapistManualInput(
                 genre=t_manual.genre,
                 mood=t_manual.mood,
@@ -366,33 +362,30 @@ async def get_track_details(
                 exclude_instruments=t_manual.exclude_instruments,
                 duration_sec=t_manual.duration_sec,
                 notes=t_manual.notes,
-                # DB에 컬럼이 없을 수 있으므로 getattr로 안전하게 접근
                 harmonic_dissonance=getattr(t_manual, 'harmonic_dissonance', 'Neutral'),
                 rhythm_complexity=getattr(t_manual, 'rhythm_complexity', 'Neutral'),
                 melody_contour=getattr(t_manual, 'melody_contour', 'Neutral'),
                 texture_density=getattr(t_manual, 'texture_density', 'Neutral'),
-                mainInstrument=t_manual.include_instruments[0] if t_manual.include_instruments else "Piano"
+                mainInstrument=t_manual.include_instruments[0] if t_manual.include_instruments else "Piano",
+                
+                # 💡 DB 테이블에는 VAS 컬럼이 없으므로 null 처리
+                anxiety=None,
+                depression=None,
+                pain=None
             )
 
-    # (C) 채팅 내역
+    # (C) ~ (E) 나머지 로직 (변경 없음)
     chat_history = [SimpleChatMessage.model_validate(msg) for msg in session.messages] if session.messages else []
-    
-    # (D) 가사 및 프롬프트
     prompt_data = session.prompt if isinstance(session.prompt, dict) else {}
     lyrics = prompt_data.get("lyrics_text")
     prompt_text = prompt_data.get("music_prompt") or prompt_data.get("text") or "프롬프트 없음"
 
-    # (E) 제목 및 타입
     title = f"AI 트랙 (세션 {session.id})"
-    if session.initiator_type == "therapist": 
-        title = f"상담사 처방 음악"
+    if session.initiator_type == "therapist": title = f"상담사 처방 음악"
     elif session.initiator_type == "patient":
-        if intake_data and chat_history: 
-            title = f"AI 상담 기반 음악"
-        elif therapist_manual: 
-            title = f"작곡 체험 음악"
-        else:
-            title = f"AI 생성 음악"
+        if intake_data and chat_history: title = f"AI 상담 기반 음악"
+        elif therapist_manual: title = f"작곡 체험 음악"
+        else: title = f"AI 생성 음악"
 
     return MusicTrackDetail(
         id=track.id,
@@ -402,7 +395,7 @@ async def get_track_details(
         audioUrl=track.track_url,
         session_id=session.id,
         initiator_type=session.initiator_type,
-        has_dialog=bool(intake_data), 
+        has_dialog=bool(intake_data),
         created_at=track.created_at, 
         is_favorite=track.is_favorite,
         
