@@ -44,6 +44,10 @@ def run_migrations_online() -> None:
     # alembic.ini 의 [alembic] 섹션 가져오기
     configuration = config.get_section(config.config_ini_section) or {}
 
+    alembic_url = os.getenv("ALEMBIC_DB_URL")
+    if alembic_url:
+        configuration["sqlalchemy.url"] = alembic_url
+
     # 여기서 sqlalchemy.url 은 우리가 alembic.ini 에 적어둔
     # postgresql+pg8000://cjuser:1234@localhost:5432/cj_db 를 사용
     connectable = engine_from_config(
