@@ -747,7 +747,7 @@ const CounselorIntakeView: React.FC<{ intake: CounselorIntakeData }> = ({ intake
             displayVal = t(String(value)); // t함수는 string을 받으므로 String()으로 변환
         }
 
-        // 값이 없거나 Neutral/N/A면 렌더링 안 함
+        // 값이 없거나 Neutral/N /A면 렌더링 안 함
         if (!value && value !== false && value !== 0) return null; // false나 0은 유효한 값이므로 제외
         if (value === 'Neutral' || value === 'N/A') return null;
 
@@ -798,7 +798,6 @@ const CounselorIntakeView: React.FC<{ intake: CounselorIntakeData }> = ({ intake
                             { label: '우울', val: intake.depression },
                             { label: '통증', val: intake.pain }
                         ].map((item) => (
-                            // 값이 있는 경우에만 렌더링
                             item.val !== null && item.val !== undefined ? (
                                 <div key={item.label} className="text-center">
                                     <div className="text-xs text-gray-500 mb-1">{item.label}</div>

@@ -270,3 +270,39 @@ class NotePublic(NoteBase):
 
     class Config:
         from_attributes = True
+
+class CommentCreate(BaseModel):
+    content: str = Field(..., min_length=1)
+
+class CommentResponse(BaseModel):
+    id: int
+    content: str
+    author_name: str
+    author_id: int
+    created_at: datetime
+    class Config:
+        from_attributes = True
+
+# 게시글 생성 (음악 공유 포함)
+class PostCreate(BaseModel):
+    title: str = Field(..., min_length=1)
+    content: str = Field(..., min_length=1)
+    track_id: Optional[int] = None # 💡 공유할 음악 트랙 ID (선택)
+
+# 게시글 목록 응답
+class PostResponse(BaseModel):
+    id: int
+    title: str
+    content: str
+    author_name: str
+    author_id: int
+    created_at: datetime
+    track: Optional[MusicTrackInfo] = None # 💡 공유된 음악 정보 포함
+    comments_count: int = 0 # 댓글 수
+    
+    class Config:
+        from_attributes = True
+
+# 게시글 상세 응답 (댓글 목록 포함)
+class PostDetailResponse(PostResponse):
+    comments: List[CommentResponse] = []
