@@ -15,12 +15,12 @@ import { useAuth } from '@/lib/contexts/AuthContext';
 
 const TRANSLATIONS: Record<string, string> = {
     // 분위기
-    calming: '차분한', uplifting: '기분 좋아지는', energetic: '활기찬', 
-    reflective: '사색적인', warm: '따뜻한', soothing: '위로하는', 
+    calming: '차분한', uplifting: '기분 좋아지는', energetic: '활기찬',
+    reflective: '사색적인', warm: '따뜻한', soothing: '위로하는',
     bright: '밝은', focusing: '집중 잘 되는', dreamy: '몽환적인', hopeful: '희망찬',
-    
+
     // 악기
-    Piano: '피아노', 'Acoustic Guitar': '통기타', Violin: '바이올린', 
+    Piano: '피아노', 'Acoustic Guitar': '통기타', Violin: '바이올린',
     'Music Box': '오르골', Flute: '플룻', 'Nature Sounds': '자연의 소리',
     Drums: '드럼', Bass: '베이스', 'Synth Pad': '신디사이저', 'Electric Guitar': '일렉기타',
 
@@ -193,7 +193,7 @@ export default function PatientDetailPage() {
     // --- State 정의 ---
     const [patient, setPatient] = useState<PatientProfile | null>(null);
     // 💡 [수정] 'logs' 탭이 사라지므로, 'sessions' state는 카운트용
-    
+
     const [music, setMusic] = useState<MusicTrackDetail[]>([]); // 👈 [수정] MusicTrackDetail[]
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -272,7 +272,7 @@ export default function PatientDetailPage() {
                     audioUrl: t.audioUrl || t.track_url || '',
                 })));
 
-                
+
 
             } catch (err: unknown) {
                 // (catch 블록 - 변경 없음)
@@ -332,10 +332,10 @@ export default function PatientDetailPage() {
         // 1. 이미 열려있는 거면 닫기
         if (expandedTrackId === trackId) {
             setExpandedTrackId(null);
-            setTrackDetail(null); 
+            setTrackDetail(null);
             return;
         }
-        
+
         // 2. 로딩 시작
         setExpandedTrackId(trackId); // 패널을 먼저 열고
         setDetailLoadingId(String(trackId)); // 로딩 스피너 표시
@@ -343,16 +343,16 @@ export default function PatientDetailPage() {
         setError(null);
 
         const token = localStorage.getItem('accessToken');
-        if (!token) { 
-            setError("인증 토큰이 없습니다."); 
-            setDetailLoadingId(null); 
-            return; 
+        if (!token) {
+            setError("인증 토큰이 없습니다.");
+            setDetailLoadingId(null);
+            return;
         }
 
         try {
             // 3. 무조건 상세 API 호출 (목록에 있는 정보 무시)
-            const response = await fetch(`${API_URL}/music/track/${trackId}`, { 
-                 headers: { 'Authorization': `Bearer ${token}` }
+            const response = await fetch(`${API_URL}/music/track/${trackId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
             });
 
             if (!response.ok) {
@@ -363,7 +363,7 @@ export default function PatientDetailPage() {
             const data: MusicTrackDetail = await response.json();
             console.log("상세 정보 수신:", data); // 👈 디버깅용 로그
             setTrackDetail(data); // 4. 꽉 찬 데이터 저장
-            
+
         } catch (e: unknown) {
             console.error(e);
             setError(e instanceof Error ? e.message : "상세 정보를 불러올 수 없습니다.");
@@ -811,10 +811,10 @@ const PatientIntakeView: React.FC<{ intake: SimpleIntakeData }> = ({ intake }) =
     return (
         <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
             <h4 className="font-bold text-gray-800 flex items-center mb-4">
-                <Brain className="w-5 h-5 mr-2 text-indigo-500"/>
+                <Brain className="w-5 h-5 mr-2 text-indigo-500" />
                 환자 자가 진단 (AI 상담)
             </h4>
-            
+
             <div className="mb-6">
                 <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">상담 목표</span>
                 <div className="mt-1.5 p-3 bg-indigo-50 rounded-lg text-sm text-indigo-900 font-medium">
@@ -862,10 +862,10 @@ const PatientIntakeView: React.FC<{ intake: SimpleIntakeData }> = ({ intake }) =
 // 2. 상담사 처방 내용 (작곡 체험)
 const CounselorIntakeView: React.FC<{ intake: CounselorIntakeData }> = ({ intake }) => {
     // 유효한 필드만 렌더링하는 헬퍼
-    const Field = ({ label, value, icon }: { 
-        label: string, 
-        value: string | number | boolean | null | undefined, 
-        icon?: React.ReactNode 
+    const Field = ({ label, value, icon }: {
+        label: string,
+        value: string | number | boolean | null | undefined,
+        icon?: React.ReactNode
     }) => {
         // 💡 [수정] any 캐스팅 제거 및 타입 안전하게 처리
         let displayVal: string | number | null = null;
@@ -873,16 +873,16 @@ const CounselorIntakeView: React.FC<{ intake: CounselorIntakeData }> = ({ intake
         if (value === null || value === undefined) {
             displayVal = null;
         } else if (typeof value === 'boolean') {
-             displayVal = value ? '예' : '아니오';
+            displayVal = value ? '예' : '아니오';
         } else {
-             // string이나 number인 경우
-             displayVal = t(String(value)); // t함수는 string을 받으므로 String()으로 변환
+            // string이나 number인 경우
+            displayVal = t(String(value)); // t함수는 string을 받으므로 String()으로 변환
         }
 
         // 값이 없거나 Neutral/N/A면 렌더링 안 함
         if (!value && value !== false && value !== 0) return null; // false나 0은 유효한 값이므로 제외
         if (value === 'Neutral' || value === 'N/A') return null;
-        
+
         return (
             <div className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
                 <span className="text-sm text-gray-500 flex items-center gap-2">
@@ -894,39 +894,76 @@ const CounselorIntakeView: React.FC<{ intake: CounselorIntakeData }> = ({ intake
         );
     };
 
+
+    const getVasColor = (score: number | null | undefined) => {
+        if (score === null || score === undefined) return 'bg-gray-200';
+        if (score <= 3) return 'bg-green-500';
+        if (score <= 7) return 'bg-yellow-400';
+        return 'bg-red-500';
+    };
+
+    // VAS 데이터 존재 여부 확인
+    const hasVas = (intake.anxiety !== undefined && intake.anxiety !== null) ||
+        (intake.depression !== undefined && intake.depression !== null) ||
+        (intake.pain !== undefined && intake.pain !== null);
+
     return (
         <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
             <h4 className="font-bold text-gray-800 flex items-center mb-4">
-                <HeartPulse className="w-5 h-5 mr-2 text-rose-500"/>
+                <HeartPulse className="w-5 h-5 mr-2 text-rose-500" />
                 음악 처방 상세 (Manual)
             </h4>
 
             {intake.notes && (
-                 <div className="mb-5 p-3 bg-rose-50 rounded-lg text-sm text-rose-900 border border-rose-100">
+                <div className="mb-5 p-3 bg-rose-50 rounded-lg text-sm text-rose-900 border border-rose-100">
                     <span className="block text-xs font-bold text-rose-400 mb-1">📝 처방 노트</span>
                     {intake.notes}
                 </div>
             )}
-            
-            {/* VAS (상담사가 기록한 경우) */}
-            {(intake.anxiety !== undefined || intake.depression !== undefined) && (
-                <div className="mb-5 p-3 bg-gray-50 rounded-lg">
-                     <span className="text-xs font-semibold text-gray-500 uppercase block mb-2">환자 상태 기록</span>
-                     <div className="flex gap-4 text-sm">
-                         {intake.anxiety !== undefined && <span>😰 불안: <strong>{intake.anxiety}</strong></span>}
-                         {intake.depression !== undefined && <span>💧 우울: <strong>{intake.depression}</strong></span>}
-                         {intake.pain !== undefined && <span>⚡ 통증: <strong>{intake.pain}</strong></span>}
-                     </div>
+
+            {/* 💡 [수정] VAS 게이지 바 (데이터가 있는 경우에만 표시) */}
+            {hasVas && (
+                <div className="mb-6">
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">환자 상태 기록 (VAS)</span>
+                    <div className="grid grid-cols-3 gap-4 mt-2">
+                        {[
+                            { label: '불안', val: intake.anxiety },
+                            { label: '우울', val: intake.depression },
+                            { label: '통증', val: intake.pain }
+                        ].map((item) => (
+                            item.val !== null && item.val !== undefined ? (
+                                <div key={item.label} className="text-center">
+                                    <div className="text-xs text-gray-500 mb-1">{item.label}</div>
+                                    <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
+                                        <div className={`h-full ${getVasColor(item.val)}`} style={{ width: `${item.val * 10}%` }}></div>
+                                    </div>
+                                    <div className="text-sm font-bold text-gray-800 mt-1">{item.val}</div>
+                                </div>
+                            ) : null
+                        ))}
+                    </div>
                 </div>
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1">
-                <Field label="분위기" value={intake.mood} icon="✨"/>
-                <Field label="메인 악기" value={Array.isArray(intake.include_instruments) ? intake.include_instruments.join(', ') : intake.mainInstrument} icon="🎹"/>
-                <Field label="템포 (BPM)" value={intake.targetBPM && intake.targetBPM !== 'Neutral' ? intake.targetBPM : (intake.bpm_min ? `${intake.bpm_min}~${intake.bpm_max}` : null)} icon="🥁"/>
-                <Field label="조성" value={intake.key_signature} icon="🎼"/>
-                <Field label="보컬" value={intake.vocals_allowed ? '포함' : '미포함'} icon="🎤"/>
-                
+                <Field label="분위기" value={intake.mood} icon="✨" />
+                <Field
+                    label="메인 악기"
+                    value={Array.isArray(intake.include_instruments) && intake.include_instruments.length > 0
+                        ? intake.include_instruments.join(', ')
+                        : (intake.mainInstrument || 'N/A')}
+                    icon="🎹"
+                />
+                <Field
+                    label="템포 (BPM)"
+                    value={intake.targetBPM && intake.targetBPM !== 'Neutral'
+                        ? intake.targetBPM
+                        : (intake.bpm_min ? `${intake.bpm_min}~${intake.bpm_max}` : null)}
+                    icon="🥁"
+                />
+                <Field label="조성" value={intake.key_signature} icon="🎼" />
+                <Field label="보컬" value={intake.vocals_allowed} icon="🎤" />
+
                 {/* 고급 설정 */}
                 <Field label="리듬" value={intake.rhythm_complexity} />
                 <Field label="선율" value={intake.melody_contour} />
@@ -934,7 +971,7 @@ const CounselorIntakeView: React.FC<{ intake: CounselorIntakeData }> = ({ intake
                 <Field label="불협화음" value={intake.harmonic_dissonance} />
             </div>
 
-             {Array.isArray(intake.exclude_instruments) && intake.exclude_instruments.length > 0 && (
+            {Array.isArray(intake.exclude_instruments) && intake.exclude_instruments.length > 0 && (
                 <div className="mt-4 pt-3 border-t border-gray-100">
                     <span className="text-xs font-bold text-red-400 uppercase">제외된 소리</span>
                     <div className="flex flex-wrap gap-2 mt-1">
@@ -952,15 +989,14 @@ const CounselorIntakeView: React.FC<{ intake: CounselorIntakeData }> = ({ intake
 const ChatHistoryView: React.FC<{ chatHistory: ChatMessage[] }> = ({ chatHistory }) => {
     return (
         <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-            <h4 className="font-bold text-gray-800 flex items-center mb-4"><MessageSquare className="w-5 h-5 mr-2 text-blue-500"/>상담 대화 기록</h4>
+            <h4 className="font-bold text-gray-800 flex items-center mb-4"><MessageSquare className="w-5 h-5 mr-2 text-blue-500" />상담 대화 기록</h4>
             <div className="space-y-3 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
                 {chatHistory.map(msg => (
                     <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed ${
-                            msg.role === 'user' 
-                            ? 'bg-indigo-600 text-white rounded-tr-none shadow-md' 
-                            : 'bg-gray-100 text-gray-800 rounded-tl-none'
-                        }`}>
+                        <div className={`max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed ${msg.role === 'user'
+                                ? 'bg-indigo-600 text-white rounded-tr-none shadow-md'
+                                : 'bg-gray-100 text-gray-800 rounded-tl-none'
+                            }`}>
                             {msg.content}
                         </div>
                     </div>
