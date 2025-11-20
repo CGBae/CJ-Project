@@ -285,3 +285,41 @@ class CounselorNote(Base):
     __table_args__ = (
         Index("idx_notes_patient_therapist", "patient_id", "therapist_id"),
     )
+
+class BoardPost(Base):
+    __tablename__ = "board_posts"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    
+    # 작성자 (User 테이블과 연결)
+    author_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    author: Mapped["User"] = relationship("User", backref="posts")
+    
+    # 💡 공유한 음악 (선택 사항 - Track 테이블과 연결)
+    track_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("tracks.id", ondelete="SET NULL"), nullable=True)
+    track: Mapped[Optional["Track"]] = relationship("Track")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    
+    # 댓글 관계 (게시글이 지워지면 댓글도 삭제)
+    comments: Mapped[list["BoardComment"]] = relationship("BoardComment", back_populates="post", cascade="all, delete-orphan")
+
+
+# 💡 [추가] 게시판 댓글 모델
+class BoardComment(Base):
+    __tablename__ = "board_comments"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    
+    # 작성자
+    author_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    author: Mapped["User"] = relationship("User")
+    
+    # 게시글
+    post_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("board_posts.id", ondelete="CASCADE"), nullable=False)
+    post: Mapped["BoardPost"] = relationship("BoardPost", back_populates="comments")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

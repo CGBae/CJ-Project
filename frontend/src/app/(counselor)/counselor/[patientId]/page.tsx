@@ -798,7 +798,6 @@ const CounselorIntakeView: React.FC<{ intake: CounselorIntakeData }> = ({ intake
                             { label: '우울', val: intake.depression },
                             { label: '통증', val: intake.pain }
                         ].map((item) => (
-                            // 값이 있는 경우에만 렌더링
                             item.val !== null && item.val !== undefined ? (
                                 <div key={item.label} className="text-center">
                                     <div className="text-xs text-gray-500 mb-1">{item.label}</div>
