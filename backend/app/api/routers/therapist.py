@@ -81,47 +81,48 @@ async def manual_generate(
     if not session or not session.created_by:
         raise HTTPException(status_code=404, detail=f"Session not found.")
 
-    # 1. 권한 검사
+    # 1. 권한 검사 (기존 코드 유지)
     if current_user.role == "patient":
-        if session.created_by != current_user.id:
-            raise HTTPException(status_code=403, detail="권한이 없습니다.")
+        if session.created_by != current_user.id: raise HTTPException(403, "권한 없음")
     elif current_user.role == "therapist":
-        try:
-            await check_counselor_patient_access(session.created_by, current_user.id, db)
-        except HTTPException:
-            if session.created_by != current_user.id:
-                raise HTTPException(status_code=403, detail="권한이 없습니다.")
-    else:
-         raise HTTPException(status_code=403, detail="권한이 없습니다.")
+        try: await check_counselor_patient_access(session.created_by, current_user.id, db)
+        except: 
+            if session.created_by != current_user.id: raise HTTPException(403, "권한 없음")
+    else: raise HTTPException(403, "권한 없음")
 
-    # 💡 2. 데이터 분리 저장 (핵심!)
+    # 💡 2. 데이터 분리 저장 (여기가 핵심!)
+    full_manual_data = req.manual.model_dump() # 전체 데이터 (VAS, mainInstrument 등 포함)
     
-    # (A) 전체 데이터 (VAS 포함) -> JSON 로그용
-    full_manual_data = req.manual.model_dump()
-    
-    # (B) SQL 데이터 (VAS 제거) -> DB 테이블용
-    # models.py를 수정하지 않았으므로, 테이블에 없는 컬럼을 넣으면 에러가 납니다.
+    # (A) SQL 테이블 저장용 데이터 정제
+    # models.py를 수정하지 않았으므로, 테이블에 없는 모든 필드를 제거해야 합니다.
     sql_manual_data = full_manual_data.copy()
-    for key in ['anxiety', 'depression', 'pain']:
-        sql_manual_data.pop(key, None) # 안전하게 제거
+    
+    # 💥 제거할 필드 목록 (DB 컬럼에 없는 것들)
+    fields_to_remove = [
+        'anxiety', 'depression', 'pain',       # VAS 점수
+        'mainInstrument', 'targetBPM'          # 💡 추가된 편의 필드 (DB엔 없음)
+    ]
+    
+    for key in fields_to_remove:
+        sql_manual_data.pop(key, None) # 있으면 제거, 없으면 패스
 
     # 기존 데이터 삭제 (중복 방지)
     await db.execute(delete(TherapistManualInputs).where(TherapistManualInputs.session_id == req.session_id))
     
-    # DB 모델 생성 및 저장 (SQL용 데이터 사용)
+    # SQL 저장 (정제된 데이터만 사용) -> 이제 에러 안 남!
     manual_db = TherapistManualInputs(
         session_id=req.session_id,
-        **sql_manual_data # 👈 여기에 VAS 점수가 없어야 에러가 안 남
+        **sql_manual_data 
     )
     db.add(manual_db)
     
-    # 스냅샷 저장 (전체 데이터 사용 - 여기에 VAS가 보존됨)
+    # (B) JSON 로그 저장 (전체 데이터 보존) -> 나중에 music.py가 이걸 보고 복구함!
     await db.execute(
         insert(SessionPrompt).values(
             session_id=req.session_id, stage="manual", data=full_manual_data
         )
     )
-    await db.commit() # 💡 커밋
+    await db.commit()
 
     # 3. AI 호출 준비
     extra = build_extra_requirements_for_therapist(full_manual_data)
@@ -151,7 +152,6 @@ async def manual_generate(
     await db.commit()
 
     return {"session_id": req.session_id, "prompt_text": final_music_prompt, "lyrics_text": final_lyrics}
-
 @router.post("/find-patient", response_model=FoundPatientResponse) 
 async def find_patient_by_email_or_id( 
     req: dict, 
