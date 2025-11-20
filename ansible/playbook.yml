@@ -59,13 +59,6 @@
         group: ubuntu
         mode: "0644"
 
-    # === 안전한 재배포 순서: 먼저 중지/정리 → DB만 기동 → readiness 확인 → 전체 기동 ===
-    - name: 7. 기존 컨테이너 중지 및 제거
-      community.docker.docker_compose:
-        project_src: "{{ deploy_dir }}"
-        state: absent
-        remove_orphans: yes
-
     - name: 8. (강력 초기화) DB 볼륨 포함 모든 데이터 삭제
       ansible.builtin.shell: |
         docker-compose down -v --remove-orphans
@@ -102,6 +95,8 @@
     - name: 11. Run Database Migrations (Alembic)
       ansible.builtin.shell:
         cmd: |
+          docker-compose -f docker-compose.yml pull backend
+          
           docker-compose -f docker-compose.yml run --rm backend alembic upgrade head
       args:
         chdir: "{{ deploy_dir }}" # ◀ /home/ubuntu/cj-project 에서 실행
