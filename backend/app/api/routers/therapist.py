@@ -90,33 +90,37 @@ async def manual_generate(
             if session.created_by != current_user.id: raise HTTPException(403, "권한 없음")
     else: raise HTTPException(403, "권한 없음")
 
-    # 💡 2. 데이터 분리 저장 (여기가 핵심!)
-    full_manual_data = req.manual.model_dump() # 전체 데이터 (VAS, mainInstrument 등 포함)
+    # 💡 2. 데이터 분리 저장 (DB 충돌 방지!)
+    full_manual_data = req.manual.model_dump() # 전체 데이터 (모든 필드 포함)
     
     # (A) SQL 테이블 저장용 데이터 정제
-    # models.py를 수정하지 않았으므로, 테이블에 없는 모든 필드를 제거해야 합니다.
     sql_manual_data = full_manual_data.copy()
     
-    # 💥 제거할 필드 목록 (DB 컬럼에 없는 것들)
+    # 💥 제거할 필드 목록 (DB 테이블에 컬럼이 없는 것들)
     fields_to_remove = [
-        'anxiety', 'depression', 'pain',       # VAS 점수
-        'mainInstrument', 'targetBPM'          # 💡 추가된 편의 필드 (DB엔 없음)
+        # 1. VAS 점수 (DB에 없음)
+        'anxiety', 'depression', 'pain',       
+        # 2. 편의 필드 (DB에 없음)
+        'mainInstrument', 'targetBPM',
+        # 3. 💡 [추가] 고급 작곡 옵션 (DB에 컬럼을 안 만들었으므로 제거해야 함!)
+        'harmonic_dissonance', 'rhythm_complexity', 'melody_contour', 'texture_density'
     ]
     
     for key in fields_to_remove:
-        sql_manual_data.pop(key, None) # 있으면 제거, 없으면 패스
+        sql_manual_data.pop(key, None) # 안전하게 제거
 
-    # 기존 데이터 삭제 (중복 방지)
+    # 기존 데이터 삭제
     await db.execute(delete(TherapistManualInputs).where(TherapistManualInputs.session_id == req.session_id))
     
-    # SQL 저장 (정제된 데이터만 사용) -> 이제 에러 안 남!
+    # SQL 저장 (이제 에러 안 남!)
     manual_db = TherapistManualInputs(
         session_id=req.session_id,
         **sql_manual_data 
     )
     db.add(manual_db)
     
-    # (B) JSON 로그 저장 (전체 데이터 보존) -> 나중에 music.py가 이걸 보고 복구함!
+    # (B) JSON 로그 저장 (전체 데이터 보존)
+    # 여기에 모든 필드(고급 옵션 포함)가 저장되므로, music.py가 나중에 불러올 수 있음!
     await db.execute(
         insert(SessionPrompt).values(
             session_id=req.session_id, stage="manual", data=full_manual_data
