@@ -9,7 +9,8 @@ import {
     AlertTriangle, ChevronDown, Plus, ClipboardList, Send, Trash2, XCircle, Info,
     FileText, // 👈 [추가]
     Brain,
-    HeartPulse
+    HeartPulse,
+    Activity
 } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 
@@ -329,47 +330,27 @@ export default function PatientDetailPage() {
     };
 
     const handleToggleDetails = async (trackId: number | string) => {
-        // 1. 이미 열려있는 거면 닫기
         if (expandedTrackId === trackId) {
-            setExpandedTrackId(null);
-            setTrackDetail(null);
-            return;
+            setExpandedTrackId(null); setTrackDetail(null); return;
         }
-
-        // 2. 로딩 시작
-        setExpandedTrackId(trackId); // 패널을 먼저 열고
-        setDetailLoadingId(String(trackId)); // 로딩 스피너 표시
-        setTrackDetail(null); // 기존 데이터 비우기 (깜빡임 방지)
+        
+        setExpandedTrackId(trackId); // 패널 열기
+        setDetailLoadingId(String(trackId)); // 로딩 표시
+        setTrackDetail(null); 
         setError(null);
 
         const token = localStorage.getItem('accessToken');
-        if (!token) {
-            setError("인증 토큰이 없습니다.");
-            setDetailLoadingId(null);
-            return;
-        }
+        if (!token) { setError("인증 토큰이 없습니다."); setDetailLoadingId(null); return; }
 
         try {
-            // 3. 무조건 상세 API 호출 (목록에 있는 정보 무시)
-            const response = await fetch(`${API_URL}/music/track/${trackId}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-
-            if (!response.ok) {
-                const errData = await response.json().catch(() => ({}));
-                throw new Error(errData.detail || "상세 정보 로딩 실패");
-            }
-
-            const data: MusicTrackDetail = await response.json();
-            console.log("상세 정보 수신:", data); // 👈 디버깅용 로그
-            setTrackDetail(data); // 4. 꽉 찬 데이터 저장
-
-        } catch (e: unknown) {
+            const res = await fetch(`${API_URL}/music/track/${trackId}`, { headers: { 'Authorization': `Bearer ${token}` } });
+            if (!res.ok) throw new Error("상세 정보 로딩 실패");
+            const data = await res.json();
+            setTrackDetail(data); // 데이터 설정
+        } catch (e) {
             console.error(e);
-            setError(e instanceof Error ? e.message : "상세 정보를 불러올 수 없습니다.");
-            setExpandedTrackId(null); // 에러 나면 다시 닫기
         } finally {
-            setDetailLoadingId(null); // 로딩 끝
+            setDetailLoadingId(null);
         }
     };
 
@@ -499,300 +480,185 @@ export default function PatientDetailPage() {
 
     // 💡 11. [핵심 수정] JSX 렌더링 (탭 수정, 상세정보 뷰 추가)
     return (
-        <div className="max-w-3xl mx-auto p-4 sm:p-6 bg-gray-50 min-h-screen">
-            <header className="flex justify-between items-center pb-4 border-b border-gray-200 mb-6">
-                <button onClick={() => router.push('/counselor')} className="text-indigo-600 hover:text-indigo-800 flex items-center transition-colors text-sm font-medium">
-                    <ArrowLeft className="h-4 w-4 mr-1" /> 모든 환자 목록
+        <div className="max-w-5xl mx-auto p-6 bg-gray-50 min-h-screen">
+            <header className="flex items-center mb-8">
+                <button onClick={() => router.push('/counselor')} className="text-gray-500 hover:text-indigo-600 transition-colors flex items-center">
+                    <ArrowLeft className="h-5 w-5 mr-1" /> 목록으로
                 </button>
             </header>
 
-            {/* 환자 정보 섹션 (age, 카카오ID 표시) */}
-            <section className="bg-white p-6 border rounded-xl shadow-md mb-8">
-                <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden border">
-                        <User className="w-8 h-8 text-gray-400" />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* 좌측: 환자 프로필 */}
+                <section className="lg:col-span-1 space-y-6">
+                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 text-center">
+                        <div className="w-24 h-24 rounded-full bg-indigo-50 mx-auto flex items-center justify-center mb-4">
+                            <User className="w-10 h-10 text-indigo-600" />
+                        </div>
+                        <h1 className="text-2xl font-bold text-gray-800">{patient.name || '이름 없음'}</h1>
+                        <p className="text-gray-500 text-sm mt-1">{patient.age ? `만 ${patient.age}세` : '나이 정보 없음'}</p>
+                        <div className="mt-4 pt-4 border-t border-gray-100 flex flex-col gap-2 text-sm text-gray-600">
+                             <span className="flex items-center justify-center gap-2">
+                                 📧 {getPatientIdentifier(patient)}
+                             </span>
+                        </div>
                     </div>
-                    <div>
-                        <h1 className="text-3xl font-bold text-gray-900">
-                            {patient.name || '이름 없음'}
-                            {patient.age && (
-                                <span className="text-2xl font-medium text-gray-500 ml-2">(만 {patient.age}세)</span>
-                            )}
-                        </h1>
-                        <p className="text-md text-gray-500">
-                            {getPatientIdentifier(patient)}
-                        </p>
+                    
+                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                        <h3 className="font-semibold text-gray-800 mb-4 flex items-center"><Activity className="w-4 h-4 mr-2 text-green-500"/> 활동 요약</h3>
+                        <div className="space-y-4">
+                            <div className="flex justify-between items-center p-3 bg-gray-50 rounded-xl">
+                                <span className="text-sm text-gray-600">총 상담</span>
+                                <span className="font-bold text-indigo-600">{music.filter(m => m.has_dialog).length}회</span>
+                            </div>
+                            <div className="flex justify-between items-center p-3 bg-gray-50 rounded-xl">
+                                <span className="text-sm text-gray-600">생성된 음악</span>
+                                <span className="font-bold text-green-600">{music.length}곡</span>
+                            </div>
+                        </div>
                     </div>
-                </div>
-                <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                    <div className="text-gray-600">총 상담 횟수:</div>
-                    {/* 💡 [수정] sessions.length -> music.filter(...) */}
-                    <div className="font-medium text-indigo-600">{music.filter(m => m.has_dialog).length}회</div>
-                    <div className="text-gray-600">생성된 음악:</div>
-                    <div className="font-medium text-green-600">{music.length}곡</div>
-                </div>
-            </section>
+                </section>
 
-            {/* 💡 [수정] 탭 메뉴 UI ('logs' 탭 제거) */}
-            <div className="mb-6">
-                <div className="border-b border-gray-200">
-                    <nav className="-mb-px flex space-x-8" aria-label="Tabs">
-                        <button
-                            onClick={() => setActiveTab('music')}
-                            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'music' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-                                }`}
-                        >
-                            음악 목록 ({music.length})
+                {/* 우측: 탭 컨텐츠 */}
+                <section className="lg:col-span-2">
+                    <div className="flex space-x-1 bg-gray-200 p-1 rounded-xl mb-6 w-fit">
+                        <button onClick={() => setActiveTab('music')} className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'music' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                            음악 치료 기록
                         </button>
-                        <button
-                            onClick={() => setActiveTab('memos')}
-                            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'memos' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-                                }`}
-                        >
+                        <button onClick={() => setActiveTab('memos')} className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'memos' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                             상담사 메모
                         </button>
-                    </nav>
-                </div>
-            </div>
-
-            {/* --- 음악 목록 탭 (상세보기 기능 추가) --- */}
-            {activeTab === 'music' && (
-                <section>
-                    <div className="flex justify-between items-center mb-4">
-                        <h2 className="text-xl font-semibold text-gray-800">생성된 음악</h2>
-                        <button
-                            onClick={() => router.push(`/intake/counselor?patientId=${patient.id}`)}
-                            className="flex items-center gap-2 px-3 py-1.5 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600 transition-colors shadow-sm font-medium"
-                        >
-                            <Plus className="w-4 h-4" /> 음악 처방하기
-                        </button>
                     </div>
-                    {music.length === 0 ? (
-                        <div className="text-center p-8 border-2 border-dashed border-gray-300 rounded-lg bg-white mt-6">
-                            <Music className="mx-auto h-12 w-12 text-gray-400" />
-                            <h3 className="mt-2 text-sm font-semibold text-gray-900">생성된 음악 없음</h3>
-                            <p className="mt-1 text-sm text-gray-500">아직 이 환자를 위해 생성된 음악이 없습니다.</p>
-                        </div>
-                    ) : (
-                        <ul className="space-y-3">
-                            {music.map((track) => (
-                                <Fragment key={track.id}>
-                                    <li
-                                        onClick={() => handleToggleDetails(track.id)} // 👈 [추가]
-                                        className={`p-4 bg-white border border-gray-200 rounded-lg shadow-sm transition-all flex items-center justify-between cursor-pointer ${expandedTrackId === track.id ? 'border-indigo-300 shadow-md rounded-b-none' : 'hover:bg-gray-50'
-                                            }`}
-                                    >
-                                        <div className="flex items-center gap-4 min-w-0">
-                                            <div className={`flex-shrink-0 p-3 rounded-full ${currentTrackId === track.id ? 'bg-indigo-600' : 'bg-indigo-100'}`}>
-                                                <Music className={`w-5 h-5 ${currentTrackId === track.id ? 'text-white' : 'text-indigo-600'}`} />
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <p className={`font-semibold text-gray-900 truncate ${currentTrackId === track.id ? 'text-indigo-700' : ''}`}>
-                                                    {getDynamicTitle(track)}
-                                                </p>
-                                                <p className="text-xs text-gray-500 mt-1">
-                                                    {new Date(track.created_at).toLocaleString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                                </p>
-                                            </div>
-                                        </div>
-                                        <div className="flex-shrink-0 ml-4 flex items-center gap-2">
-                                            <button
-                                                onClick={(e) => handlePlay(e, track)}
-                                                className={`p-3 rounded-full transition-colors shadow-sm ${currentTrackId === track.id ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-600 hover:bg-indigo-700'
-                                                    } text-white`}
-                                                aria-label={currentTrackId === track.id ? '일시정지' : '재생'}
-                                            >
-                                                {currentTrackId === track.id ? <Pause className="h-5 w-5 fill-white" /> : <Play className="h-5 w-5 fill-white pl-0.5" />}
-                                            </button>
-                                            {/* 💡 [추가] 펼치기 아이콘 */}
-                                            <ChevronDown className={`h-5 w-5 text-gray-400 transition-transform ${expandedTrackId === track.id ? 'rotate-180' : ''}`} />
-                                        </div>
-                                    </li>
 
-                                    {/* 💡 [핵심 추가] 상세 정보 패널 */}
-                                    {expandedTrackId === track.id && (
-                                        <div className="border border-t-0 rounded-b-lg p-6 bg-white shadow-inner mb-3 -mt-2 animate-in fade-in duration-200">
-                                            {detailLoadingId === track.id ? (
-                                                <div className="flex justify-center items-center p-4">
-                                                    <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
-                                                    <span className="ml-2 text-gray-500">상세 정보 로딩 중...</span>
+                    {activeTab === 'music' && (
+                        <div className="space-y-4">
+                            <div className="flex justify-between items-center mb-2">
+                                <h2 className="text-lg font-bold text-gray-800">치료 세션 목록</h2>
+                                <button onClick={() => router.push(`/intake/counselor?patientId=${patient.id}`)} className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 transition shadow-sm font-medium">
+                                    <Plus className="w-4 h-4" /> 새 처방
+                                </button>
+                            </div>
+                            
+                            {music.length === 0 ? (
+                                <div className="text-center py-12 bg-white rounded-2xl border border-dashed border-gray-300">
+                                    <Music className="w-10 h-10 text-gray-300 mx-auto mb-3"/>
+                                    <p className="text-gray-500">아직 생성된 음악이 없습니다.</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {music.map((track) => (
+                                        <div key={track.id} className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm transition hover:shadow-md">
+                                            {/* 트랙 헤더 */}
+                                            <div onClick={() => handleToggleDetails(track.id)} className="p-5 flex items-center justify-between cursor-pointer bg-white hover:bg-gray-50 transition-colors">
+                                                <div className="flex items-center gap-4 overflow-hidden">
+                                                    <div className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center ${currentTrackId === track.id ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600'}`}>
+                                                        <Music className="w-6 h-6" />
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <h3 className={`font-bold text-lg truncate ${currentTrackId === track.id ? 'text-indigo-700' : 'text-gray-800'}`}>
+                                                            {getDynamicTitle(track)}
+                                                        </h3>
+                                                        <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-2">
+                                                            <span>{new Date(track.created_at).toLocaleDateString()}</span>
+                                                            <span className="w-1 h-1 bg-gray-300 rounded-full"></span>
+                                                            <span>{track.initiator_type === 'therapist' ? '처방됨' : '자가진행'}</span>
+                                                        </p>
+                                                    </div>
                                                 </div>
-                                            ) : !trackDetail ? (
-                                                <Alert type="error" message="상세 정보를 불러오는데 실패했습니다." />
-                                            ) : (
-                                                <div className="space-y-6">
+                                                <div className="flex items-center gap-3">
+                                                    <button 
+                                                        onClick={(e) => handlePlay(e, track)}
+                                                        className={`p-2.5 rounded-full transition-all ${currentTrackId === track.id ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                                                    >
+                                                        {currentTrackId === track.id ? <Pause className="w-5 h-5 fill-current"/> : <Play className="w-5 h-5 fill-current ml-0.5"/>}
+                                                    </button>
+                                                    <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${expandedTrackId === track.id ? 'rotate-180' : ''}`} />
+                                                </div>
+                                            </div>
 
-                                                    {/* 1. [AI 상담] 환자 접수 내용이 있으면 표시 */}
-                                                    {trackDetail.intake_data && (
-                                                        <div className="border-b pb-4">
-                                                            <PatientIntakeView intake={trackDetail.intake_data} />
-                                                        </div>
-                                                    )}
+                                            {/* 상세 정보 패널 */}
+                                            {expandedTrackId === track.id && (
+                                                <div className="border-t border-gray-100 bg-gray-50/50 p-5 animate-in slide-in-from-top-2 duration-200">
+                                                    {detailLoadingId === String(track.id) ? (
+                                                        <div className="flex justify-center py-4"><Loader2 className="w-6 h-6 animate-spin text-indigo-400"/></div>
+                                                    ) : !trackDetail ? (
+                                                        <div className="text-center text-red-500 text-sm">정보를 불러오지 못했습니다.</div>
+                                                    ) : (
+                                                        <div className="space-y-6">
+                                                            {/* AI 상담 데이터 */}
+                                                            {trackDetail.intake_data && <PatientIntakeView intake={trackDetail.intake_data} />}
+                                                            
+                                                            {/* 💡 상담사 처방 데이터 (VAS 시각화 적용) */}
+                                                            {trackDetail.therapist_manual && <CounselorIntakeView intake={trackDetail.therapist_manual} />}
 
-                                                    {/* 2. [작곡/처방] 수동 설정 내용이 있으면 표시 */}
-                                                    {trackDetail.therapist_manual && (
-                                                        <div className="border-b pb-4">
-                                                            <CounselorIntakeView intake={trackDetail.therapist_manual} />
-                                                        </div>
-                                                    )}
+                                                            {/* 가사 */}
+                                                            {trackDetail.lyrics && (
+                                                                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                                                                    <h4 className="font-semibold text-gray-800 text-sm mb-3 flex items-center"><FileText className="w-4 h-4 mr-2 text-indigo-500"/>생성된 가사</h4>
+                                                                    <pre className="text-sm text-gray-600 whitespace-pre-wrap font-sans leading-relaxed">{trackDetail.lyrics}</pre>
+                                                                </div>
+                                                            )}
 
-                                                    {/* 3. [가사] 가사가 있으면 표시 */}
-                                                    {trackDetail.lyrics && (
-                                                        <div className="border-b pb-4">
-                                                            <h4 className="font-semibold text-gray-800 flex items-center mb-2">
-                                                                <FileText className="w-4 h-4 mr-2 text-indigo-600" />생성된 가사
-                                                            </h4>
-                                                            <pre className="p-3 bg-gray-50 rounded-md text-sm text-gray-600 whitespace-pre-wrap font-sans overflow-y-auto max-h-60 border">
-                                                                {trackDetail.lyrics}
-                                                            </pre>
-                                                        </div>
-                                                    )}
-
-                                                    {/* 4. [채팅] 대화 기록이 있으면 표시 */}
-                                                    {trackDetail.chat_history && trackDetail.chat_history.length > 0 && (
-                                                        <div>
-                                                            <ChatHistoryView chatHistory={trackDetail.chat_history} />
-                                                        </div>
-                                                    )}
-
-                                                    {/* 5. 데이터가 하나도 없는 경우 */}
-                                                    {!trackDetail.intake_data && !trackDetail.therapist_manual && !trackDetail.lyrics && (!trackDetail.chat_history || trackDetail.chat_history.length === 0) && (
-                                                        <div className="text-center py-4 text-gray-500 text-sm">
-                                                            표시할 상세 정보가 없습니다.
+                                                            {/* 채팅 내역 */}
+                                                            {trackDetail.chat_history && trackDetail.chat_history.length > 0 && (
+                                                                <ChatHistoryView chatHistory={trackDetail.chat_history} />
+                                                            )}
                                                         </div>
                                                     )}
                                                 </div>
                                             )}
                                         </div>
-                                    )}
-                                </Fragment>
-                            ))}
-                        </ul>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* (메모 탭은 그대로 유지) */}
+                    {activeTab === 'memos' && (
+                        <div className="space-y-6">
+                            {/* ... 메모 리스트 ... */}
+                            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
+                                <h3 className="font-bold text-gray-800 mb-4 flex items-center"><Plus className="w-5 h-5 mr-2 text-indigo-600"/>새 메모 작성</h3>
+                                <form onSubmit={handleCreateMemo}>
+                                    <textarea value={newMemoContent} onChange={(e) => setNewMemoContent(e.target.value)} rows={3} className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all" placeholder="환자 특이사항이나 상담 내용을 기록하세요..." disabled={isSubmittingMemo}/>
+                                    <div className="flex justify-end mt-3">
+                                        <button type="submit" disabled={isSubmittingMemo || !newMemoContent.trim()} className="px-5 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 shadow-sm flex items-center">
+                                            {isSubmittingMemo ? <Loader2 className="w-4 h-4 animate-spin"/> : <Send className="w-4 h-4 mr-1.5"/>} 저장하기
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                            <div className="space-y-4">
+                                {memos.map(note => (
+                                    <div key={note.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 relative group hover:shadow-md transition-all">
+                                        <div className="flex justify-between items-start mb-3">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-xs">
+                                                    {note.therapist_name ? note.therapist_name[0] : 'T'}
+                                                </div>
+                                                <div>
+                                                    <span className="text-sm font-bold text-gray-800">{note.therapist_name || '알 수 없음'}</span>
+                                                    {user && note.therapist_id === user.id && <span className="ml-1.5 text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">나</span>}
+                                                </div>
+                                            </div>
+                                            <span className="text-xs text-gray-400">{formatMemoTime(note.created_at)}</span>
+                                        </div>
+                                        <p className="text-gray-700 text-sm whitespace-pre-wrap leading-relaxed pl-10">{note.content}</p>
+                                        {user && note.therapist_id === user.id && (
+                                            <button onClick={() => handleDeleteMemo(note.id)} disabled={isDeletingMemoId === note.id} className="absolute top-4 right-4 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all">
+                                                {isDeletingMemoId === note.id ? <Loader2 className="w-4 h-4 animate-spin"/> : <Trash2 className="w-4 h-4"/>}
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
                     )}
                 </section>
-            )}
-
-            {/* --- 상담사 메모 탭 (UI 수정됨) --- */}
-            {activeTab === 'memos' && (
-                <section className="space-y-6">
-                    {/* 1. 새 메모 작성 폼 */}
-                    <form onSubmit={handleCreateMemo} className="bg-white p-6 border rounded-xl shadow-md">
-                        <h2 className="text-xl font-semibold text-gray-800 flex items-center mb-4">
-                            <Plus className="w-5 h-5 mr-3 text-indigo-600" />
-                            새 메모 추가
-                        </h2>
-                        <textarea
-                            value={newMemoContent}
-                            onChange={(e) => setNewMemoContent(e.target.value)}
-                            rows={4}
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                            placeholder={patient ? `${patient.name || '환자'}님에 대한 소견이나 다음 상담 계획을 기록하세요...` : '메모 작성...'}
-                            disabled={isSubmittingMemo}
-                        />
-                        {memoError && !isSubmittingMemo && (
-                            <p className="text-sm text-red-600 mt-2">{memoError}</p>
-                        )}
-                        <div className="flex justify-end mt-4">
-                            <button
-                                type="submit"
-                                disabled={isSubmittingMemo || !newMemoContent.trim()}
-                                className="flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg shadow hover:bg-indigo-700 transition-colors disabled:bg-gray-400"
-                            >
-                                {isSubmittingMemo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                                {isSubmittingMemo ? '저장 중...' : '메모 저장'}
-                            </button>
-                        </div>
-                    </form>
-
-                    {/* 2. 메모 목록 (작성자 표시) */}
-                    <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
-                        <h2 className="text-xl font-semibold text-gray-800 flex items-center mb-5">
-                            <ClipboardList className="w-5 h-5 mr-3 text-indigo-500" />
-                            메모 기록 (모든 상담사)
-                        </h2>
-                        {isMemoLoading && memos.length === 0 ? (
-                            <div className="flex justify-center items-center p-4">
-                                <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
-                                <span className="ml-2 text-gray-500">메모 로딩 중...</span>
-                            </div>
-                        ) : !isMemoLoading && memoError && memos.length === 0 ? (
-                            <Alert type="error" message={memoError} />
-                        ) : memos.length === 0 ? (
-                            <div className="p-6 text-center bg-gray-50 rounded-lg border border-gray-200">
-                                <p className="text-gray-500">아직 작성된 메모가 없습니다.</p>
-                            </div>
-                        ) : (
-                            <ul className="space-y-4 max-h-[600px] overflow-y-auto pr-2">
-                                {memos.map(note => (
-                                    <li key={note.id} className="p-4 bg-gray-50 border border-gray-200 rounded-lg shadow-sm">
-                                        <p className="text-gray-700 whitespace-pre-wrap text-sm">
-                                            {note.content}
-                                        </p>
-                                        <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-200">
-                                            <p className="text-xs text-gray-500">
-                                                <span className="font-medium text-gray-700">
-                                                    {note.therapist_name || '알 수 없음'}
-                                                    {user && note.therapist_id === user.id && ' (나)'}
-                                                </span>
-                                                <span className="mx-1.5">|</span>
-                                                {formatMemoTime(note.created_at)}
-                                                {note.created_at !== note.updated_at && ' (수정됨)'}
-                                            </p>
-                                            {user && note.therapist_id === user.id && (
-                                                <button
-                                                    onClick={() => handleDeleteMemo(note.id)}
-                                                    disabled={isDeletingMemoId === note.id}
-                                                    className="p-1 text-red-500 hover:bg-red-100 rounded-md disabled:opacity-50"
-                                                    aria-label="메모 삭제"
-                                                >
-                                                    {isDeletingMemoId === note.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                                                </button>
-                                            )}
-                                        </div>
-                                    </li>
-                                ))}
-                            </ul>
-                        )}
-                    </div>
-                </section>
-            )}
-
-        </div>
-    );
-}
-
-// 💡 12. [추가] Alert 컴포넌트
-interface AlertProps {
-    type: 'error' | 'info' | 'success';
-    message: string | null;
-    onClose?: () => void;
-}
-const Alert: React.FC<AlertProps> = ({ type, message, onClose }) => {
-    if (!message) return null;
-    let bgColor, Icon;
-    switch (type) {
-        case 'error':
-            bgColor = 'bg-red-100 border-red-400 text-red-700'; Icon = AlertTriangle; break;
-        case 'success':
-            bgColor = 'bg-green-100 border-green-400 text-green-700'; Icon = CheckCircle; break;
-        case 'info':
-        default:
-            bgColor = 'bg-blue-100 border-blue-400 text-blue-700'; Icon = Info; break;
-    }
-    return (
-        <div className={`p-4 border rounded-xl flex items-start ${bgColor} relative mb-6`} role="alert">
-            <Icon className="w-5 h-5 mr-3 flex-shrink-0 mt-0.5" />
-            <div className="flex-1">
-                <p className="text-sm">{message}</p>
             </div>
-            {onClose && (
-                <button onClick={onClose} className="absolute top-2 right-2 p-1 rounded-full hover:bg-black hover:bg-opacity-10">
-                    <XCircle className="w-4 h-4" />
-                </button>
-            )}
         </div>
     );
-};
+}
 
 // 💡 13. [추가] 상세정보 뷰 헬퍼 컴포넌트
 
@@ -807,6 +673,8 @@ const PatientIntakeView: React.FC<{ intake: SimpleIntakeData }> = ({ intake }) =
         if (score <= 7) return 'bg-yellow-400';
         return 'bg-red-500';
     };
+
+    
 
     return (
         <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
@@ -904,9 +772,8 @@ const CounselorIntakeView: React.FC<{ intake: CounselorIntakeData }> = ({ intake
 
     // VAS 데이터 존재 여부 확인
     const hasVas = (intake.anxiety !== undefined && intake.anxiety !== null) ||
-        (intake.depression !== undefined && intake.depression !== null) ||
-        (intake.pain !== undefined && intake.pain !== null);
-
+                   (intake.depression !== undefined && intake.depression !== null) ||
+                   (intake.pain !== undefined && intake.pain !== null);
     return (
         <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
             <h4 className="font-bold text-gray-800 flex items-center mb-4">
@@ -931,6 +798,7 @@ const CounselorIntakeView: React.FC<{ intake: CounselorIntakeData }> = ({ intake
                             { label: '우울', val: intake.depression },
                             { label: '통증', val: intake.pain }
                         ].map((item) => (
+                            // 값이 있는 경우에만 렌더링
                             item.val !== null && item.val !== undefined ? (
                                 <div key={item.label} className="text-center">
                                     <div className="text-xs text-gray-500 mb-1">{item.label}</div>
@@ -944,7 +812,6 @@ const CounselorIntakeView: React.FC<{ intake: CounselorIntakeData }> = ({ intake
                     </div>
                 </div>
             )}
-
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1">
                 <Field label="분위기" value={intake.mood} icon="✨" />
                 <Field
