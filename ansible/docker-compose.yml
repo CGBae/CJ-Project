@@ -32,7 +32,7 @@ services:
     - "55432:5432"
 
   redpanda:
-    image: docker.redpanda.com/redpanda:v23.3.10
+    image: redpandadata/redpanda:v23.3.10
     command:
       - redpanda start
       - --kafka-addr=0.0.0.0:9092
