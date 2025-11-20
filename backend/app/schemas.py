@@ -43,6 +43,10 @@ class TherapistManualInput(BaseModel):
     melody_contour: Optional[str] = "Neutral"
     texture_density: Optional[str] = "Neutral"
     mainInstrument: Optional[str] = "Piano" 
+
+    anxiety: Optional[int] = None
+    depression: Optional[int] = None
+    pain: Optional[int] = None
     
     class Config:
         from_attributes = True
