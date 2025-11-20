@@ -235,7 +235,7 @@ class Track(Base):
     session_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False
     )
-    track_url: Mapped[str] = mapped_column(Text, nullable=False)
+    track_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     duration_sec: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     quality: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     provider: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -253,6 +253,10 @@ class Track(Base):
     __table_args__ = (
         Index("idx_tracks_session_time", "session_id", "created_at"),
     )
+    status: Mapped[str] = mapped_column(String, default="QUEUED", nullable=False)
+    task_external_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    prompt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 class CounselorNote(Base):
     __tablename__ = "counselor_notes"

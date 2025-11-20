@@ -31,5 +31,42 @@ services:
     ports:
     - "55432:5432"
 
+  redpanda:
+    image: docker.redpanda.com/vectorized/redpanda:v23.3.10
+    command:
+      - redpanda start
+      - --kafka-addr=0.0.0.0:9092
+      - --advertise-kafka-addr=redpanda:9092
+      - --overprovisioned
+      - --smp=1
+      - --memory=1024M
+      - --reserve-memory=0M
+      - --node-id=0
+    ports:
+      - "9092:9092"
+      - "9644:9644" # admin
+    restart: always
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: redpanda:9092
+    ports:
+      - "8081:8080"
+    depends_on:
+      - redpanda
+    restart: always
+
+  music-worker:
+    image: ${BACKEND_IMAGE_TAG}
+    depends_on:
+      - backend
+      - redpanda
+    restart: always
+    env_file:
+      - ./backend.env   # 아래에서 설명할 .env(or backend.env)
+    command: ["python", "-m", "app.workers.music_worker"]
+
 volumes:
   db-data:

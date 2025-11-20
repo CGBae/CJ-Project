@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status # 💡 1. s
 from pydantic import BaseModel, Field
 from sqlalchemy import select, update, insert, desc
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
+from typing import List, Literal, Optional
 import json
 from app.schemas import MusicTrackInfo, MusicTrackDetail, SimpleChatMessage, SimpleIntakeData, TherapistManualInput
 from app.db import get_db
@@ -14,6 +14,8 @@ from sqlalchemy.orm import joinedload, selectinload
 # 1. 함수 이름을 'compose_and_save'으로 변경합니다.
 from app.services.elevenlabs_client import compose_and_save, ElevenLabsError
 from app.api.routers.therapist import check_counselor_patient_access
+from app.kafka import producer
+import os, uuid, datetime as dt
 router = APIRouter(prefix="/music", tags=["music"])
 
 # --- (ComposeReq, ComposeResp 클래스는 변경 없음) ---
@@ -25,24 +27,9 @@ class ComposeReq(BaseModel):
 
 class ComposeResp(BaseModel):
     session_id: int
-    track_url: str
-
-# 💡 3. [추가] therapist.py의 권한 확인 헬퍼 함수
-async def check_counselor_patient_access(
-    patient_id: int,
-    counselor_id: int,
-    db: AsyncSession
-):
-    """(헬퍼 함수) 상담사가 해당 환자에게 접근 권한(ACCEPTED)이 있는지 확인"""
-    q = select(Connection).where(
-        Connection.therapist_id == counselor_id,
-        Connection.patient_id == patient_id,
-        Connection.status == "ACCEPTED"
-    )
-    connection = (await db.execute(q)).scalar_one_or_none()
-    if not connection:
-        raise HTTPException(status_code=403, detail="이 환자에 대한 접근 권한이 없습니다.")
-
+    track_id: int
+    status: Literal["QUEUED", "PROCESSING", "READY", "FAILED"]
+    track_url: Optional[str] = None
 
 # --- 💡 4. [핵심 수정] /compose API 권한 검사 로직 변경 ---
 @router.post("/compose", response_model=ComposeResp)
@@ -79,43 +66,46 @@ async def compose_music(
 
     # --- (이하 로직은 변경 없음) ---
     
-    # 2) 프롬프트 확인
-    prompt = (session.prompt or {}).get("text")
-    if not prompt:
-        q = select(SessionPrompt.data).where(
-            SessionPrompt.session_id == req.session_id,
-            SessionPrompt.stage == "final",
-        ).order_by(SessionPrompt.created_at.desc())
-        row = (await db.execute(q)).first()
-        prompt = (row[0] or {}).get("text") if row else None
-    if not prompt:
-        raise HTTPException(400, "no final prompt for this session")
-
-    # 3) ElevenLabs 호출
-    try:
-        track_url = await compose_and_save(
-            prompt,
-            music_length_ms=req.music_length_ms,
-            force_instrumental=req.force_instrumental,
-            extra=req.extra,
-        )
-    except ElevenLabsError as e:
-        raise HTTPException(502, f"music provider error: {e}")
-
-    # 4) DB 기록
-    await db.execute(insert(Track).values(
+    prompt_data = session.prompt if isinstance(session.prompt, dict) else {}
+    prompt_text = prompt_data.get("music_prompt") or prompt_data.get("text") or ""
+    
+    # 2) Track 레코드 생성
+    new_track = Track(
         session_id=req.session_id,
-        track_url=track_url,
-        duration_sec=int(req.music_length_ms / 1000),
+        status="QUEUED",
         provider="ElevenLabs",
+        prompt=prompt_text,
+        duration_sec=int(req.music_length_ms / 1000),
         quality=req.extra.get("preset") if req.extra else None,
-    ))
-    await db.execute(update(Session).where(Session.id==req.session_id).values(
-        track_url=track_url, provider="ElevenLabs"
-    ))
+    )
+    db.add(new_track)
+    await db.flush()  # new_track.id 확보
+
+    # 3) Kafka 메시지 발행
+    if not producer:
+        raise HTTPException(503, "music queue not available")
+    payload = {
+        "task_id": new_track.id,
+        "session_id": req.session_id,
+        "prompt": prompt_text,
+        "music_length_ms": req.music_length_ms,
+        "force_instrumental": req.force_instrumental,
+        "extra": req.extra or {},
+    }
+    await producer.send_and_wait(
+        os.getenv("KAFKA_TOPIC_REQUESTS", "music.gen.requests"),
+        key=new_track.id,
+        value=payload,
+    )
+
     await db.commit()
 
-    return ComposeResp(session_id=req.session_id, track_url=track_url)
+    return {
+        "session_id": req.session_id,
+        "track_id": new_track.id,
+        "status": new_track.status,
+        "track_url": None,
+    }
 
 
 # --- (/my API는 변경 없음, track_url 필드명 수정된 버전) ---
