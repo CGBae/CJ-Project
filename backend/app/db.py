@@ -14,6 +14,8 @@ class Base(DeclarativeBase):
 engine = create_async_engine(ASYNC_DB_URL, echo=False, pool_pre_ping=True)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
+async_session_maker = SessionLocal
+
 async def get_db():
     async with SessionLocal() as session:
         yield session
