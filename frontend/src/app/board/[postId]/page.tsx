@@ -6,7 +6,7 @@ import { ArrowLeft, MessageCircle, Send, User, Calendar, Music, Play, Pause } fr
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-// 💡 1. 구체적인 타입 정의 (any 제거)
+// 💡 1. 구체적인 타입 정의 (any  제거)
 interface Comment {
     id: number;
     content: string;
