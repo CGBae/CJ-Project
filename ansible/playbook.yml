@@ -59,21 +59,13 @@
         group: ubuntu
         mode: "0644"
 
-<<<<<<< HEAD
-=======
-
->>>>>>> origin/main
     - name: 7. 기존 컨테이너 중지 및 제거
       community.docker.docker_compose:
         project_src: "{{ deploy_dir }}"
         state: absent
         remove_orphans: yes
 
-<<<<<<< HEAD
     # ⬇️⬇️ (필수!) 8. DB 데이터 볼륨 완전 삭제 (초기화) ⬇️⬇️
-=======
-# ⬇️⬇️ (필수!) 8. DB 데이터 볼륨 완전 삭제 (초기화) ⬇️⬇️
->>>>>>> origin/main
     - name: 8. (초기화) DB 데이터 볼륨(db-data) 완전 삭제
       community.docker.docker_volume:
         name: cj-project_db-data # ◀ docker-compose가 생성한 볼륨 이름
@@ -81,10 +73,7 @@
         force: yes
       no_log: true # ◀ 에러 시에도 무시하고 진행 (볼륨이 원래 없었을 수 있으므로)
       failed_when: false
-<<<<<<< HEAD
 
-=======
->>>>>>> origin/main
     # - name: 8. (강력 초기화) DB 볼륨 포함 모든 데이터 삭제
     #   ansible.builtin.shell: |
     #     docker-compose down -v --remove-orphans
