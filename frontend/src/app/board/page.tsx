@@ -1,13 +1,20 @@
 'use client';
-
+import { Suspense } from "react";
 import React, { useState, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams} from 'next/navigation';
 import { 
     MessageCircle, Plus, Loader2, Music, User, Calendar, ShieldCheck, 
     Trash2
 } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 
+export default function BoardListPage() {
+  return (
+    <Suspense fallback={<div />}>
+      <BoardListPageContent />
+    </Suspense>
+  );
+}
 
 function getApiUrl() {
   // 1순위: 내부 통신용 (docker 네트워크 안에서 backend 이름으로 호출)
@@ -55,7 +62,7 @@ interface RawMusicData {
     music_title?: string; // /therapist/music-list 에서 사용
     created_at: string;
 }
-export default function BoardListPage() {
+function BoardListPageContent() {
     const router = useRouter();
     const searchParams = useSearchParams()
     const { user, isAuthed } = useAuth();
@@ -112,7 +119,7 @@ export default function BoardListPage() {
             const endpoint = user?.role === 'therapist' ? `${API_URL}/therapist/music-list` : `${API_URL}/music/my`;
             const res = await fetch(endpoint, { headers: { 'Authorization': `Bearer ${token}` }});
             
-            if (res.ok) {
+             if (res.ok) {
                 // 💡 [수정] 응답 데이터를 RawMusicData[] 타입으로 단언하여 any 제거
                 const data = await res.json() as RawMusicData[];
                 
