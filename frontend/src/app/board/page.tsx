@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { 
     MessageCircle, Plus, Loader2, Music, User, Calendar, ShieldCheck, 
     Trash2
@@ -48,8 +48,16 @@ interface BoardPost {
     } | null;
 }
 
+interface RawMusicData {
+    id?: number;          // /music/my 에서 사용
+    music_id?: number;    // /therapist/music-list 에서 사용
+    title?: string;       // /music/my 에서 사용
+    music_title?: string; // /therapist/music-list 에서 사용
+    created_at: string;
+}
 export default function BoardListPage() {
     const router = useRouter();
+    const searchParams = useSearchParams()
     const { user, isAuthed } = useAuth();
     
     const [posts, setPosts] = useState<BoardPost[]>([]);
@@ -65,46 +73,58 @@ export default function BoardListPage() {
     const [selectedTrackId, setSelectedTrackId] = useState<number | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // 💡 [수정] 게시글 목록 가져오기 (모드에 따라 API 변경)
+    useEffect(() => {
+        const writeMode = searchParams.get('write');
+        const trackId = searchParams.get('trackId');
+        const trackTitle = searchParams.get('title');
+
+        if (writeMode === 'true') {
+            setShowWriteForm(true);
+            if (trackId) {
+                setSelectedTrackId(Number(trackId));
+                // (음악 목록을 아직 못 불러왔어도 ID는 세팅해둠)
+            }
+            if (trackTitle) {
+                setNewTitle(`[음악 공유] ${decodeURIComponent(trackTitle)}`);
+                setNewContent('이 환자를 위한 맞춤형 음악을 공유합니다. 함께 들어보세요!');
+            }
+        }
+    }, [searchParams]);
+
     const fetchPosts = async (mode: 'all' | 'my') => {
         setLoading(true);
         try {
             const endpoint = mode === 'my' ? `${API_URL}/board/my` : `${API_URL}/board/`;
             const headers: HeadersInit = {};
             const token = localStorage.getItem('accessToken');
-            
-            // 'my' 모드일 땐 토큰 필수, 'all'이어도 토큰 있으면 넣음 (선택)
             if (token) headers['Authorization'] = `Bearer ${token}`;
-            else if (mode === 'my') {
-                 alert("로그인이 필요합니다.");
-                 setViewMode('all'); // 강제로 전체보기로 전환
-                 return; 
-            }
-
+            
             const res = await fetch(endpoint, { headers });
-            if (res.ok) {
-                const data: BoardPost[] = await res.json();
-                setPosts(data);
-            }
-        } catch (e) { 
-            console.error("게시글 로딩 오류:", e); 
-        } finally {
-            setLoading(false);
-        }
+            if (res.ok) setPosts(await res.json());
+        } catch (e) {} finally { setLoading(false); }
     };
 
     const fetchMyMusic = async () => {
         const token = localStorage.getItem('accessToken');
         if (!token) return;
         try {
-            const res = await fetch(`${API_URL}/music/my`, { 
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            // 상담사는 전체 환자 음악 목록, 환자는 내 음악 목록
+            const endpoint = user?.role === 'therapist' ? `${API_URL}/therapist/music-list` : `${API_URL}/music/my`;
+            const res = await fetch(endpoint, { headers: { 'Authorization': `Bearer ${token}` }});
+            
             if (res.ok) {
-                const data: MusicTrack[] = await res.json();
-                setMyMusic(data);
+                // 💡 [수정] 응답 데이터를 RawMusicData[] 타입으로 단언하여 any 제거
+                const data = await res.json() as RawMusicData[];
+                
+                const formattedData: MusicTrack[] = data.map((m) => ({
+                    // 두 API의 필드 중 존재하는 값을 사용 (둘 다 없으면 기본값 0/제목없음 처리)
+                    id: m.music_id ?? m.id ?? 0,
+                    title: m.music_title ?? m.title ?? '제목 없음',
+                    created_at: m.created_at
+                }));
+                setMyMusic(formattedData);
             }
-        } catch (e) {}
+        } catch(e) {}
     };
 
     // 💡 viewMode가 바뀔 때마다 fetch 실행

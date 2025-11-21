@@ -610,3 +610,78 @@ async def delete_counselor_note(
         raise HTTPException(500, f"메모 삭제 실패: {e}")
     
     return None
+
+@router.get("/music-list", response_model=List[RecentMusicTrack])
+async def get_all_patient_music_for_counselor(
+    skip: int = 0,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if current_user.role != "therapist":
+        raise HTTPException(status_code=403, detail="상담사만 이용 가능한 기능입니다.")
+
+    # 1. 담당 환자 ID 조회
+    patient_id_q = select(Connection.patient_id).where(
+        Connection.therapist_id == current_user.id,
+        Connection.status == "ACCEPTED"
+    )
+    patient_ids_result = await db.execute(patient_id_q)
+    patient_ids = patient_ids_result.scalars().all()
+
+    if not patient_ids:
+        return []
+
+    # 2. 해당 환자들의 트랙 조회 (최신순)
+    tracks_q = (
+        select(Track)
+        .join(Session, Track.session_id == Session.id)
+        .join(User, Session.created_by == User.id)
+        .options(
+            joinedload(Track.session).options(
+                joinedload(Session.creator),
+                joinedload(Session.patient_intake)
+            )
+        )
+        .where(Session.created_by.in_(patient_ids))
+        .order_by(Track.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    tracks_result = await db.execute(tracks_q)
+    tracks = tracks_result.scalars().unique().all()
+    
+    response_tracks = []
+    for track in tracks:
+        session = track.session
+        intake = session.patient_intake
+        
+        title = f"AI 트랙 (세션 {track.session_id})" 
+        if session.initiator_type == "therapist":
+            title = f"상담사 처방 음악"
+        elif session.initiator_type == "patient":
+            if intake and intake.has_dialog:
+                title = f"AI 상담 기반 음악"
+            else:
+                title = f"작곡 체험 음악"
+        
+        # 프롬프트 정보 안전하게 가져오기
+        prompt_text = "정보 없음"
+        if session.prompt:
+            if isinstance(session.prompt, dict):
+                prompt_text = session.prompt.get("music_prompt") or session.prompt.get("text") or "정보 없음"
+            elif isinstance(session.prompt, str):
+                prompt_text = session.prompt
+
+        response_tracks.append(RecentMusicTrack(
+            music_id=track.id,
+            music_title=title,
+            patient_id=track.session.created_by,
+            patient_name=track.session.creator.name or track.session.creator.email,
+            session_id=session.id,
+            initiator_type=session.initiator_type,
+            has_dialog=intake.has_dialog if intake else False,
+            created_at=track.created_at,
+            is_favorite=track.is_favorite
+        ))
+    return response_tracks
