@@ -59,13 +59,13 @@
         group: ubuntu
         mode: "0644"
 
-    # - name: 8. (강력 초기화) DB 볼륨 포함 모든 데이터 삭제
-    #   ansible.builtin.shell: |
-    #     docker-compose down -v --remove-orphans
-    #   args:
-    #     chdir: "{{ deploy_dir }}"
-    #   # 처음 배포라 컨테이너가 없거나 에러가 나도 무시하고 진행
-    #   ignore_errors: yes
+    - name: 8. (강력 초기화) DB 볼륨 포함 모든 데이터 삭제
+      ansible.builtin.shell: |
+        docker-compose down -v --remove-orphans
+      args:
+        chdir: "{{ deploy_dir }}"
+      # 처음 배포라 컨테이너가 없거나 에러가 나도 무시하고 진행
+      ignore_errors: yes
 
 
     - name: 9. DB만 먼저 올리기
