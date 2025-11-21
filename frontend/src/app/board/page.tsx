@@ -7,9 +7,10 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-// 💡 1. 구체적인 타입 정의 (any 제거)
+// 💡 타입 정의 (any 제거)
 interface MusicTrack {
     id: number;
     title: string;
@@ -21,57 +22,59 @@ interface BoardPost {
     title: string;
     content: string;
     author_name: string;
-    author_role: string; // 👈 상담사 구분용
+    author_role: string; 
     created_at: string;
     comments_count: number;
     track?: {
         id: number;
         title: string;
-        audioUrl?: string; // (목록에서는 안 쓰지만 타입 호환용)
-    } | null; // null 허용
+        audioUrl?: string;
+    } | null;
 }
 
 export default function BoardListPage() {
     const router = useRouter();
     const { isAuthed } = useAuth();
     
-    // 💡 2. useState에 제네릭 타입 적용
     const [posts, setPosts] = useState<BoardPost[]>([]);
     const [myMusic, setMyMusic] = useState<MusicTrack[]>([]);
     const [loading, setLoading] = useState(true);
     
-    // 작성 폼 상태
     const [showWriteForm, setShowWriteForm] = useState(false);
     const [newTitle, setNewTitle] = useState('');
     const [newContent, setNewContent] = useState('');
     const [selectedTrackId, setSelectedTrackId] = useState<number | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    // 게시글 목록 가져오기
     const fetchPosts = async () => {
         try {
             const res = await fetch(`${API_URL}/board/`);
-            if(res.ok) {
-                // 💡 응답 데이터를 BoardPost[]로 단언
+            if (res.ok) {
                 const data: BoardPost[] = await res.json();
                 setPosts(data);
+            } else {
+                console.error("게시글 로딩 실패:", res.status);
             }
-        } catch(e) { 
-            console.error(e); 
+        } catch (e) { 
+            console.error("게시글 로딩 오류:", e); 
         }
     };
 
+    // 내 음악 목록 가져오기
     const fetchMyMusic = async () => {
         const token = localStorage.getItem('accessToken');
-        if(!token) return;
+        if (!token) return;
         try {
-            const res = await fetch(`${API_URL}/music/my`, { headers: { 'Authorization': `Bearer ${token}` }});
-            if(res.ok) {
-                // 💡 응답 데이터를 MusicTrack[]로 단언
+            const res = await fetch(`${API_URL}/music/my`, { 
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
                 const data: MusicTrack[] = await res.json();
                 setMyMusic(data);
             }
-        } catch(e) { 
-            console.error(e); 
+        } catch (e) { 
+            console.error("음악 목록 로딩 오류:", e); 
         }
     };
 
@@ -81,27 +84,46 @@ export default function BoardListPage() {
 
     const handleCreatePost = async (e: React.FormEvent) => {
         e.preventDefault();
-        if(!newTitle.trim() || !newContent.trim()) return;
+        if (!newTitle.trim() || !newContent.trim()) return;
         
         setIsSubmitting(true);
         const token = localStorage.getItem('accessToken');
-        if(!token) { alert("로그인이 필요합니다."); router.push('/login'); return; }
+        if (!token) { 
+            alert("로그인이 필요합니다."); 
+            router.push('/login'); 
+            return; 
+        }
 
         try {
             const res = await fetch(`${API_URL}/board/`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ title: newTitle, content: newContent, track_id: selectedTrackId })
+                headers: { 
+                    'Content-Type': 'application/json', 
+                    'Authorization': `Bearer ${token}` 
+                },
+                body: JSON.stringify({ 
+                    title: newTitle, 
+                    content: newContent, 
+                    track_id: selectedTrackId 
+                })
             });
-            if(res.ok) {
+
+            if (res.ok) {
                 setShowWriteForm(false);
-                setNewTitle(''); setNewContent(''); setSelectedTrackId(null);
+                setNewTitle(''); 
+                setNewContent(''); 
+                setSelectedTrackId(null);
                 fetchPosts(); // 목록 갱신
             } else {
-                alert("게시글 작성 실패");
+                const errData = await res.json().catch(() => ({}));
+                alert(`게시글 작성 실패: ${errData.detail || res.statusText}`);
             }
-        } catch(e) { console.error(e); } 
-        finally { setIsSubmitting(false); }
+        } catch (e) { 
+            console.error("게시글 작성 오류:", e); 
+            alert("게시글 작성 중 오류가 발생했습니다.");
+        } finally { 
+            setIsSubmitting(false); 
+        }
     };
 
     return (
@@ -125,12 +147,12 @@ export default function BoardListPage() {
                     <form onSubmit={handleCreatePost} className="space-y-4">
                         <input 
                             type="text" placeholder="제목을 입력하세요" 
-                            value={newTitle} onChange={e=>setNewTitle(e.target.value)}
+                            value={newTitle} onChange={e => setNewTitle(e.target.value)}
                             className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                         />
                         <textarea 
                             rows={5} placeholder="내용을 입력하세요" 
-                            value={newContent} onChange={e=>setNewContent(e.target.value)}
+                            value={newContent} onChange={e => setNewContent(e.target.value)}
                             className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                         />
                         <div>
@@ -146,7 +168,7 @@ export default function BoardListPage() {
                             </select>
                         </div>
                         <div className="flex justify-end gap-2">
-                            <button type="button" onClick={()=>setShowWriteForm(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">취소</button>
+                            <button type="button" onClick={() => setShowWriteForm(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">취소</button>
                             <button type="submit" disabled={isSubmitting} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-gray-400">
                                 {isSubmitting ? '등록 중...' : '등록하기'}
                             </button>
@@ -156,7 +178,9 @@ export default function BoardListPage() {
             )}
 
             {/* 게시글 목록 */}
-            {loading ? <div className="text-center py-10"><Loader2 className="w-8 h-8 animate-spin mx-auto text-indigo-600"/></div> : (
+            {loading ? (
+                <div className="text-center py-10"><Loader2 className="w-8 h-8 animate-spin mx-auto text-indigo-600"/></div>
+            ) : (
                 <div className="space-y-4">
                     {posts.length === 0 && <p className="text-center text-gray-500 py-10">아직 게시글이 없습니다.</p>}
                     {posts.map(post => (
