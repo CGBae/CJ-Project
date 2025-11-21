@@ -6,10 +6,22 @@ from typing import List, Optional
 
 from app.db import get_db
 from app.models import User, BoardPost, BoardComment, Track
-from app.schemas import PostCreate, PostResponse, PostDetailResponse, CommentCreate, CommentResponse
+# 💡 [수정] BoardTrackInfo 추가
+from app.schemas import PostCreate, PostResponse, PostDetailResponse, CommentCreate, CommentResponse, BoardTrackInfo
 from app.services.auth_service import get_current_user
 
 router = APIRouter(prefix="/board", tags=["board"])
+
+# 💡 헬퍼 함수: 트랙 정보를 안전하게 변환
+def map_track_to_schema(track: Track | None) -> BoardTrackInfo | None:
+    if not track: return None
+    # 트랙 제목은 DB에 없으므로 임의로 생성하거나 session 정보를 로드해서 만들어야 함.
+    # 여기서는 간단하게 ID 기반으로 생성
+    return BoardTrackInfo(
+        id=track.id,
+        title=f"공유된 음악 #{track.id}", 
+        audioUrl=track.track_url
+    )
 
 # 1. 게시글 목록 조회
 @router.get("/", response_model=List[PostResponse])
@@ -30,7 +42,6 @@ async def get_posts(
     
     response = []
     for post in posts:
-        # 댓글 수 카운트
         count_q = select(func.count(BoardComment.id)).where(BoardComment.post_id == post.id)
         comments_count = (await db.execute(count_q)).scalar() or 0
         
@@ -40,53 +51,48 @@ async def get_posts(
             content=post.content,
             author_name=post.author.name or "익명", 
             author_id=post.author_id,
-            author_role=post.author.role, 
+            author_role=post.author.role,
             created_at=post.created_at, 
-            track=post.track, 
+            # 💡 [핵심] 트랙 정보 수동 매핑
+            track=map_track_to_schema(post.track),
             comments_count=comments_count
         ))
     return response
 
-# 2. 💡 [수정] 게시글 작성 (안전한 관계 로딩 추가)
+# 2. 게시글 작성
 @router.post("/", response_model=PostResponse)
 async def create_post(
     post_in: PostCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # 1. DB 저장
     new_post = BoardPost(
         title=post_in.title,
         content=post_in.content,
         author_id=current_user.id,
-        track_id=post_in.track_id # (None이면 DB에 NULL로 들어감)
+        track_id=post_in.track_id
     )
     db.add(new_post)
     await db.commit()
     await db.refresh(new_post)
     
-    # 💡 2. [핵심] 관계 데이터 로딩을 위해 다시 조회 (Eager Loading)
-    # (db.refresh만으로는 relationship 데이터가 로딩되지 않아 에러 발생 가능)
     q = (
         select(BoardPost)
         .where(BoardPost.id == new_post.id)
-        .options(
-            joinedload(BoardPost.author), 
-            joinedload(BoardPost.track)
-        )
+        .options(joinedload(BoardPost.author), joinedload(BoardPost.track))
     )
     post = (await db.execute(q)).scalar_one()
     
-    # 3. 응답 반환
     return PostResponse(
         id=post.id, 
         title=post.title, 
         content=post.content,
         author_name=post.author.name or "익명", 
         author_id=post.author_id,
-        author_role=post.author.role, 
+        author_role=post.author.role,
         created_at=post.created_at, 
-        track=post.track, 
+        # 💡 [핵심] 트랙 정보 수동 매핑
+        track=map_track_to_schema(post.track),
         comments_count=0
     )
 
@@ -99,7 +105,6 @@ async def get_post_detail(post_id: int, db: AsyncSession = Depends(get_db)):
         .options(
             joinedload(BoardPost.author), 
             joinedload(BoardPost.track),
-            # 댓글 작성자 정보까지 로딩
             selectinload(BoardPost.comments).joinedload(BoardComment.author)
         )
     )
@@ -112,7 +117,7 @@ async def get_post_detail(post_id: int, db: AsyncSession = Depends(get_db)):
             content=c.content, 
             author_name=c.author.name or "익명", 
             author_id=c.author_id, 
-            author_role=c.author.role, 
+            author_role=c.author.role,
             created_at=c.created_at
         ) for c in post.comments
     ]
@@ -123,14 +128,15 @@ async def get_post_detail(post_id: int, db: AsyncSession = Depends(get_db)):
         content=post.content,
         author_name=post.author.name or "익명", 
         author_id=post.author_id,
-        author_role=post.author.role, 
+        author_role=post.author.role,
         created_at=post.created_at, 
-        track=post.track,
+        # 💡 [핵심] 트랙 정보 수동 매핑
+        track=map_track_to_schema(post.track),
         comments_count=len(comments_resp), 
         comments=comments_resp
     )
 
-# 4. 댓글 작성
+# 4. 댓글 작성 (변경 없음)
 @router.post("/{post_id}/comments", response_model=CommentResponse)
 async def create_comment(
     post_id: int,
@@ -155,6 +161,6 @@ async def create_comment(
         content=new_comment.content,
         author_name=current_user.name or "익명", 
         author_id=current_user.id,
-        author_role=current_user.role, 
+        author_role=current_user.role,
         created_at=new_comment.created_at
     )

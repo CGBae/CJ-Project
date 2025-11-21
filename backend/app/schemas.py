@@ -284,27 +284,34 @@ class CommentResponse(BaseModel):
     class Config:
         from_attributes = True
 
-# 게시글 생성 (음악 공유 포함)
 class PostCreate(BaseModel):
     title: str = Field(..., min_length=1)
     content: str = Field(..., min_length=1)
-    track_id: Optional[int] = None # 💡 공유할 음악 트랙 ID (선택)
+    track_id: Optional[int] = None 
 
-# 게시글 목록 응답
+# 💡 [핵심 추가] 게시판용 간단 트랙 정보 (MusicTrackInfo 대신 사용)
+class BoardTrackInfo(BaseModel):
+    id: int
+    title: str
+    audioUrl: str # track_url 값을 여기로 매핑
+    
+    class Config:
+        from_attributes = True
+
 class PostResponse(BaseModel):
     id: int
     title: str
     content: str
     author_name: str
-    author_role: str
+    author_role: str 
     author_id: int
     created_at: datetime
-    track: Optional[MusicTrackInfo] = None # 💡 공유된 음악 정보 포함
-    comments_count: int = 0 # 댓글 수
+    # 💡 [수정] MusicTrackInfo -> BoardTrackInfo (단순화)
+    track: Optional[BoardTrackInfo] = None 
+    comments_count: int = 0
     
     class Config:
         from_attributes = True
 
-# 게시글 상세 응답 (댓글 목록 포함)
 class PostDetailResponse(PostResponse):
     comments: List[CommentResponse] = []
