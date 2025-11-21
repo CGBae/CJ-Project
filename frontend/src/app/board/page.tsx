@@ -25,7 +25,6 @@ function getApiUrl() {
 
 const API_URL = getApiUrl();
 
-// 💡 타입 정의 (any 제거)
 interface MusicTrack {
     id: number;
     title: string;
@@ -55,6 +54,7 @@ export default function BoardListPage() {
     const [myMusic, setMyMusic] = useState<MusicTrack[]>([]);
     const [loading, setLoading] = useState(true);
     
+    // 작성 폼 상태
     const [showWriteForm, setShowWriteForm] = useState(false);
     const [newTitle, setNewTitle] = useState('');
     const [newContent, setNewContent] = useState('');
@@ -109,6 +109,14 @@ export default function BoardListPage() {
             return; 
         }
 
+        // 💡 payload 생성
+        const payload = {
+            title: newTitle,
+            content: newContent,
+            // 0이거나 null이면 아예 필드를 보내지 않거나 null로 보냄
+            track_id: selectedTrackId ? selectedTrackId : null 
+        };
+
         try {
             const res = await fetch(`${API_URL}/board/`, {
                 method: 'POST',
@@ -116,11 +124,7 @@ export default function BoardListPage() {
                     'Content-Type': 'application/json', 
                     'Authorization': `Bearer ${token}` 
                 },
-                body: JSON.stringify({ 
-                    title: newTitle, 
-                    content: newContent, 
-                    track_id: selectedTrackId 
-                })
+                body: JSON.stringify(payload)
             });
 
             if (res.ok) {

@@ -40,41 +40,51 @@ async def get_posts(
             content=post.content,
             author_name=post.author.name or "익명", 
             author_id=post.author_id,
-            author_role=post.author.role, # 💡 [추가] 작성자 역할 (필수)
+            author_role=post.author.role, 
             created_at=post.created_at, 
             track=post.track, 
             comments_count=comments_count
         ))
     return response
 
-# 2. 게시글 작성
+# 2. 💡 [수정] 게시글 작성 (안전한 관계 로딩 추가)
 @router.post("/", response_model=PostResponse)
 async def create_post(
     post_in: PostCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    # 1. DB 저장
     new_post = BoardPost(
         title=post_in.title,
         content=post_in.content,
         author_id=current_user.id,
-        track_id=post_in.track_id
+        track_id=post_in.track_id # (None이면 DB에 NULL로 들어감)
     )
     db.add(new_post)
     await db.commit()
     await db.refresh(new_post)
     
-    # 관계 로딩을 위해 다시 조회
-    q = select(BoardPost).where(BoardPost.id == new_post.id).options(joinedload(BoardPost.author), joinedload(BoardPost.track))
+    # 💡 2. [핵심] 관계 데이터 로딩을 위해 다시 조회 (Eager Loading)
+    # (db.refresh만으로는 relationship 데이터가 로딩되지 않아 에러 발생 가능)
+    q = (
+        select(BoardPost)
+        .where(BoardPost.id == new_post.id)
+        .options(
+            joinedload(BoardPost.author), 
+            joinedload(BoardPost.track)
+        )
+    )
     post = (await db.execute(q)).scalar_one()
     
+    # 3. 응답 반환
     return PostResponse(
         id=post.id, 
         title=post.title, 
         content=post.content,
-        author_name=current_user.name or "익명", 
-        author_id=current_user.id,
-        author_role=current_user.role, # 💡 [추가] 작성자 역할 (필수)
+        author_name=post.author.name or "익명", 
+        author_id=post.author_id,
+        author_role=post.author.role, 
         created_at=post.created_at, 
         track=post.track, 
         comments_count=0
@@ -89,6 +99,7 @@ async def get_post_detail(post_id: int, db: AsyncSession = Depends(get_db)):
         .options(
             joinedload(BoardPost.author), 
             joinedload(BoardPost.track),
+            # 댓글 작성자 정보까지 로딩
             selectinload(BoardPost.comments).joinedload(BoardComment.author)
         )
     )
@@ -101,7 +112,7 @@ async def get_post_detail(post_id: int, db: AsyncSession = Depends(get_db)):
             content=c.content, 
             author_name=c.author.name or "익명", 
             author_id=c.author_id, 
-            author_role=c.author.role, # 💡 [추가] 댓글 작성자 역할 (필수)
+            author_role=c.author.role, 
             created_at=c.created_at
         ) for c in post.comments
     ]
@@ -112,7 +123,7 @@ async def get_post_detail(post_id: int, db: AsyncSession = Depends(get_db)):
         content=post.content,
         author_name=post.author.name or "익명", 
         author_id=post.author_id,
-        author_role=post.author.role, # 💡 [추가] 게시글 작성자 역할 (필수)
+        author_role=post.author.role, 
         created_at=post.created_at, 
         track=post.track,
         comments_count=len(comments_resp), 
@@ -144,6 +155,6 @@ async def create_comment(
         content=new_comment.content,
         author_name=current_user.name or "익명", 
         author_id=current_user.id,
-        author_role=current_user.role, # 💡 [추가] 작성자 역할 (필수)
+        author_role=current_user.role, 
         created_at=new_comment.created_at
     )
