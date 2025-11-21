@@ -9,7 +9,7 @@ import { useAuth } from '@/lib/contexts/AuthContext';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-// 💡 1. 타입 정의 (any 대신 구체적인 타입사용)
+// 💡 1. 타입 정의 (any 대신 구체적인 타입 사용)
 interface MusicTrack {
     id: number;
     title: string;
