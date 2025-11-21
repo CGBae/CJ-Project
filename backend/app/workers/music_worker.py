@@ -1,6 +1,6 @@
 # app/workers/music_worker.py
-import os, json, asyncio, httpx, time
-from aiokafka import AIOKafkaConsumer
+import os, json, asyncio, httpx, time # type: ignore
+from aiokafka import AIOKafkaConsumer # type: ignore
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from app.db import async_session_maker

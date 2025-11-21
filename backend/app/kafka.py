@@ -1,6 +1,6 @@
 # app/kafka.py
 import json, os
-from aiokafka import AIOKafkaProducer
+from aiokafka import AIOKafkaProducer # type: ignore
 
 producer: AIOKafkaProducer | None = None
 
