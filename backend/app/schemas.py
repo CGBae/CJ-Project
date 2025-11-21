@@ -278,6 +278,7 @@ class CommentResponse(BaseModel):
     id: int
     content: str
     author_name: str
+    author_role: str
     author_id: int
     created_at: datetime
     class Config:
@@ -295,6 +296,7 @@ class PostResponse(BaseModel):
     title: str
     content: str
     author_name: str
+    author_role: str
     author_id: int
     created_at: datetime
     track: Optional[MusicTrackInfo] = None # 💡 공유된 음악 정보 포함
