@@ -78,6 +78,7 @@ export default function Header() {
                     <NavLink href="/dashboard/counselor" pathname={pathname}><BarChart3 className="w-4 h-4 mr-1.5"/>대시보드</NavLink>
                     <NavLink href="/counselor" pathname={pathname}><User className="w-4 h-4 mr-1.5"/>환자 관리</NavLink>
                     <NavLink href="/intake/counselor" pathname={pathname}><FilePen className="w-4 h-4 mr-1.5"/>음악 처방</NavLink>
+                    <NavLink href="/manage-music" pathname={pathname}><Volume2 className="w-4 h-4 mr-1.5"/>음악 관리</NavLink>
                     <NavLink href="/board" pathname={pathname}><Users className="w-4 h-4 mr-1.5" />커뮤니티</NavLink>
                   </>
                 )}
