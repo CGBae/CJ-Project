@@ -86,6 +86,6 @@ jobs:
         run: |
           curl -X POST \
           -u "${{ secrets.JENKINS_USER }}:${{ secrets.JENKINS_API_TOKEN }}" \
-          "${{ secrets.JENKINS_URL }}/job/Deploy-CJ-Project/buildWithParameters" \
+          "${{ secrets.JENKINS_URL }}/job/Deploy-CJ-Project/buildWithParameters?token=${{ secrets.JENKINS_TRIGGER_TOKEN }}" \
           --data-urlencode "FE_IMAGE_TAG=ghcr.io/${{ steps.set_tag.outputs.TAG_NAME }}/frontend:latest" \
           --data-urlencode "BE_IMAGE_TAG=ghcr.io/${{ steps.set_tag.outputs.TAG_NAME }}/backend:latest"
