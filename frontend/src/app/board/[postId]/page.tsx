@@ -106,7 +106,7 @@ export default function PostDetailPage() {
                     {post.content}
                 </div>
 
-                {/* 음악 플레이어 */}
+                {/* 음악플레이어 */}
                 {post.track && (
                     <div className="bg-indigo-50 p-4 rounded-xl flex items-center justify-between border border-indigo-100">
                         <div className="flex items-center gap-3">
