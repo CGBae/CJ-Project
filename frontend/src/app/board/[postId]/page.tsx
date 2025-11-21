@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { ArrowLeft, MessageCircle, Send, User, Calendar, Music, Play, Pause, ShieldCheck, Loader2 } from 'lucide-react';
-
+import { ArrowLeft, MessageCircle, Send, User, Calendar, Music, Play, Pause, ShieldCheck, Loader2, Trash2 } from 'lucide-react';
+import { useAuth } from '@/lib/contexts/AuthContext';
 function getApiUrl() {
   // 1순위: 내부 통신용 (docker 네트워크 안에서 backend 이름으로 호출)
   if (process.env.INTERNAL_API_URL) {
@@ -21,12 +21,11 @@ function getApiUrl() {
 
 const API_URL = getApiUrl();
 
-// 💡 1. 구체적인 타입 정의 (any 제거)
 interface Comment {
     id: number;
     content: string;
     author_name: string;
-    author_role: string; // 👈 작성자 역할 (상담사 뱃지용)
+    author_role: string;
     created_at: string;
     author_id: number;
 }
@@ -42,15 +41,14 @@ interface BoardPostDetail {
     title: string;
     content: string;
     author_name: string;
-    author_role: string; // 👈 작성자 역할
+    author_role: string; 
     author_id: number;
     created_at: string;
     comments_count: number;
     track?: MusicTrack | null;
-    comments: Comment[]; // 👈 댓글 배열 타입 지정
+    comments: Comment[];
 }
 
-// 헬퍼: 작성자 이름 표시 (상담사 뱃지 포함)
 const AuthorBadge = ({ name, role }: { name: string, role: string }) => (
     <span className="flex items-center">
         {role === 'therapist' 
@@ -65,8 +63,8 @@ export default function PostDetailPage() {
     const router = useRouter();
     const params = useParams();
     const postId = params?.postId as string;
+    const { user } = useAuth(); // 💡 현재 로그인 유저 정보
     
-    // 💡 2. useState에 제네릭 타입 적용 (any 제거)
     const [post, setPost] = useState<BoardPostDetail | null>(null);
     const [comment, setComment] = useState('');
     const [loading, setLoading] = useState(true);
@@ -77,7 +75,6 @@ export default function PostDetailPage() {
         try {
             const res = await fetch(`${API_URL}/board/${postId}`);
             if (res.ok) {
-                // 💡 응답 데이터를 BoardPostDetail 타입으로 단언
                 const data: BoardPostDetail = await res.json();
                 setPost(data);
             }
@@ -93,6 +90,7 @@ export default function PostDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [postId]);
 
+    // 댓글 작성
     const handleSubmitComment = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!comment.trim()) return;
@@ -108,7 +106,46 @@ export default function PostDetailPage() {
             });
             if (res.ok) { 
                 setComment(''); 
-                fetchPost(); // 댓글 작성 후 새로고침
+                fetchPost(); 
+            }
+        } catch (e) { console.error(e); }
+    };
+
+    // 💡 [추가] 게시글 삭제
+    const handleDeletePost = async () => {
+        if (!window.confirm("정말 이 게시글을 삭제하시겠습니까?")) return;
+        const token = localStorage.getItem('accessToken');
+        if (!token) return;
+
+        try {
+            const res = await fetch(`${API_URL}/board/${postId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                alert("게시글이 삭제되었습니다.");
+                router.push('/board'); // 목록으로 이동
+            } else {
+                alert("삭제 권한이 없거나 오류가 발생했습니다.");
+            }
+        } catch (e) { console.error(e); }
+    };
+
+    // 💡 [추가] 댓글 삭제
+    const handleDeleteComment = async (commentId: number) => {
+        if (!window.confirm("댓글을 삭제하시겠습니까?")) return;
+        const token = localStorage.getItem('accessToken');
+        if (!token) return;
+
+        try {
+            const res = await fetch(`${API_URL}/board/comments/${commentId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                fetchPost(); // 새로고침
+            } else {
+                alert("삭제 권한이 없습니다.");
             }
         } catch (e) { console.error(e); }
     };
@@ -129,8 +166,19 @@ export default function PostDetailPage() {
                 <ArrowLeft className="w-4 h-4 mr-1"/> 목록으로
             </button>
 
-            <article className="bg-white p-8 rounded-2xl shadow-sm border border-gray-200 mb-8">
-                <h1 className="text-2xl font-bold text-gray-900 mb-4">{post.title}</h1>
+            <article className="bg-white p-8 rounded-2xl shadow-sm border border-gray-200 mb-8 relative">
+                {/* 💡 게시글 삭제 버튼 (본인일 때만 표시) */}
+                {user && user.id === post.author_id && (
+                    <button 
+                        onClick={handleDeletePost}
+                        className="absolute top-8 right-8 text-gray-400 hover:text-red-500 transition-colors"
+                        title="게시글 삭제"
+                    >
+                        <Trash2 className="w-5 h-5"/>
+                    </button>
+                )}
+
+                <h1 className="text-2xl font-bold text-gray-900 mb-4 pr-10">{post.title}</h1>
                 <div className="flex items-center justify-between text-sm text-gray-500 mb-6 pb-6 border-b border-gray-100">
                     <AuthorBadge name={post.author_name} role={post.author_role} />
                     <span className="flex items-center"><Calendar className="w-4 h-4 mr-1"/> {new Date(post.created_at).toLocaleString()}</span>
@@ -166,14 +214,24 @@ export default function PostDetailPage() {
                 </h3>
                 
                 <div className="space-y-4 mb-6">
-                    {/* 💡 3. map 함수에서 any 제거 (위에서 정의한 Comment 타입 추론됨) */}
                     {post.comments.map((c) => (
-                        <div key={c.id} className={`p-4 rounded-xl ${c.author_role === 'therapist' ? 'bg-green-50 border border-green-100' : 'bg-gray-50'}`}>
+                        <div key={c.id} className={`p-4 rounded-xl relative group ${c.author_role === 'therapist' ? 'bg-green-50 border border-green-100' : 'bg-gray-50'}`}>
                             <div className="flex justify-between items-center mb-2">
                                 <AuthorBadge name={c.author_name} role={c.author_role} />
                                 <span className="text-xs text-gray-400">{new Date(c.created_at).toLocaleDateString()}</span>
                             </div>
-                            <p className="text-gray-700 text-sm">{c.content}</p>
+                            <p className="text-gray-700 text-sm pr-6">{c.content}</p>
+                            
+                            {/* 💡 댓글 삭제 버튼 (본인일 때만 표시) */}
+                            {user && user.id === c.author_id && (
+                                <button 
+                                    onClick={() => handleDeleteComment(c.id)}
+                                    className="absolute top-4 right-4 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                                    title="댓글 삭제"
+                                >
+                                    <Trash2 className="w-4 h-4"/>
+                                </button>
+                            )}
                         </div>
                     ))}
                 </div>

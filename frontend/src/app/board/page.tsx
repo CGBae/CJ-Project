@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
-    MessageCircle, Plus, Loader2, Music, User, Calendar, ShieldCheck 
+    MessageCircle, Plus, Loader2, Music, User, Calendar, ShieldCheck, 
+    Trash2
 } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 
@@ -37,6 +38,7 @@ interface BoardPost {
     content: string;
     author_name: string;
     author_role: string; 
+    author_id: number;
     created_at: string;
     comments_count: number;
     track?: {
@@ -48,35 +50,49 @@ interface BoardPost {
 
 export default function BoardListPage() {
     const router = useRouter();
-    const { isAuthed } = useAuth();
+    const { user, isAuthed } = useAuth();
     
     const [posts, setPosts] = useState<BoardPost[]>([]);
     const [myMusic, setMyMusic] = useState<MusicTrack[]>([]);
     const [loading, setLoading] = useState(true);
     
-    // 작성 폼 상태
+    // 💡 [추가] 탭 상태 ('all' | 'my')
+    const [viewMode, setViewMode] = useState<'all' | 'my'>('all');
+
     const [showWriteForm, setShowWriteForm] = useState(false);
     const [newTitle, setNewTitle] = useState('');
     const [newContent, setNewContent] = useState('');
     const [selectedTrackId, setSelectedTrackId] = useState<number | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // 게시글 목록 가져오기
-    const fetchPosts = async () => {
+    // 💡 [수정] 게시글 목록 가져오기 (모드에 따라 API 변경)
+    const fetchPosts = async (mode: 'all' | 'my') => {
+        setLoading(true);
         try {
-            const res = await fetch(`${API_URL}/board/`);
+            const endpoint = mode === 'my' ? `${API_URL}/board/my` : `${API_URL}/board/`;
+            const headers: HeadersInit = {};
+            const token = localStorage.getItem('accessToken');
+            
+            // 'my' 모드일 땐 토큰 필수, 'all'이어도 토큰 있으면 넣음 (선택)
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+            else if (mode === 'my') {
+                 alert("로그인이 필요합니다.");
+                 setViewMode('all'); // 강제로 전체보기로 전환
+                 return; 
+            }
+
+            const res = await fetch(endpoint, { headers });
             if (res.ok) {
                 const data: BoardPost[] = await res.json();
                 setPosts(data);
-            } else {
-                console.error("게시글 로딩 실패:", res.status);
             }
         } catch (e) { 
             console.error("게시글 로딩 오류:", e); 
+        } finally {
+            setLoading(false);
         }
     };
 
-    // 내 음악 목록 가져오기
     const fetchMyMusic = async () => {
         const token = localStorage.getItem('accessToken');
         if (!token) return;
@@ -88,14 +104,14 @@ export default function BoardListPage() {
                 const data: MusicTrack[] = await res.json();
                 setMyMusic(data);
             }
-        } catch (e) { 
-            console.error("음악 목록 로딩 오류:", e); 
-        }
+        } catch (e) {}
     };
 
+    // 💡 viewMode가 바뀔 때마다 fetch 실행
     useEffect(() => {
-        Promise.all([fetchPosts(), fetchMyMusic()]).finally(() => setLoading(false));
-    }, []);
+        fetchPosts(viewMode);
+        if (isAuthed) fetchMyMusic();
+    }, [viewMode, isAuthed]);
 
     const handleCreatePost = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -103,19 +119,7 @@ export default function BoardListPage() {
         
         setIsSubmitting(true);
         const token = localStorage.getItem('accessToken');
-        if (!token) { 
-            alert("로그인이 필요합니다."); 
-            router.push('/login'); 
-            return; 
-        }
-
-        // 💡 payload 생성
-        const payload = {
-            title: newTitle,
-            content: newContent,
-            // 0이거나 null이면 아예 필드를 보내지 않거나 null로 보냄
-            track_id: selectedTrackId ? selectedTrackId : null 
-        };
+        if (!token) { alert("로그인이 필요합니다."); router.push('/login'); return; }
 
         try {
             const res = await fetch(`${API_URL}/board/`, {
@@ -124,42 +128,78 @@ export default function BoardListPage() {
                     'Content-Type': 'application/json', 
                     'Authorization': `Bearer ${token}` 
                 },
-                body: JSON.stringify(payload)
+                body: JSON.stringify({ 
+                    title: newTitle, 
+                    content: newContent, 
+                    track_id: selectedTrackId 
+                })
             });
 
             if (res.ok) {
                 setShowWriteForm(false);
-                setNewTitle(''); 
-                setNewContent(''); 
-                setSelectedTrackId(null);
-                fetchPosts(); // 목록 갱신
+                setNewTitle(''); setNewContent(''); setSelectedTrackId(null);
+                fetchPosts(viewMode); // 현재 모드로 새로고침
             } else {
-                const errData = await res.json().catch(() => ({}));
-                alert(`게시글 작성 실패: ${errData.detail || res.statusText}`);
+                alert("게시글 작성 실패");
             }
-        } catch (e) { 
-            console.error("게시글 작성 오류:", e); 
-            alert("게시글 작성 중 오류가 발생했습니다.");
-        } finally { 
-            setIsSubmitting(false); 
-        }
+        } catch (e) { console.error(e); } 
+        finally { setIsSubmitting(false); }
+    };
+
+    // 💡 [추가] 게시글 삭제 핸들러
+    const handleDeletePost = async (e: React.MouseEvent, postId: number) => {
+        e.stopPropagation(); // 카드 클릭 방지
+        if (!window.confirm("정말 이 게시글을 삭제하시겠습니까?")) return;
+        
+        const token = localStorage.getItem('accessToken');
+        if (!token) return;
+
+        try {
+            const res = await fetch(`${API_URL}/board/${postId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                alert("삭제되었습니다.");
+                fetchPosts(viewMode); // 목록 새로고침
+            } else {
+                alert("삭제 권한이 없거나 오류가 발생했습니다.");
+            }
+        } catch (e) { console.error(e); }
     };
 
     return (
         <div className="max-w-4xl mx-auto p-6 min-h-screen bg-gray-50">
-            <div className="flex justify-between items-center mb-8">
+            <div className="flex flex-col sm:flex-row justify-between items-center mb-8 gap-4">
                 <h1 className="text-2xl font-bold text-gray-900 flex items-center">
                     <MessageCircle className="w-8 h-8 mr-2 text-indigo-600"/> 치유 커뮤니티
                 </h1>
-                <button 
-                    onClick={() => setShowWriteForm(!showWriteForm)}
-                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition shadow-sm font-medium"
-                >
-                    <Plus className="w-5 h-5"/> 글쓰기
-                </button>
+                <div className="flex gap-2">
+                    {/* 💡 탭 버튼 */}
+                    <div className="flex bg-gray-200 p-1 rounded-lg">
+                        <button 
+                            onClick={() => setViewMode('all')}
+                            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'all' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+                        >
+                            전체 글
+                        </button>
+                        <button 
+                            onClick={() => setViewMode('my')}
+                            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'my' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+                        >
+                            내가 쓴 글
+                        </button>
+                    </div>
+                    <button 
+                        onClick={() => setShowWriteForm(!showWriteForm)}
+                        className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition shadow-sm font-medium text-sm"
+                    >
+                        <Plus className="w-4 h-4"/> 글쓰기
+                    </button>
+                </div>
             </div>
 
-            {/* 글쓰기 폼 */}
+            {/* 글쓰기 폼 (변경 없음) */}
             {showWriteForm && (
                 <div className="bg-white p-6 rounded-xl shadow-md mb-8 border border-gray-200 animate-in slide-in-from-top-2">
                     <h3 className="font-bold text-lg mb-4">새 게시글 작성</h3>
@@ -201,20 +241,30 @@ export default function BoardListPage() {
                 <div className="text-center py-10"><Loader2 className="w-8 h-8 animate-spin mx-auto text-indigo-600"/></div>
             ) : (
                 <div className="space-y-4">
-                    {posts.length === 0 && <p className="text-center text-gray-500 py-10">아직 게시글이 없습니다.</p>}
+                    {posts.length === 0 && <p className="text-center text-gray-500 py-10">{viewMode === 'my' ? '작성한 글이 없습니다.' : '아직 게시글이 없습니다.'}</p>}
                     {posts.map(post => (
                         <div 
                             key={post.id} 
                             onClick={() => router.push(`/board/${post.id}`)}
-                            className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition cursor-pointer"
+                            className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition cursor-pointer relative group"
                         >
-                            <div className="flex justify-between items-start">
+                            {/* 💡 [추가] 작성자 본인일 경우 삭제 버튼 표시 */}
+                            {user && user.id === post.author_id && (
+                                <button 
+                                    onClick={(e) => handleDeletePost(e, post.id)}
+                                    className="absolute top-4 right-4 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full opacity-0 group-hover:opacity-100 transition-all"
+                                    title="게시글 삭제"
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                </button>
+                            )}
+
+                            <div className="flex justify-between items-start pr-8"> {/* 삭제 버튼 공간 확보 */}
                                 <div>
                                     <h3 className="font-bold text-lg text-gray-800 mb-1">{post.title}</h3>
                                     <p className="text-gray-600 text-sm line-clamp-2 mb-3">{post.content}</p>
                                     <div className="flex items-center gap-4 text-xs text-gray-500">
                                         <span className="flex items-center">
-                                            {/* 💡 상담사 뱃지 표시 */}
                                             {post.author_role === 'therapist' 
                                                 ? <span className="flex items-center text-green-600 font-bold mr-1"><ShieldCheck className="w-3 h-3 mr-1"/>상담사</span> 
                                                 : <User className="w-3 h-3 mr-1"/>}

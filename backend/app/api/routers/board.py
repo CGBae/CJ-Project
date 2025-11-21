@@ -59,6 +59,38 @@ async def get_posts(
         ))
     return response
 
+@router.get("/my", response_model=List[PostResponse])
+async def get_my_posts(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    query = (
+        select(BoardPost)
+        .where(BoardPost.author_id == current_user.id) # 👈 내 글만 필터링
+        .options(joinedload(BoardPost.author), joinedload(BoardPost.track))
+        .order_by(desc(BoardPost.created_at))
+    )
+    result = await db.execute(query)
+    posts = result.scalars().all()
+    
+    response = []
+    for post in posts:
+        count_q = select(func.count(BoardComment.id)).where(BoardComment.post_id == post.id)
+        comments_count = (await db.execute(count_q)).scalar() or 0
+        
+        response.append(PostResponse(
+            id=post.id, 
+            title=post.title, 
+            content=post.content,
+            author_name=post.author.name or "익명", 
+            author_id=post.author_id,
+            author_role=post.author.role,
+            created_at=post.created_at, 
+            track=map_track_to_schema(post.track),
+            comments_count=comments_count
+        ))
+    return response
+
 # 2. 게시글 작성
 @router.post("/", response_model=PostResponse)
 async def create_post(
@@ -95,6 +127,24 @@ async def create_post(
         track=map_track_to_schema(post.track),
         comments_count=0
     )
+
+@router.delete("/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_post(
+    post_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    post = await db.get(BoardPost, post_id)
+    if not post:
+        raise HTTPException(status_code=404, detail="게시글을 찾을 수 없습니다.")
+    
+    # 본인 글인지 확인
+    if post.author_id != current_user.id:
+        raise HTTPException(status_code=403, detail="삭제 권한이 없습니다.")
+        
+    await db.delete(post)
+    await db.commit()
+    return None
 
 # 3. 게시글 상세 조회
 @router.get("/{post_id}", response_model=PostDetailResponse)
@@ -164,3 +214,22 @@ async def create_comment(
         author_role=current_user.role,
         created_at=new_comment.created_at
     )
+
+# 💡 [신규] 댓글 삭제
+@router.delete("/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_comment(
+    comment_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    comment = await db.get(BoardComment, comment_id)
+    if not comment:
+        raise HTTPException(status_code=404, detail="댓글을 찾을 수 없습니다.")
+    
+    # 본인 댓글인지 확인
+    if comment.author_id != current_user.id:
+        raise HTTPException(status_code=403, detail="삭제 권한이 없습니다.")
+        
+    await db.delete(comment)
+    await db.commit()
+    return None
