@@ -4,7 +4,7 @@ from typing import Optional, Literal, List
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import (
     BigInteger, String, Text, Integer, DateTime, CheckConstraint,
-    ForeignKey, Index, Boolean
+    ForeignKey, Index, Boolean, JSON
 )
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 from sqlalchemy.sql import func
@@ -310,6 +310,13 @@ class BoardPost(Base):
     # 댓글 관계 (게시글이 지워지면 댓글도 삭제)
     comments: Mapped[list["BoardComment"]] = relationship("BoardComment", back_populates="post", cascade="all, delete-orphan")
 
+    # 💡 [추가] 조회수, 태그
+    views: Mapped[int] = mapped_column(Integer, default=0)
+    tags: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True) # 예: ["우울", "힐링"]
+
+    comments: Mapped[list["BoardComment"]] = relationship("BoardComment", back_populates="post", cascade="all, delete-orphan")
+    # 💡 [추가] 좋아요 관계
+    likes: Mapped[list["BoardLike"]] = relationship("BoardLike", back_populates="post", cascade="all, delete-orphan")
 
 # 💡 [추가] 게시판 댓글 모델
 class BoardComment(Base):
@@ -327,3 +334,11 @@ class BoardComment(Base):
     post: Mapped["BoardPost"] = relationship("BoardPost", back_populates="comments")
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+class BoardLike(Base):
+    __tablename__ = "board_likes"
+    
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    post_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("board_posts.id", ondelete="CASCADE"), primary_key=True)
+    
+    post: Mapped["BoardPost"] = relationship("BoardPost", back_populates="likes")

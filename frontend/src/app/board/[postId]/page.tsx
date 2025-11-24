@@ -2,8 +2,12 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { ArrowLeft, MessageCircle, Send, User, Calendar, Music, Play, Pause, ShieldCheck, Loader2, Trash2 } from 'lucide-react';
+import { 
+    ArrowLeft, MessageCircle, Send, User, Calendar, Music, Play, Pause, 
+    ShieldCheck, Trash2, Loader2, Heart, Eye, Tag 
+} from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext';
+
 function getApiUrl() {
   // 1순위: 내부 통신용 (docker 네트워크 안에서 backend 이름으로 호출)
   if (process.env.INTERNAL_API_URL) {
@@ -41,12 +45,18 @@ interface BoardPostDetail {
     title: string;
     content: string;
     author_name: string;
-    author_role: string; 
+    author_role: string;
     author_id: number;
     created_at: string;
     comments_count: number;
     track?: MusicTrack | null;
     comments: Comment[];
+    
+    // 💡 [추가] 새 기능 필드
+    views: number;
+    tags: string[];
+    like_count: number;
+    is_liked: boolean;
 }
 
 const AuthorBadge = ({ name, role }: { name: string, role: string }) => (
@@ -63,7 +73,7 @@ export default function PostDetailPage() {
     const router = useRouter();
     const params = useParams();
     const postId = params?.postId as string;
-    const { user } = useAuth(); // 💡 현재 로그인 유저 정보
+    const { user } = useAuth();
     
     const [post, setPost] = useState<BoardPostDetail | null>(null);
     const [comment, setComment] = useState('');
@@ -71,12 +81,21 @@ export default function PostDetailPage() {
     const [isPlaying, setIsPlaying] = useState(false);
     const audioRef = useRef<HTMLAudioElement | null>(null);
 
+    // 게시글 상세 조회
     const fetchPost = async () => {
         try {
-            const res = await fetch(`${API_URL}/board/${postId}`);
+            const token = localStorage.getItem('accessToken');
+            const headers: HeadersInit = {};
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+
+            const res = await fetch(`${API_URL}/board/${postId}`, { headers });
             if (res.ok) {
                 const data: BoardPostDetail = await res.json();
                 setPost(data);
+            } else {
+                // 에러 처리 (예: 삭제된 글)
+                alert("게시글을 불러올 수 없습니다.");
+                router.push('/board');
             }
         } catch (e) { 
             console.error(e); 
@@ -89,6 +108,34 @@ export default function PostDetailPage() {
         if(postId) fetchPost(); 
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [postId]);
+
+    // 💡 [추가] 좋아요 토글 핸들러
+    const handleToggleLike = async () => {
+        if (!post) return;
+        const token = localStorage.getItem('accessToken');
+        if (!token) { alert("로그인이 필요합니다."); return; }
+
+        // 1. 낙관적 업데이트 (UI 먼저 변경)
+        const prevPost = { ...post }; // 롤백용 복사
+        setPost(prev => prev ? ({
+            ...prev,
+            is_liked: !prev.is_liked,
+            like_count: prev.is_liked ? prev.like_count - 1 : prev.like_count + 1
+        }) : null);
+
+        // 2. API 호출
+        try {
+            const res = await fetch(`${API_URL}/board/${postId}/like`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!res.ok) throw new Error();
+        } catch (e) {
+            // 실패 시 롤백
+            setPost(prevPost);
+            alert("좋아요 처리에 실패했습니다.");
+        }
+    };
 
     // 댓글 작성
     const handleSubmitComment = async (e: React.FormEvent) => {
@@ -111,7 +158,7 @@ export default function PostDetailPage() {
         } catch (e) { console.error(e); }
     };
 
-    // 💡 [추가] 게시글 삭제
+    // 게시글 삭제
     const handleDeletePost = async () => {
         if (!window.confirm("정말 이 게시글을 삭제하시겠습니까?")) return;
         const token = localStorage.getItem('accessToken');
@@ -124,14 +171,14 @@ export default function PostDetailPage() {
             });
             if (res.ok) {
                 alert("게시글이 삭제되었습니다.");
-                router.push('/board'); // 목록으로 이동
+                router.push('/board'); 
             } else {
                 alert("삭제 권한이 없거나 오류가 발생했습니다.");
             }
         } catch (e) { console.error(e); }
     };
 
-    // 💡 [추가] 댓글 삭제
+    // 댓글 삭제
     const handleDeleteComment = async (commentId: number) => {
         if (!window.confirm("댓글을 삭제하시겠습니까?")) return;
         const token = localStorage.getItem('accessToken');
@@ -143,7 +190,7 @@ export default function PostDetailPage() {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
-                fetchPost(); // 새로고침
+                fetchPost(); 
             } else {
                 alert("삭제 권한이 없습니다.");
             }
@@ -157,7 +204,7 @@ export default function PostDetailPage() {
         setIsPlaying(!isPlaying);
     };
 
-    if (loading) return <div className="text-center py-20"><Loader2 className="w-8 h-8 animate-spin mx-auto text-indigo-600"/></div>;
+    if (loading) return <div className="flex justify-center items-center min-h-screen"><Loader2 className="w-8 h-8 animate-spin text-indigo-600"/></div>;
     if (!post) return <div className="text-center py-20">게시글을 찾을 수 없습니다.</div>;
 
     return (
@@ -167,7 +214,7 @@ export default function PostDetailPage() {
             </button>
 
             <article className="bg-white p-8 rounded-2xl shadow-sm border border-gray-200 mb-8 relative">
-                {/* 💡 게시글 삭제 버튼 (본인일 때만 표시) */}
+                {/* 게시글 삭제 버튼 (본인일 때만) */}
                 {user && user.id === post.author_id && (
                     <button 
                         onClick={handleDeletePost}
@@ -178,18 +225,35 @@ export default function PostDetailPage() {
                     </button>
                 )}
 
+                {/* 💡 태그 표시 */}
+                <div className="flex flex-wrap gap-2 mb-4">
+                    {post.tags && post.tags.map((tag, idx) => (
+                        <span key={idx} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700">
+                            <Tag className="w-3 h-3 mr-1"/>{tag}
+                        </span>
+                    ))}
+                </div>
+
                 <h1 className="text-2xl font-bold text-gray-900 mb-4 pr-10">{post.title}</h1>
-                <div className="flex items-center justify-between text-sm text-gray-500 mb-6 pb-6 border-b border-gray-100">
-                    <AuthorBadge name={post.author_name} role={post.author_role} />
-                    <span className="flex items-center"><Calendar className="w-4 h-4 mr-1"/> {new Date(post.created_at).toLocaleString()}</span>
+                
+                <div className="flex items-center justify-between text-sm text-gray-500 mb-8 pb-6 border-b border-gray-100">
+                    <div className="flex items-center gap-4">
+                        <AuthorBadge name={post.author_name} role={post.author_role} />
+                        <span className="flex items-center"><Calendar className="w-4 h-4 mr-1"/> {new Date(post.created_at).toLocaleDateString()}</span>
+                    </div>
+                    {/* 💡 조회수 표시 */}
+                    <div className="flex items-center gap-1">
+                        <Eye className="w-4 h-4"/> <span>{post.views}</span>
+                    </div>
                 </div>
                 
-                <div className="prose max-w-none text-gray-700 mb-8 whitespace-pre-wrap leading-relaxed">
+                <div className="prose max-w-none text-gray-700 mb-10 whitespace-pre-wrap leading-relaxed">
                     {post.content}
                 </div>
 
+                {/* 음악 플레이어 */}
                 {post.track && (
-                    <div className="bg-indigo-50 p-4 rounded-xl flex items-center justify-between border border-indigo-100">
+                    <div className="bg-indigo-50 p-4 rounded-xl flex items-center justify-between border border-indigo-100 mb-8">
                         <div className="flex items-center gap-3">
                             <div className="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center text-white">
                                 <Music className="w-5 h-5"/>
@@ -205,6 +269,22 @@ export default function PostDetailPage() {
                         <audio ref={audioRef} src={post.track.audioUrl} onEnded={() => setIsPlaying(false)} className="hidden"/>
                     </div>
                 )}
+
+                {/* 💡 좋아요 버튼 (하단 중앙) */}
+                <div className="flex justify-center pb-4">
+                    <button 
+                        onClick={handleToggleLike}
+                        className={`flex items-center gap-2 px-6 py-3 rounded-full border transition-all ${
+                            post.is_liked 
+                                ? 'bg-pink-50 border-pink-200 text-pink-600 shadow-sm' 
+                                : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                        }`}
+                    >
+                        <Heart className={`w-5 h-5 ${post.is_liked ? 'fill-current' : ''}`} />
+                        <span className="font-bold">{post.like_count}</span>
+                        <span className="text-sm font-normal">{post.is_liked ? '좋아요 취소' : '좋아요'}</span>
+                    </button>
+                </div>
             </article>
 
             {/* 댓글 섹션 */}
@@ -222,7 +302,7 @@ export default function PostDetailPage() {
                             </div>
                             <p className="text-gray-700 text-sm pr-6">{c.content}</p>
                             
-                            {/* 💡 댓글 삭제 버튼 (본인일 때만 표시) */}
+                            {/* 댓글 삭제 버튼 (본인일 때만) */}
                             {user && user.id === c.author_id && (
                                 <button 
                                     onClick={() => handleDeleteComment(c.id)}
