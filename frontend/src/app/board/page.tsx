@@ -4,7 +4,7 @@ import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
     MessageCircle, Plus, Loader2, Music, User, Calendar, ShieldCheck, Trash2,
-    Search, Heart, Eye, Tag, ArrowLeft, PenLine
+    Search, Heart, Eye, Tag, ArrowLeft, PenLine, Filter, SortAsc
 } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 
@@ -77,6 +77,8 @@ function BoardListContent() {
     const [newTags, setNewTags] = useState('');
     const [selectedTrackId, setSelectedTrackId] = useState<number | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [sortBy, setSortBy] = useState<'latest' | 'views' | 'likes' | 'comments'>('latest');
+    const [filterMusic, setFilterMusic] = useState(false);
 
     // 검색어 디바운스
     useEffect(() => {
@@ -89,6 +91,7 @@ function BoardListContent() {
         const writeMode = searchParams.get('write');
         const trackId = searchParams.get('trackId');
         const trackTitle = searchParams.get('title');
+
 
         if (writeMode === 'true') {
             setShowWriteForm(true); // 작성 모드로 전환
@@ -107,6 +110,9 @@ function BoardListContent() {
             const endpoint = viewMode === 'my' ? `${API_URL}/board/my` : `${API_URL}/board/`;
             const params = new URLSearchParams();
             if (debouncedSearch) params.append('keyword', debouncedSearch);
+            params.append('sort_by', sortBy);
+            if (filterMusic) params.append('has_music', 'true');
+            
             const urlWithParams = `${endpoint}?${params.toString()}`;
 
             const headers: HeadersInit = {};
@@ -117,7 +123,7 @@ function BoardListContent() {
                 setViewMode('all');
                 return;
             }
-
+            
             const res = await fetch(urlWithParams, { headers });
             if (res.ok) {
                 const data: BoardPost[] = await res.json();
@@ -149,7 +155,7 @@ function BoardListContent() {
         fetchPosts();
         if (isAuthed) fetchMyMusic();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [viewMode, debouncedSearch, isAuthed, user]);
+    }, [viewMode, debouncedSearch, isAuthed, user, sortBy, filterMusic]);
 
     // 게시글 작성 핸들러
     const handleCreatePost = async (e: React.FormEvent) => {
@@ -324,19 +330,33 @@ function BoardListContent() {
             </div>
 
             {/* 탭 및 필터 */}
-            <div className="flex mb-6 border-b border-gray-200">
-                <button
-                    onClick={() => setViewMode('all')}
-                    className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${viewMode === 'all' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-                >
-                    전체 이야기
-                </button>
-                <button
-                    onClick={() => setViewMode('my')}
-                    className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${viewMode === 'my' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-                >
-                    내가 쓴 글
-                </button>
+            <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+                 <div className="flex bg-gray-200 p-1 rounded-lg">
+                    <button onClick={() => setViewMode('all')} className={`...`}>전체 글</button>
+                    <button onClick={() => setViewMode('my')} className={`...`}>내 글</button>
+                </div>
+
+                <div className="flex items-center gap-3 overflow-x-auto w-full md:w-auto pb-2 md:pb-0">
+                    {/* 음악 필터 */}
+                    <button 
+                        onClick={() => setFilterMusic(!filterMusic)}
+                        className={`flex items-center px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${filterMusic ? 'bg-indigo-100 border-indigo-300 text-indigo-700' : 'bg-white border-gray-300 text-gray-600'}`}
+                    >
+                        <Music className="w-3 h-3 mr-1"/> 음악 포함만
+                    </button>
+
+                    {/* 정렬 드롭다운 (또는 버튼 그룹) */}
+                    <div className="flex bg-white border border-gray-200 rounded-lg p-0.5">
+                        <button onClick={() => setSortBy('latest')} className={`px-3 py-1 text-xs rounded-md ${sortBy === 'latest' ? 'bg-gray-100 font-bold text-gray-900' : 'text-gray-500'}`}>최신순</button>
+                        <button onClick={() => setSortBy('views')} className={`px-3 py-1 text-xs rounded-md ${sortBy === 'views' ? 'bg-gray-100 font-bold text-gray-900' : 'text-gray-500'}`}>조회순</button>
+                        <button onClick={() => setSortBy('likes')} className={`px-3 py-1 text-xs rounded-md ${sortBy === 'likes' ? 'bg-gray-100 font-bold text-gray-900' : 'text-gray-500'}`}>좋아요순</button>
+                        <button onClick={() => setSortBy('comments')} className={`px-3 py-1 text-xs rounded-md ${sortBy === 'comments' ? 'bg-gray-100 font-bold text-gray-900' : 'text-gray-500'}`}>댓글순</button>
+                    </div>
+                    
+                    <button onClick={() => setShowWriteForm(!showWriteForm)} className="...">
+                        <Plus className="w-4 h-4"/> 글쓰기
+                    </button>
+                </div>
             </div>
 
             {/* 게시글 리스트 */}

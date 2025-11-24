@@ -239,7 +239,7 @@ class Track(Base):
     duration_sec: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     quality: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     provider: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-
+    title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     is_favorite: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False, server_default='false'
     )
