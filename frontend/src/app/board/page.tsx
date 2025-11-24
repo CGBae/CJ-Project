@@ -1,20 +1,13 @@
 'use client';
-import { Suspense } from "react";
-import React, { useState, useEffect } from 'react';
-import { useRouter, useSearchParams} from 'next/navigation';
+
+// 💡 [수정] Suspense 추가
+import React, { useState, useEffect, Suspense } from 'react';
+// 💡 [수정] useSearchParams import 추가
+import { useRouter, useSearchParams } from 'next/navigation';
 import { 
-    MessageCircle, Plus, Loader2, Music, User, Calendar, ShieldCheck, 
-    Trash2
+    MessageCircle, Plus, Loader2, Music, User, Calendar, ShieldCheck, Trash2 
 } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext';
-
-export default function BoardListPage() {
-  return (
-    <Suspense fallback={<div />}>
-      <BoardListPageContent />
-    </Suspense>
-  );
-}
 
 function getApiUrl() {
   // 1순위: 내부 통신용 (docker 네트워크 안에서 backend 이름으로 호출)
@@ -32,13 +25,14 @@ function getApiUrl() {
 }
 
 const API_URL = getApiUrl();
-
+// 1. 컴포넌트에서 사용할 깔끔한 음악 트랙 타입
 interface MusicTrack {
     id: number;
     title: string;
     created_at: string;
 }
 
+// 2. 게시글 타입
 interface BoardPost {
     id: number;
     title: string;
@@ -55,23 +49,25 @@ interface BoardPost {
     } | null;
 }
 
+// 💡 3. [핵심 수정] API 응답 처리를 위한 인터페이스 (any 대체용)
 interface RawMusicData {
-    id?: number;          // /music/my 에서 사용
-    music_id?: number;    // /therapist/music-list 에서 사용
-    title?: string;       // /music/my 에서 사용
-    music_title?: string; // /therapist/music-list 에서 사용
+    id?: number;
+    music_id?: number;
+    title?: string;
+    music_title?: string;
     created_at: string;
 }
-function BoardListPageContent() {
+
+// 💡 4. [핵심 수정] 로직을 별도 컴포넌트로 분리 (useSearchParams 사용 시 Suspense 필수)
+function BoardListContent() {
     const router = useRouter();
-    const searchParams = useSearchParams()
+    const searchParams = useSearchParams(); // 💡 이제 import가 되어 오류가 나지 않습니다.
     const { user, isAuthed } = useAuth();
     
     const [posts, setPosts] = useState<BoardPost[]>([]);
     const [myMusic, setMyMusic] = useState<MusicTrack[]>([]);
     const [loading, setLoading] = useState(true);
     
-    // 💡 [추가] 탭 상태 ('all' | 'my')
     const [viewMode, setViewMode] = useState<'all' | 'my'>('all');
 
     const [showWriteForm, setShowWriteForm] = useState(false);
@@ -80,6 +76,7 @@ function BoardListPageContent() {
     const [selectedTrackId, setSelectedTrackId] = useState<number | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    // URL 파라미터 처리
     useEffect(() => {
         const writeMode = searchParams.get('write');
         const trackId = searchParams.get('trackId');
@@ -89,7 +86,6 @@ function BoardListPageContent() {
             setShowWriteForm(true);
             if (trackId) {
                 setSelectedTrackId(Number(trackId));
-                // (음악 목록을 아직 못 불러왔어도 ID는 세팅해둠)
             }
             if (trackTitle) {
                 setNewTitle(`[음악 공유] ${decodeURIComponent(trackTitle)}`);
@@ -104,41 +100,57 @@ function BoardListPageContent() {
             const endpoint = mode === 'my' ? `${API_URL}/board/my` : `${API_URL}/board/`;
             const headers: HeadersInit = {};
             const token = localStorage.getItem('accessToken');
-            if (token) headers['Authorization'] = `Bearer ${token}`;
             
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+            else if (mode === 'my') {
+                 alert("로그인이 필요합니다.");
+                 setViewMode('all'); 
+                 return; 
+            }
+
             const res = await fetch(endpoint, { headers });
-            if (res.ok) setPosts(await res.json());
-        } catch (e) {} finally { setLoading(false); }
+            if (res.ok) {
+                const data: BoardPost[] = await res.json();
+                setPosts(data);
+            }
+        } catch (e) { 
+            console.error("게시글 로딩 오류:", e); 
+        } finally {
+            setLoading(false);
+        }
     };
 
     const fetchMyMusic = async () => {
         const token = localStorage.getItem('accessToken');
         if (!token) return;
         try {
-            // 상담사는 전체 환자 음악 목록, 환자는 내 음악 목록
             const endpoint = user?.role === 'therapist' ? `${API_URL}/therapist/music-list` : `${API_URL}/music/my`;
-            const res = await fetch(endpoint, { headers: { 'Authorization': `Bearer ${token}` }});
+            const res = await fetch(endpoint, { 
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             
-             if (res.ok) {
-                // 💡 [수정] 응답 데이터를 RawMusicData[] 타입으로 단언하여 any 제거
+            if (res.ok) {
+                // 💡 5. [핵심 수정] any 제거하고 RawMusicData[]로 타입 단언
                 const data = await res.json() as RawMusicData[];
                 
                 const formattedData: MusicTrack[] = data.map((m) => ({
-                    // 두 API의 필드 중 존재하는 값을 사용 (둘 다 없으면 기본값 0/제목없음 처리)
+                    // 두 API의 필드 중 존재하는 값을 사용
                     id: m.music_id ?? m.id ?? 0,
                     title: m.music_title ?? m.title ?? '제목 없음',
                     created_at: m.created_at
                 }));
                 setMyMusic(formattedData);
             }
-        } catch(e) {}
+        } catch (e) {
+            console.error("음악 목록 로딩 오류:", e);
+        }
     };
 
-    // 💡 viewMode가 바뀔 때마다 fetch 실행
     useEffect(() => {
         fetchPosts(viewMode);
         if (isAuthed) fetchMyMusic();
-    }, [viewMode, isAuthed]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [viewMode, isAuthed, user]);
 
     const handleCreatePost = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -148,6 +160,12 @@ function BoardListPageContent() {
         const token = localStorage.getItem('accessToken');
         if (!token) { alert("로그인이 필요합니다."); router.push('/login'); return; }
 
+        const payload = {
+            title: newTitle,
+            content: newContent,
+            track_id: selectedTrackId ? selectedTrackId : null 
+        };
+
         try {
             const res = await fetch(`${API_URL}/board/`, {
                 method: 'POST',
@@ -155,27 +173,27 @@ function BoardListPageContent() {
                     'Content-Type': 'application/json', 
                     'Authorization': `Bearer ${token}` 
                 },
-                body: JSON.stringify({ 
-                    title: newTitle, 
-                    content: newContent, 
-                    track_id: selectedTrackId 
-                })
+                body: JSON.stringify(payload)
             });
 
             if (res.ok) {
                 setShowWriteForm(false);
-                setNewTitle(''); setNewContent(''); setSelectedTrackId(null);
-                fetchPosts(viewMode); // 현재 모드로 새로고침
+                setNewTitle(''); 
+                setNewContent(''); 
+                setSelectedTrackId(null);
+                fetchPosts(viewMode); 
             } else {
                 alert("게시글 작성 실패");
             }
-        } catch (e) { console.error(e); } 
-        finally { setIsSubmitting(false); }
+        } catch (e) { 
+            console.error(e); 
+        } finally { 
+            setIsSubmitting(false); 
+        }
     };
 
-    // 💡 [추가] 게시글 삭제 핸들러
     const handleDeletePost = async (e: React.MouseEvent, postId: number) => {
-        e.stopPropagation(); // 카드 클릭 방지
+        e.stopPropagation();
         if (!window.confirm("정말 이 게시글을 삭제하시겠습니까?")) return;
         
         const token = localStorage.getItem('accessToken');
@@ -188,7 +206,7 @@ function BoardListPageContent() {
             });
             if (res.ok) {
                 alert("삭제되었습니다.");
-                fetchPosts(viewMode); // 목록 새로고침
+                fetchPosts(viewMode);
             } else {
                 alert("삭제 권한이 없거나 오류가 발생했습니다.");
             }
@@ -202,7 +220,6 @@ function BoardListPageContent() {
                     <MessageCircle className="w-8 h-8 mr-2 text-indigo-600"/> 치유 커뮤니티
                 </h1>
                 <div className="flex gap-2">
-                    {/* 💡 탭 버튼 */}
                     <div className="flex bg-gray-200 p-1 rounded-lg">
                         <button 
                             onClick={() => setViewMode('all')}
@@ -226,7 +243,7 @@ function BoardListPageContent() {
                 </div>
             </div>
 
-            {/* 글쓰기 폼 (변경 없음) */}
+            {/* 글쓰기 폼 */}
             {showWriteForm && (
                 <div className="bg-white p-6 rounded-xl shadow-md mb-8 border border-gray-200 animate-in slide-in-from-top-2">
                     <h3 className="font-bold text-lg mb-4">새 게시글 작성</h3>
@@ -275,7 +292,7 @@ function BoardListPageContent() {
                             onClick={() => router.push(`/board/${post.id}`)}
                             className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition cursor-pointer relative group"
                         >
-                            {/* 💡 [추가] 작성자 본인일 경우 삭제 버튼 표시 */}
+                            {/* 작성자 본인일 경우 삭제 버튼 표시 */}
                             {user && user.id === post.author_id && (
                                 <button 
                                     onClick={(e) => handleDeletePost(e, post.id)}
@@ -286,7 +303,7 @@ function BoardListPageContent() {
                                 </button>
                             )}
 
-                            <div className="flex justify-between items-start pr-8"> {/* 삭제 버튼 공간 확보 */}
+                            <div className="flex justify-between items-start pr-8">
                                 <div>
                                     <h3 className="font-bold text-lg text-gray-800 mb-1">{post.title}</h3>
                                     <p className="text-gray-600 text-sm line-clamp-2 mb-3">{post.content}</p>
@@ -314,3 +331,13 @@ function BoardListPageContent() {
         </div>
     );
 }
+
+// 💡 6. [핵심] Suspense로 감싸서 내보내기 (빌드 에러 방지)
+export default function BoardListPage() {
+    return (
+        <Suspense fallback={<div className="flex justify-center items-center min-h-screen"><Loader2 className="w-8 h-8 animate-spin text-indigo-600"/></div>}>
+            <BoardListContent />
+        </Suspense>
+    );
+}
+
