@@ -5,7 +5,7 @@ from sqlalchemy import select, update, insert, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 import json
-from app.schemas import MusicTrackInfo, MusicTrackDetail, SimpleChatMessage, SimpleIntakeData, TherapistManualInput
+from app.schemas import MusicTrackInfo, MusicTrackDetail, SimpleChatMessage, SimpleIntakeData, TherapistManualInput, TrackUpdate
 from app.db import get_db
 # 💡 2. Connection, SessionPatientIntake 모델 import 추가
 from app.models import Session, SessionPrompt, Track, User, Connection, SessionPatientIntake, ConversationMessage, TherapistManualInputs
@@ -117,7 +117,35 @@ async def compose_music(
 
     return ComposeResp(session_id=req.session_id, track_url=track_url)
 
-
+@router.patch("/track/{track_id}", response_model=MusicTrackInfo)
+async def update_track_title(
+    track_id: int,
+    update_req: TrackUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # 트랙 조회
+    result = await db.execute(select(Track).where(Track.id == track_id).options(joinedload(Track.session).joinedload(Session.patient_intake)))
+    track = result.scalars().first()
+    
+    if not track:
+        raise HTTPException(404, "트랙을 찾을 수 없습니다.")
+    
+    # 권한 확인 (본인만 수정 가능)
+    if track.session.created_by != current_user.id:
+        raise HTTPException(403, "수정 권한이 없습니다.")
+        
+    # 제목 업데이트
+    track.title = update_req.title
+    await db.commit()
+    await db.refresh(track)
+    
+    # 응답 생성 (헬퍼 로직 재사용 필요하지만 간단히 구성)
+    return MusicTrackInfo(
+        id=track.id, title=track.title, prompt="", track_url=track.track_url,
+        session_id=track.session_id, initiator_type=track.session.initiator_type, has_dialog=False,
+        created_at=track.created_at, is_favorite=track.is_favorite, audioUrl=track.track_url
+    )
 # --- (/my API는 변경 없음, track_url 필드명 수정된 버전) ---
 @router.get("/my", response_model=List[MusicTrackInfo])
 async def get_my_music(
@@ -125,56 +153,33 @@ async def get_my_music(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """현재 로그인한 사용자가 생성한 음악 트랙 목록을 최신순으로 반환합니다."""
-    query = (
-        select(Track)
-        .options(
-            joinedload(Track.session).options(
-                joinedload(Session.patient_intake)
-            )
-        )
-        .join(Session, Track.session_id == Session.id)
-        .where(Session.created_by == current_user.id)
-        .order_by(Track.created_at.desc())
-    )
-    # limit() 적용 로직
-    if limit is not None:
-        query = query.limit(limit)
-        
+    query = select(Track).options(joinedload(Track.session).joinedload(Session.patient_intake)).join(Session).where(Session.created_by == current_user.id).order_by(Track.created_at.desc())
+    if limit: query = query.limit(limit)
     result = await db.execute(query)
     tracks = result.scalars().unique().all()
-
-    response_tracks = []
-    for track in tracks:
-        session = track.session
-        intake = session.patient_intake
+    
+    res = []
+    for t in tracks:
+        sess = t.session
         
-        # 💡 [수정] 동적 제목 생성
-        title = f"AI 트랙 (세션 {track.session_id})" # 기본값
-        if session.initiator_type == "therapist":
-            title = f"상담사 처방 음악 (세션 {track.session_id})"
-        elif session.initiator_type == "patient":
-            if intake and intake.has_dialog:
-                title = f"AI 상담 기반 음악 (세션 {track.session_id})"
-            else:
-                title = f"작곡 체험 음악 (세션 {track.session_id})"
+        # 💡 제목 결정 로직: DB에 title이 있으면 그것 사용, 없으면 자동 생성
+        if t.title:
+            title = t.title
+        else:
+            title = f"AI 트랙 (세션 {sess.id})"
+            if sess.initiator_type == "therapist": title = f"상담사 처방 음악"
+            elif sess.initiator_type == "patient":
+                title = f"AI 상담 음악" if sess.patient_intake and sess.patient_intake.has_dialog else f"작곡 체험 음악"
         
-        session_prompt_data = session.prompt or {}
-        session_prompt_text = session_prompt_data.get("music_prompt") or session_prompt_data.get("text") or "프롬프트 정보 없음"
-             
-        response_tracks.append(MusicTrackInfo(
-            id=track.id,
-            title=title, # 👈 동적 제목
-            prompt=session_prompt_text,
-            track_url=track.track_url,
-            session_id=session.id, # 👈 세션 ID
-            initiator_type=session.initiator_type, # 👈 세션 타입
-            has_dialog=intake.has_dialog if intake else False, # 👈 대화 유무
-            created_at=track.created_at,
-            is_favorite=track.is_favorite
+        prompt_txt = (sess.prompt or {}).get("music_prompt") or "프롬프트 없음" if isinstance(sess.prompt, dict) else "프롬프트 없음"
+        
+        res.append(MusicTrackInfo(
+            id=t.id, title=title, prompt=prompt_txt, track_url=t.track_url, audioUrl=t.track_url,
+            session_id=sess.id, initiator_type=sess.initiator_type, 
+            has_dialog=bool(sess.patient_intake and sess.patient_intake.has_dialog), 
+            created_at=t.created_at, is_favorite=t.is_favorite
         ))
-
-    return response_tracks
+    return res
 
 @router.get("/my/favorites", response_model=List[MusicTrackInfo])
 async def get_my_favorite_music(
@@ -390,16 +395,27 @@ async def get_track_details(
     lyrics = prompt_data.get("lyrics_text")
     prompt_text = prompt_data.get("music_prompt") or prompt_data.get("text") or "프롬프트 없음"
 
-    title = f"AI 트랙 (세션 {session.id})"
-    if session.initiator_type == "therapist": title = f"상담사 처방 음악"
-    elif session.initiator_type == "patient":
-        if intake_data and chat_history: title = f"AI 상담 기반 음악"
-        elif therapist_manual: title = f"작곡 체험 음악"
-        else: title = f"AI 생성 음악"
+    if track.title:
+        final_title = track.title
+    else:
+        if session.initiator_type == "therapist":
+            final_title = "상담사 처방 음악"
+
+        elif session.initiator_type == "patient":
+            if intake_data and chat_history:
+                final_title = "AI 상담 기반 음악"
+            elif therapist_manual:
+                final_title = "작곡 체험 음악"
+            else:
+                final_title = "AI 생성 음악"
+
+    # 혹시 initiator_type이 예외일 경우 fallback
+        else:
+            final_title = f"AI 트랙 (세션 {session.id})"
 
     return MusicTrackDetail(
         id=track.id,
-        title=title, 
+        title=final_title,
         prompt=prompt_text,
         track_url=track.track_url,
         audioUrl=track.track_url,

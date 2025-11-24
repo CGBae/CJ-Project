@@ -13,30 +13,57 @@ router = APIRouter(prefix="/board", tags=["board"])
 
 def map_track_to_schema(track: Track | None) -> BoardTrackInfo | None:
     if not track: return None
-    return BoardTrackInfo(id=track.id, title=f"공유된 음악 #{track.id}", audioUrl=track.track_url)
-
+    # 💡 track.title이 있으면 그것을, 없으면 기본값 사용
+    display_title = track.title if track.title else f"공유된 음악 #{track.id}"
+    return BoardTrackInfo(id=track.id, title=display_title, audioUrl=track.track_url)
 # 1. 게시글 목록 조회 (전체)
 @router.get("/", response_model=List[PostResponse])
 async def get_posts(
     skip: int = 0, 
     limit: int = 20, 
     keyword: Optional[str] = None,
+    sort_by: Literal['latest', 'views', 'likes', 'comments'] = 'latest', # 💡 정렬 기준
+    has_music: bool = False, # 💡 음악 포함 여부 필터
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional)
 ):
+    # 기본 쿼리: 댓글 수, 좋아요 수 서브쿼리 준비
+    comments_count_sub = select(func.count(BoardComment.id)).where(BoardComment.post_id == BoardPost.id).scalar_subquery()
+    likes_count_sub = select(func.count(BoardLike.user_id)).where(BoardLike.post_id == BoardPost.id).scalar_subquery()
+
     query = select(BoardPost).options(joinedload(BoardPost.author), joinedload(BoardPost.track))
     
+    # 1. 검색
     if keyword:
         query = query.where(or_(
             BoardPost.title.ilike(f"%{keyword}%"),
             BoardPost.content.ilike(f"%{keyword}%")
         ))
     
-    query = query.order_by(desc(BoardPost.created_at)).offset(skip).limit(limit)
-    posts = (await db.execute(query)).scalars().all()
+    # 2. 음악 필터
+    if has_music:
+        query = query.where(BoardPost.track_id.isnot(None))
+
+    # 3. 정렬
+    if sort_by == 'latest':
+        query = query.order_by(desc(BoardPost.created_at))
+    elif sort_by == 'views':
+        query = query.order_by(desc(BoardPost.views), desc(BoardPost.created_at))
+    elif sort_by == 'likes':
+        # 좋아요 수로 정렬 (서브쿼리 활용)
+        query = query.outerjoin(BoardLike).group_by(BoardPost.id).order_by(func.count(BoardLike.user_id).desc(), desc(BoardPost.created_at))
+    elif sort_by == 'comments':
+        # 댓글 수로 정렬
+        query = query.outerjoin(BoardComment).group_by(BoardPost.id).order_by(func.count(BoardComment.id).desc(), desc(BoardPost.created_at))
+
+    query = query.offset(skip).limit(limit)
+    
+    # 실행 (유니크 처리 필요할 수 있음)
+    posts = (await db.execute(query)).unique().scalars().all()
     
     response = []
     for post in posts:
+        # 카운트 별도 조회 (group_by 쿼리가 복잡해질 수 있어 안전하게 개별 조회)
         c_count = (await db.execute(select(func.count(BoardComment.id)).where(BoardComment.post_id == post.id))).scalar() or 0
         l_count = (await db.execute(select(func.count(BoardLike.user_id)).where(BoardLike.post_id == post.id))).scalar() or 0
         is_liked = False
