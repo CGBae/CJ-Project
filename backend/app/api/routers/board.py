@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, insert, delete, desc, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 from app.db import get_db
 from app.models import User, BoardPost, BoardComment, Track, BoardLike
