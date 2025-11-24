@@ -1,96 +1,98 @@
 'use client';
-import { Suspense } from "react";
-import React, { useState, useEffect } from 'react';
-import { useRouter, useSearchParams} from 'next/navigation';
-import { 
-    MessageCircle, Plus, Loader2, Music, User, Calendar, ShieldCheck, 
-    Trash2
+
+import React, { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import {
+    MessageCircle, Plus, Loader2, Music, User, Calendar, ShieldCheck, Trash2,
+    Search, Heart, Eye, Tag, ArrowLeft, PenLine
 } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 
-export default function BoardListPage() {
-  return (
-    <Suspense fallback={<div />}>
-      <BoardListPageContent />
-    </Suspense>
-  );
-}
-
 function getApiUrl() {
-  // 1순위: 내부 통신용 (docker 네트워크 안에서 backend 이름으로 호출)
-  if (process.env.INTERNAL_API_URL) {
-    return process.env.INTERNAL_API_URL;
-  }
+    // 1순위: 내부 통신용 (docker 네트워크 안에서 backend 이름으로 호출)
+    if (process.env.INTERNAL_API_URL) {
+        return process.env.INTERNAL_API_URL;
+    }
 
-  // 2순위: 공개용 API URL (빌드 시점에라도 이건 거의 항상 들어있음)
-  if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL;
-  }
+    // 2순위: 공개용 API URL (빌드 시점에라도 이건 거의 항상 들어있음)
+    if (process.env.NEXT_PUBLIC_API_URL) {
+        return process.env.NEXT_PUBLIC_API_URL;
+    }
 
-  // 3순위: 최후 fallback - 도커 네트워크 기준으로 backend 서비스 직접 호출
-  return 'http://backend:8000';
+    // 3순위: 최후 fallback - 도커 네트워크 기준으로 backend 서비스 직접 호출
+    return 'http://backend:8000';
 }
 
 const API_URL = getApiUrl();
-
+// --- 타입 정의 ---
 interface MusicTrack {
     id: number;
     title: string;
     created_at: string;
 }
-
+interface BoardTrack {
+    id: number;
+    title: string;
+    audioUrl?: string;
+}
 interface BoardPost {
     id: number;
     title: string;
     content: string;
     author_name: string;
-    author_role: string; 
+    author_role: string;
     author_id: number;
     created_at: string;
     comments_count: number;
-    track?: {
-        id: number;
-        title: string;
-        audioUrl?: string;
-    } | null;
+    track?: BoardTrack | null;
+    views: number;
+    tags: string[];
+    like_count: number;
+    is_liked: boolean;
+}
+interface RawMusicData {
+    id?: number; music_id?: number; title?: string; music_title?: string; created_at: string;
 }
 
-interface RawMusicData {
-    id?: number;          // /music/my 에서 사용
-    music_id?: number;    // /therapist/music-list 에서 사용
-    title?: string;       // /music/my 에서 사용
-    music_title?: string; // /therapist/music-list 에서 사용
-    created_at: string;
-}
-function BoardListPageContent() {
+// --- 메인 컨텐츠 컴포넌트 ---
+function BoardListContent() {
     const router = useRouter();
-    const searchParams = useSearchParams()
+    const searchParams = useSearchParams();
     const { user, isAuthed } = useAuth();
-    
+
     const [posts, setPosts] = useState<BoardPost[]>([]);
     const [myMusic, setMyMusic] = useState<MusicTrack[]>([]);
     const [loading, setLoading] = useState(true);
-    
-    // 💡 [추가] 탭 상태 ('all' | 'my')
-    const [viewMode, setViewMode] = useState<'all' | 'my'>('all');
 
+    const [viewMode, setViewMode] = useState<'all' | 'my'>('all');
+    const [searchTerm, setSearchTerm] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
+
+    // 화면 전환 상태 (true면 작성 폼만 보임)
     const [showWriteForm, setShowWriteForm] = useState(false);
+
+    // 작성 폼 입력 상태
     const [newTitle, setNewTitle] = useState('');
     const [newContent, setNewContent] = useState('');
+    const [newTags, setNewTags] = useState('');
     const [selectedTrackId, setSelectedTrackId] = useState<number | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    // 검색어 디바운스
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedSearch(searchTerm), 500);
+        return () => clearTimeout(timer);
+    }, [searchTerm]);
+
+    // URL 파라미터 처리 (공유하기 등)
     useEffect(() => {
         const writeMode = searchParams.get('write');
         const trackId = searchParams.get('trackId');
         const trackTitle = searchParams.get('title');
 
         if (writeMode === 'true') {
-            setShowWriteForm(true);
-            if (trackId) {
-                setSelectedTrackId(Number(trackId));
-                // (음악 목록을 아직 못 불러왔어도 ID는 세팅해둠)
-            }
+            setShowWriteForm(true); // 작성 모드로 전환
+            if (trackId) setSelectedTrackId(Number(trackId));
             if (trackTitle) {
                 setNewTitle(`[음악 공유] ${decodeURIComponent(trackTitle)}`);
                 setNewContent('이 환자를 위한 맞춤형 음악을 공유합니다. 함께 들어보세요!');
@@ -98,219 +100,343 @@ function BoardListPageContent() {
         }
     }, [searchParams]);
 
-    const fetchPosts = async (mode: 'all' | 'my') => {
+    // 게시글 목록 조회
+    const fetchPosts = async () => {
         setLoading(true);
         try {
-            const endpoint = mode === 'my' ? `${API_URL}/board/my` : `${API_URL}/board/`;
+            const endpoint = viewMode === 'my' ? `${API_URL}/board/my` : `${API_URL}/board/`;
+            const params = new URLSearchParams();
+            if (debouncedSearch) params.append('keyword', debouncedSearch);
+            const urlWithParams = `${endpoint}?${params.toString()}`;
+
             const headers: HeadersInit = {};
             const token = localStorage.getItem('accessToken');
             if (token) headers['Authorization'] = `Bearer ${token}`;
-            
-            const res = await fetch(endpoint, { headers });
-            if (res.ok) setPosts(await res.json());
-        } catch (e) {} finally { setLoading(false); }
+            else if (viewMode === 'my') {
+                alert("로그인이 필요합니다.");
+                setViewMode('all');
+                return;
+            }
+
+            const res = await fetch(urlWithParams, { headers });
+            if (res.ok) {
+                const data: BoardPost[] = await res.json();
+                setPosts(data);
+            }
+        } catch (e) { console.error(e); }
+        finally { setLoading(false); }
     };
 
+    // 내 음악 목록 조회
     const fetchMyMusic = async () => {
         const token = localStorage.getItem('accessToken');
         if (!token) return;
         try {
-            // 상담사는 전체 환자 음악 목록, 환자는 내 음악 목록
             const endpoint = user?.role === 'therapist' ? `${API_URL}/therapist/music-list` : `${API_URL}/music/my`;
-            const res = await fetch(endpoint, { headers: { 'Authorization': `Bearer ${token}` }});
-            
-             if (res.ok) {
-                // 💡 [수정] 응답 데이터를 RawMusicData[] 타입으로 단언하여 any 제거
+            const res = await fetch(endpoint, { headers: { 'Authorization': `Bearer ${token}` } });
+            if (res.ok) {
                 const data = await res.json() as RawMusicData[];
-                
-                const formattedData: MusicTrack[] = data.map((m) => ({
-                    // 두 API의 필드 중 존재하는 값을 사용 (둘 다 없으면 기본값 0/제목없음 처리)
+                setMyMusic(data.map(m => ({
                     id: m.music_id ?? m.id ?? 0,
                     title: m.music_title ?? m.title ?? '제목 없음',
                     created_at: m.created_at
-                }));
-                setMyMusic(formattedData);
+                })));
             }
-        } catch(e) {}
+        } catch (e) { }
     };
 
-    // 💡 viewMode가 바뀔 때마다 fetch 실행
     useEffect(() => {
-        fetchPosts(viewMode);
+        fetchPosts();
         if (isAuthed) fetchMyMusic();
-    }, [viewMode, isAuthed]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [viewMode, debouncedSearch, isAuthed, user]);
 
+    // 게시글 작성 핸들러
     const handleCreatePost = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newTitle.trim() || !newContent.trim()) return;
-        
+
         setIsSubmitting(true);
         const token = localStorage.getItem('accessToken');
         if (!token) { alert("로그인이 필요합니다."); router.push('/login'); return; }
 
+        const tagsArray = newTags.split(/[,#\s]+/).map(t => t.trim()).filter(t => t.length > 0);
+
         try {
             const res = await fetch(`${API_URL}/board/`, {
                 method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json', 
-                    'Authorization': `Bearer ${token}` 
-                },
-                body: JSON.stringify({ 
-                    title: newTitle, 
-                    content: newContent, 
-                    track_id: selectedTrackId 
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    title: newTitle, content: newContent, track_id: selectedTrackId, tags: tagsArray
                 })
             });
 
             if (res.ok) {
-                setShowWriteForm(false);
-                setNewTitle(''); setNewContent(''); setSelectedTrackId(null);
-                fetchPosts(viewMode); // 현재 모드로 새로고침
+                alert("게시글이 등록되었습니다.");
+                setShowWriteForm(false); // 목록으로 복귀
+                setNewTitle(''); setNewContent(''); setNewTags(''); setSelectedTrackId(null);
+                fetchPosts(); // 목록 갱신
             } else {
-                alert("게시글 작성 실패");
+                alert("작성 실패");
             }
-        } catch (e) { console.error(e); } 
+        } catch (e) { console.error(e); }
         finally { setIsSubmitting(false); }
     };
 
-    // 💡 [추가] 게시글 삭제 핸들러
+    // 게시글 삭제 핸들러
     const handleDeletePost = async (e: React.MouseEvent, postId: number) => {
-        e.stopPropagation(); // 카드 클릭 방지
-        if (!window.confirm("정말 이 게시글을 삭제하시겠습니까?")) return;
-        
+        e.stopPropagation();
+        if (!window.confirm("정말 삭제하시겠습니까?")) return;
+
         const token = localStorage.getItem('accessToken');
         if (!token) return;
 
         try {
             const res = await fetch(`${API_URL}/board/${postId}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
+                method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
                 alert("삭제되었습니다.");
-                fetchPosts(viewMode); // 목록 새로고침
-            } else {
-                alert("삭제 권한이 없거나 오류가 발생했습니다.");
+                fetchPosts();
             }
         } catch (e) { console.error(e); }
     };
 
-    return (
-        <div className="max-w-4xl mx-auto p-6 min-h-screen bg-gray-50">
-            <div className="flex flex-col sm:flex-row justify-between items-center mb-8 gap-4">
-                <h1 className="text-2xl font-bold text-gray-900 flex items-center">
-                    <MessageCircle className="w-8 h-8 mr-2 text-indigo-600"/> 치유 커뮤니티
-                </h1>
-                <div className="flex gap-2">
-                    {/* 💡 탭 버튼 */}
-                    <div className="flex bg-gray-200 p-1 rounded-lg">
-                        <button 
-                            onClick={() => setViewMode('all')}
-                            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'all' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
-                        >
-                            전체 글
-                        </button>
-                        <button 
-                            onClick={() => setViewMode('my')}
-                            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'my' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
-                        >
-                            내가 쓴 글
-                        </button>
-                    </div>
-                    <button 
-                        onClick={() => setShowWriteForm(!showWriteForm)}
-                        className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition shadow-sm font-medium text-sm"
-                    >
-                        <Plus className="w-4 h-4"/> 글쓰기
+    // --- 렌더링: 작성 폼 화면 ---
+    if (showWriteForm) {
+        return (
+            <div className="max-w-3xl mx-auto p-6 min-h-screen bg-gray-50">
+                <div className="mb-6 flex items-center">
+                    <button onClick={() => setShowWriteForm(false)} className="flex items-center text-gray-500 hover:text-indigo-600 transition-colors font-medium">
+                        <ArrowLeft className="w-5 h-5 mr-2" /> 목록으로 돌아가기
                     </button>
                 </div>
-            </div>
 
-            {/* 글쓰기 폼 (변경 없음) */}
-            {showWriteForm && (
-                <div className="bg-white p-6 rounded-xl shadow-md mb-8 border border-gray-200 animate-in slide-in-from-top-2">
-                    <h3 className="font-bold text-lg mb-4">새 게시글 작성</h3>
-                    <form onSubmit={handleCreatePost} className="space-y-4">
-                        <input 
-                            type="text" placeholder="제목을 입력하세요" 
-                            value={newTitle} onChange={e => setNewTitle(e.target.value)}
-                            className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                        />
-                        <textarea 
-                            rows={5} placeholder="내용을 입력하세요" 
-                            value={newContent} onChange={e => setNewContent(e.target.value)}
-                            className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                        />
+                <div className="bg-white p-8 rounded-2xl shadow-lg border border-gray-200 animate-in slide-in-from-bottom-4 duration-300">
+                    <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center border-b pb-4">
+                        <PenLine className="w-6 h-6 mr-2 text-indigo-600" /> 새 이야기 작성
+                    </h2>
+
+                    <form onSubmit={handleCreatePost} className="space-y-6">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">🎵 내 음악 공유하기 (선택)</label>
-                            <select 
-                                className="w-full p-2 border rounded-lg"
-                                onChange={(e) => setSelectedTrackId(Number(e.target.value) || null)}
-                            >
-                                <option value="">공유 안 함</option>
-                                {myMusic.map(m => (
-                                    <option key={m.id} value={m.id}>{m.title} ({new Date(m.created_at).toLocaleDateString()})</option>
-                                ))}
-                            </select>
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">제목</label>
+                            <input
+                                type="text" placeholder="제목을 입력해주세요"
+                                value={newTitle} onChange={e => setNewTitle(e.target.value)}
+                                className="w-full p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all bg-gray-50 focus:bg-white"
+                                required
+                            />
                         </div>
-                        <div className="flex justify-end gap-2">
-                            <button type="button" onClick={() => setShowWriteForm(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">취소</button>
-                            <button type="submit" disabled={isSubmitting} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-gray-400">
-                                {isSubmitting ? '등록 중...' : '등록하기'}
+
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">내용</label>
+                            <textarea
+                                rows={10} placeholder="마음속 이야기를 자유롭게 나누어보세요..."
+                                value={newContent} onChange={e => setNewContent(e.target.value)}
+                                className="w-full p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all bg-gray-50 focus:bg-white resize-none"
+                                required
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-2">태그 (선택)</label>
+                                <div className="relative">
+                                    <Tag className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                    <input
+                                        type="text"
+                                        placeholder="예: #우울 #힐링 #불면증"
+                                        value={newTags} onChange={e => setNewTags(e.target.value)}
+                                        className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-2">음악 공유 (선택)</label>
+                                <div className="relative">
+                                    <Music className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                    <select
+                                        className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm appearance-none bg-white"
+                                        onChange={(e) => setSelectedTrackId(Number(e.target.value) || null)}
+                                        value={selectedTrackId || ''}
+                                    >
+                                        <option value="">선택 안 함</option>
+                                        {myMusic.map(m => (
+                                            <option key={m.id} value={m.id}>{m.title} ({new Date(m.created_at).toLocaleDateString()})</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                            <button
+                                type="button"
+                                onClick={() => setShowWriteForm(false)}
+                                className="px-6 py-3 text-gray-600 hover:bg-gray-100 rounded-xl font-medium transition-colors"
+                            >
+                                취소
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={isSubmitting}
+                                className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 disabled:bg-gray-300 transition-all shadow-md hover:shadow-lg flex items-center"
+                            >
+                                {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : "등록하기"}
                             </button>
                         </div>
                     </form>
                 </div>
-            )}
+            </div>
+        );
+    }
 
-            {/* 게시글 목록 */}
+    // --- 렌더링: 목록 화면 ---
+    return (
+        <div className="max-w-5xl mx-auto p-6 min-h-screen bg-gray-50">
+            {/* 헤더 */}
+            <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
+                <div className="text-left w-full md:w-auto">
+                    <h1 className="text-3xl font-extrabold text-gray-900 flex items-center mb-2">
+                        <MessageCircle className="w-8 h-8 mr-3 text-indigo-600" />
+                        치유 커뮤니티
+                    </h1>
+                    <p className="text-gray-500 text-sm ml-11">서로의 이야기를 듣고 음악으로 위로를 전하세요.</p>
+                </div>
+
+                <div className="flex w-full md:w-auto gap-3">
+                    <div className="relative flex-grow md:flex-grow-0 md:w-72">
+                        <input
+                            type="text" placeholder="관심있는 키워드 검색..."
+                            value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                            className="w-full pl-11 pr-4 py-3 border border-gray-200 rounded-full focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none shadow-sm bg-white transition-all"
+                        />
+                        <Search className="w-5 h-5 text-gray-400 absolute left-4 top-1/2 -translate-y-1/2" />
+                    </div>
+                    <button
+                        onClick={() => setShowWriteForm(true)}
+                        className="flex-shrink-0 flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 transition-all shadow-md hover:shadow-lg font-semibold"
+                    >
+                        <Plus className="w-5 h-5" /> 글쓰기
+                    </button>
+                </div>
+            </div>
+
+            {/* 탭 및 필터 */}
+            <div className="flex mb-6 border-b border-gray-200">
+                <button
+                    onClick={() => setViewMode('all')}
+                    className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${viewMode === 'all' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                >
+                    전체 이야기
+                </button>
+                <button
+                    onClick={() => setViewMode('my')}
+                    className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${viewMode === 'my' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                >
+                    내가 쓴 글
+                </button>
+            </div>
+
+            {/* 게시글 리스트 */}
             {loading ? (
-                <div className="text-center py-10"><Loader2 className="w-8 h-8 animate-spin mx-auto text-indigo-600"/></div>
+                <div className="py-20 flex flex-col items-center justify-center text-gray-400">
+                    <Loader2 className="w-10 h-10 animate-spin mb-3" />
+                    <p>이야기를 불러오는 중입니다...</p>
+                </div>
             ) : (
-                <div className="space-y-4">
-                    {posts.length === 0 && <p className="text-center text-gray-500 py-10">{viewMode === 'my' ? '작성한 글이 없습니다.' : '아직 게시글이 없습니다.'}</p>}
-                    {posts.map(post => (
-                        <div 
-                            key={post.id} 
-                            onClick={() => router.push(`/board/${post.id}`)}
-                            className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition cursor-pointer relative group"
-                        >
-                            {/* 💡 [추가] 작성자 본인일 경우 삭제 버튼 표시 */}
-                            {user && user.id === post.author_id && (
-                                <button 
-                                    onClick={(e) => handleDeletePost(e, post.id)}
-                                    className="absolute top-4 right-4 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full opacity-0 group-hover:opacity-100 transition-all"
-                                    title="게시글 삭제"
-                                >
-                                    <Trash2 className="w-4 h-4" />
-                                </button>
-                            )}
-
-                            <div className="flex justify-between items-start pr-8"> {/* 삭제 버튼 공간 확보 */}
-                                <div>
-                                    <h3 className="font-bold text-lg text-gray-800 mb-1">{post.title}</h3>
-                                    <p className="text-gray-600 text-sm line-clamp-2 mb-3">{post.content}</p>
-                                    <div className="flex items-center gap-4 text-xs text-gray-500">
-                                        <span className="flex items-center">
-                                            {post.author_role === 'therapist' 
-                                                ? <span className="flex items-center text-green-600 font-bold mr-1"><ShieldCheck className="w-3 h-3 mr-1"/>상담사</span> 
-                                                : <User className="w-3 h-3 mr-1"/>}
-                                            {post.author_name}
-                                        </span>
-                                        <span className="flex items-center"><Calendar className="w-3 h-3 mr-1"/> {new Date(post.created_at).toLocaleDateString()}</span>
-                                        <span className="flex items-center"><MessageCircle className="w-3 h-3 mr-1"/> 댓글 {post.comments_count}</span>
-                                    </div>
-                                </div>
-                                {post.track && (
-                                    <div className="hidden sm:flex items-center justify-center w-12 h-12 bg-indigo-50 rounded-full text-indigo-600 flex-shrink-0">
-                                        <Music className="w-6 h-6"/>
-                                    </div>
-                                )}
-                            </div>
+                <div className="grid gap-4">
+                    {posts.length === 0 ? (
+                        <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-gray-300">
+                            <p className="text-gray-500 text-lg">아직 등록된 게시글이 없습니다.</p>
+                            <p className="text-gray-400 text-sm mt-2">첫 번째 이야기를 들려주세요!</p>
                         </div>
-                    ))}
+                    ) : (
+                        posts.map(post => (
+                            <div
+                                key={post.id}
+                                onClick={() => router.push(`/board/${post.id}`)}
+                                className="group bg-white p-6 rounded-2xl shadow-sm border border-gray-200 hover:shadow-md hover:border-indigo-200 transition-all cursor-pointer relative"
+                            >
+                                {user && user.id === post.author_id && (
+                                    <button
+                                        onClick={(e) => handleDeletePost(e, post.id)}
+                                        className="absolute top-5 right-5 p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all opacity-0 group-hover:opacity-100"
+                                        title="삭제"
+                                    >
+                                        <Trash2 className="w-5 h-5" />
+                                    </button>
+                                )}
+
+                                <div className="flex flex-col md:flex-row gap-4 md:items-start">
+                                    <div className="flex-1">
+                                        <div className="flex flex-wrap items-center gap-2 mb-2">
+                                            {post.track && (
+                                                <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-indigo-50 text-indigo-600 border border-indigo-100">
+                                                    <Music className="w-3 h-3 mr-1" /> 음악 포함
+                                                </span>
+                                            )}
+                                            {post.tags && post.tags.map((tag, idx) => (
+                                                <span key={idx} className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-600">
+                                                    #{tag}
+                                                </span>
+                                            ))}
+                                        </div>
+
+                                        <h3 className="text-xl font-bold text-gray-900 mb-2 group-hover:text-indigo-700 transition-colors">
+                                            {post.title}
+                                        </h3>
+                                        <p className="text-gray-600 text-sm line-clamp-2 mb-4 leading-relaxed">
+                                            {post.content}
+                                        </p>
+
+                                        <div className="flex items-center gap-4 text-xs text-gray-500 font-medium">
+                                            <span className="flex items-center">
+                                                {post.author_role === 'therapist'
+                                                    ? <ShieldCheck className="w-4 h-4 mr-1 text-green-600" />
+                                                    : <User className="w-4 h-4 mr-1 text-gray-400" />}
+                                                {post.author_name}
+                                            </span>
+                                            <span className="w-1 h-1 bg-gray-300 rounded-full"></span>
+                                            <span className="flex items-center">
+                                                {new Date(post.created_at).toLocaleDateString()}
+                                            </span>
+
+                                            <div className="flex items-center gap-3 ml-auto md:ml-0 pl-4 border-l border-gray-200">
+                                                <span className="flex items-center hover:text-gray-700">
+                                                    <Eye className="w-3.5 h-3.5 mr-1" /> {post.views}
+                                                </span>
+                                                <span className="flex items-center text-pink-500">
+                                                    <Heart className={`w-3.5 h-3.5 mr-1 ${post.is_liked ? 'fill-current' : ''}`} /> {post.like_count}
+                                                </span>
+                                                <span className="flex items-center text-blue-500">
+                                                    <MessageCircle className="w-3.5 h-3.5 mr-1" /> {post.comments_count}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* 썸네일 역할 (음악 아이콘) */}
+                                    {post.track && (
+                                        <div className="hidden md:flex items-center justify-center w-16 h-16 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl border border-indigo-100 text-indigo-400 flex-shrink-0">
+                                            <Music className="w-8 h-8 opacity-50" />
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )))
+                    }
                 </div>
             )}
         </div>
+    );
+}
+
+export default function BoardListPage() {
+    return (
+        <Suspense fallback={<div className="flex justify-center items-center min-h-screen"><Loader2 className="w-10 h-10 animate-spin text-indigo-600" /></div>}>
+            <BoardListContent />
+        </Suspense>
     );
 }

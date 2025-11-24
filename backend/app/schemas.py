@@ -288,6 +288,7 @@ class PostCreate(BaseModel):
     title: str = Field(..., min_length=1)
     content: str = Field(..., min_length=1)
     track_id: Optional[int] = None 
+    tags: Optional[List[str]] = []
 
 # 💡 [핵심 추가] 게시판용 간단 트랙 정보 (MusicTrackInfo 대신 사용)
 class BoardTrackInfo(BaseModel):
@@ -309,7 +310,11 @@ class PostResponse(BaseModel):
     # 💡 [수정] MusicTrackInfo -> BoardTrackInfo (단순화)
     track: Optional[BoardTrackInfo] = None 
     comments_count: int = 0
-    
+    views: int = 0
+    tags: Optional[List[str]] = []
+    like_count: int = 0
+    is_liked: bool = False
+
     class Config:
         from_attributes = True
 
