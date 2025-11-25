@@ -148,28 +148,59 @@ async def get_posts(
     return response
 
 
-# 2. 내가 쓴 게시글 조회 (이건 최신순 고정)
 @router.get("/my", response_model=List[PostResponse])
 async def get_my_posts(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    keyword: Optional[str] = None,
+    sort_by: Literal['latest', 'views', 'likes', 'comments'] = 'latest',
+    has_music: bool = False,
 ):
-    # (기존 로직 유지 - 최신순 정렬)
-    query = (
-        select(BoardPost)
-        .where(BoardPost.author_id == current_user.id) 
-        .options(joinedload(BoardPost.author), joinedload(BoardPost.track))
-        .order_by(desc(BoardPost.created_at))
+    query = select(BoardPost).where(BoardPost.author_id == current_user.id).options(
+        joinedload(BoardPost.author), joinedload(BoardPost.track)
     )
-    posts = (await db.execute(query)).scalars().all()
-    
-    # (아래 response 생성 로직은 위 get_posts와 동일하게 복사/유지)
+
+    if keyword:
+        query = query.where(
+            or_(
+                BoardPost.title.ilike(f"%{keyword}%"),
+                BoardPost.content.ilike(f"%{keyword}%")
+            )
+        )
+
+    if has_music:
+        query = query.where(BoardPost.track_id.isnot(None))
+
+    # sort_by 처리 (get_posts와 동일)
+    if sort_by == 'likes':
+        like_sub = (
+            select(BoardLike.post_id, func.count(BoardLike.user_id).label("like_count"))
+            .group_by(BoardLike.post_id)
+            .subquery()
+        )
+        query = query.outerjoin(like_sub, like_sub.c.post_id == BoardPost.id)\
+                     .order_by(desc(func.coalesce(like_sub.c.like_count, 0)), desc(BoardPost.created_at))
+    elif sort_by == 'comments':
+        comment_sub = (
+            select(BoardComment.post_id, func.count(BoardComment.id).label("comment_count"))
+            .group_by(BoardComment.post_id)
+            .subquery()
+        )
+        query = query.outerjoin(comment_sub, comment_sub.c.post_id == BoardPost.id)\
+                     .order_by(desc(func.coalesce(comment_sub.c.comment_count, 0)), desc(BoardPost.created_at))
+    elif sort_by == 'views':
+        query = query.order_by(desc(BoardPost.views), desc(BoardPost.created_at))
+    else:
+        query = query.order_by(desc(BoardPost.created_at))
+
+    posts = (await db.execute(query)).unique().scalars().all()
+
+    # response 생성 (get_posts와 동일)
     response = []
     for post in posts:
         c_count = (await db.execute(select(func.count(BoardComment.id)).where(BoardComment.post_id == post.id))).scalar() or 0
         l_count = (await db.execute(select(func.count(BoardLike.user_id)).where(BoardLike.post_id == post.id))).scalar() or 0
         liked = (await db.execute(select(BoardLike).where(BoardLike.post_id == post.id, BoardLike.user_id == current_user.id))).scalar_one_or_none()
-        
         response.append(PostResponse(
             id=post.id, title=post.title, content=post.content,
             author_name=post.author.name or "익명", author_id=post.author_id, author_role=post.author.role,
@@ -177,6 +208,7 @@ async def get_my_posts(
             comments_count=c_count, views=post.views, tags=post.tags or [], like_count=l_count, is_liked=bool(liked)
         ))
     return response
+
 
 
 # ... (나머지 API - create_post, toggle_like, delete_post 등 기존 유지) ...
