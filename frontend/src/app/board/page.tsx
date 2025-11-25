@@ -4,7 +4,7 @@ import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
     MessageCircle, Plus, Loader2, Music, User, Calendar, ShieldCheck, Trash2,
-    Search, Heart, Eye, Tag, ArrowLeft, PenLine, Filter, SortAsc
+    Search, Heart, Eye, Tag, SlidersHorizontal, PenLine, ArrowLeft // 아이콘 추가
 } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 
@@ -24,17 +24,20 @@ function getApiUrl() {
 }
 
 const API_URL = getApiUrl();
-// --- 타입 정의 ---
+// 1. 음악 트랙 타입
 interface MusicTrack {
     id: number;
     title: string;
     created_at: string;
 }
+
 interface BoardTrack {
     id: number;
     title: string;
     audioUrl?: string;
 }
+
+// 2. 게시글 타입 (좋아요, 조회수, 태그 포함)
 interface BoardPost {
     id: number;
     title: string;
@@ -45,16 +48,26 @@ interface BoardPost {
     created_at: string;
     comments_count: number;
     track?: BoardTrack | null;
+
+    // 💡 [추가] 새 기능 필드
     views: number;
     tags: string[];
     like_count: number;
     is_liked: boolean;
 }
+
+// 3. API 응답 처리를 위한 유니온 타입 정의
 interface RawMusicData {
-    id?: number; music_id?: number; title?: string; music_title?: string; created_at: string;
+    id?: number;
+    music_id?: number;
+    title?: string;
+    music_title?: string;
+    created_at: string;
 }
 
-// --- 메인 컨텐츠 컴포넌트 ---
+// 정렬 옵션 타입 정의
+type SortOption = 'latest' | 'views' | 'likes' | 'comments';
+
 function BoardListContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -65,36 +78,39 @@ function BoardListContent() {
     const [loading, setLoading] = useState(true);
 
     const [viewMode, setViewMode] = useState<'all' | 'my'>('all');
+
+    // 정렬 및 필터 상태
+    const [sortBy, setSortBy] = useState<SortOption>('latest');
+    const [filterMusic, setFilterMusic] = useState(false);
+
+    // 검색 상태
     const [searchTerm, setSearchTerm] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
 
-    // 화면 전환 상태 (true면 작성 폼만 보임)
+    // 작성 폼 상태
     const [showWriteForm, setShowWriteForm] = useState(false);
-
-    // 작성 폼 입력 상태
     const [newTitle, setNewTitle] = useState('');
     const [newContent, setNewContent] = useState('');
-    const [newTags, setNewTags] = useState('');
+    const [newTags, setNewTags] = useState(''); // 태그 입력
     const [selectedTrackId, setSelectedTrackId] = useState<number | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [sortBy, setSortBy] = useState<'latest' | 'views' | 'likes' | 'comments'>('latest');
-    const [filterMusic, setFilterMusic] = useState(false);
 
-    // 검색어 디바운스
+    // 검색어 디바운스 (타이핑 멈추면 검색값 업데이트)
     useEffect(() => {
-        const timer = setTimeout(() => setDebouncedSearch(searchTerm), 500);
+        const timer = setTimeout(() => {
+            setDebouncedSearch(searchTerm);
+        }, 500);
         return () => clearTimeout(timer);
     }, [searchTerm]);
 
-    // URL 파라미터 처리 (공유하기 등)
+    // URL 파라미터 처리
     useEffect(() => {
         const writeMode = searchParams.get('write');
         const trackId = searchParams.get('trackId');
         const trackTitle = searchParams.get('title');
 
-
         if (writeMode === 'true') {
-            setShowWriteForm(true); // 작성 모드로 전환
+            setShowWriteForm(true);
             if (trackId) setSelectedTrackId(Number(trackId));
             if (trackTitle) {
                 setNewTitle(`[음악 공유] ${decodeURIComponent(trackTitle)}`);
@@ -103,59 +119,85 @@ function BoardListContent() {
         }
     }, [searchParams]);
 
-    // 게시글 목록 조회
+    // 게시글 목록 가져오기 (검색, 정렬, 필터 포함)
     const fetchPosts = async () => {
         setLoading(true);
         try {
-            const endpoint = viewMode === 'my' ? `${API_URL}/board/my` : `${API_URL}/board/`;
+            let endpoint = `${API_URL}/board/`;
+
+            // '내 글 보기' 모드일 때
+            if (viewMode === 'my') endpoint = `${API_URL}/board/my`;
+
+            // 쿼리 파라미터 구성
             const params = new URLSearchParams();
             if (debouncedSearch) params.append('keyword', debouncedSearch);
+
+            // 정렬 및 필터 파라미터
             params.append('sort_by', sortBy);
             if (filterMusic) params.append('has_music', 'true');
-            
+
             const urlWithParams = `${endpoint}?${params.toString()}`;
 
             const headers: HeadersInit = {};
             const token = localStorage.getItem('accessToken');
+
             if (token) headers['Authorization'] = `Bearer ${token}`;
             else if (viewMode === 'my') {
                 alert("로그인이 필요합니다.");
                 setViewMode('all');
                 return;
             }
-            
+
             const res = await fetch(urlWithParams, { headers });
             if (res.ok) {
                 const data: BoardPost[] = await res.json();
                 setPosts(data);
             }
-        } catch (e) { console.error(e); }
-        finally { setLoading(false); }
+        } catch (e) {
+            console.error("게시글 로딩 오류:", e);
+        } finally {
+            setLoading(false);
+        }
     };
 
-    // 내 음악 목록 조회
+    // 내 음악 목록 가져오기
     const fetchMyMusic = async () => {
         const token = localStorage.getItem('accessToken');
         if (!token) return;
         try {
             const endpoint = user?.role === 'therapist' ? `${API_URL}/therapist/music-list` : `${API_URL}/music/my`;
-            const res = await fetch(endpoint, { headers: { 'Authorization': `Bearer ${token}` } });
+            const res = await fetch(endpoint, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
             if (res.ok) {
                 const data = await res.json() as RawMusicData[];
-                setMyMusic(data.map(m => ({
+
+                const formattedData: MusicTrack[] = data.map((m) => ({
                     id: m.music_id ?? m.id ?? 0,
                     title: m.music_title ?? m.title ?? '제목 없음',
                     created_at: m.created_at
-                })));
+                }));
+                setMyMusic(formattedData);
             }
         } catch (e) { }
     };
 
+    // 뷰모드, 검색어, 정렬, 필터가 바뀌면 재로딩
     useEffect(() => {
         fetchPosts();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [viewMode, debouncedSearch, sortBy, filterMusic]);
+
+    useEffect(() => {
         if (isAuthed) fetchMyMusic();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [viewMode, debouncedSearch, isAuthed, user, sortBy, filterMusic]);
+    }, [isAuthed, user]);
+
+    // 검색 핸들러
+    const handleSearch = (e: React.FormEvent) => {
+        e.preventDefault();
+    };
 
     // 게시글 작성 핸들러
     const handleCreatePost = async (e: React.FormEvent) => {
@@ -166,46 +208,71 @@ function BoardListContent() {
         const token = localStorage.getItem('accessToken');
         if (!token) { alert("로그인이 필요합니다."); router.push('/login'); return; }
 
-        const tagsArray = newTags.split(/[,#\s]+/).map(t => t.trim()).filter(t => t.length > 0);
+        // 태그 문자열을 배열로 변환
+        const tagsArray = newTags
+            .split(/[,#\s]+/)
+            .map(t => t.trim())
+            .filter(t => t.length > 0);
+
+        const payload = {
+            title: newTitle,
+            content: newContent,
+            track_id: selectedTrackId ? selectedTrackId : null,
+            tags: tagsArray
+        };
 
         try {
             const res = await fetch(`${API_URL}/board/`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({
-                    title: newTitle, content: newContent, track_id: selectedTrackId, tags: tagsArray
-                })
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(payload)
             });
 
             if (res.ok) {
-                alert("게시글이 등록되었습니다.");
-                setShowWriteForm(false); // 목록으로 복귀
-                setNewTitle(''); setNewContent(''); setNewTags(''); setSelectedTrackId(null);
-                fetchPosts(); // 목록 갱신
+                setShowWriteForm(false);
+                setNewTitle('');
+                setNewContent('');
+                setNewTags('');
+                setSelectedTrackId(null);
+                fetchPosts();
             } else {
-                alert("작성 실패");
+                alert("게시글 작성 실패");
             }
-        } catch (e) { console.error(e); }
-        finally { setIsSubmitting(false); }
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     // 게시글 삭제 핸들러
     const handleDeletePost = async (e: React.MouseEvent, postId: number) => {
         e.stopPropagation();
-        if (!window.confirm("정말 삭제하시겠습니까?")) return;
+        if (!window.confirm("정말 이 게시글을 삭제하시겠습니까?")) return;
 
         const token = localStorage.getItem('accessToken');
         if (!token) return;
 
         try {
             const res = await fetch(`${API_URL}/board/${postId}`, {
-                method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` }
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
                 alert("삭제되었습니다.");
                 fetchPosts();
+            } else {
+                alert("삭제 권한이 없거나 오류가 발생했습니다.");
             }
         } catch (e) { console.error(e); }
+    };
+
+    // 💡 [수정] 정렬 변경 핸들러 (타입 단언 사용)
+    const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        setSortBy(e.target.value as SortOption);
     };
 
     // --- 렌더링: 작성 폼 화면 ---
@@ -300,7 +367,7 @@ function BoardListContent() {
 
     // --- 렌더링: 목록 화면 ---
     return (
-        <div className="max-w-5xl mx-auto p-6 min-h-screen bg-gray-50">
+        <div className="max-w-4xl mx-auto p-6 min-h-screen bg-gray-50">
             {/* 헤더 */}
             <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
                 <div className="text-left w-full md:w-auto">
@@ -329,33 +396,47 @@ function BoardListContent() {
                 </div>
             </div>
 
-            {/* 탭 및 필터 */}
-            <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-                 <div className="flex bg-gray-200 p-1 rounded-lg">
-                    <button onClick={() => setViewMode('all')} className={`...`}>전체 글</button>
-                    <button onClick={() => setViewMode('my')} className={`...`}>내 글</button>
+            {/* 탭, 정렬, 필터 UI */}
+            <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+                <div className="flex bg-gray-200 p-1 rounded-lg">
+                    <button
+                        onClick={() => setViewMode('all')}
+                        className={`px-6 py-2 rounded-md text-sm font-medium transition-all ${viewMode === 'all' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                        전체 글
+                    </button>
+                    <button
+                        onClick={() => setViewMode('my')}
+                        className={`px-6 py-2 rounded-md text-sm font-medium transition-all ${viewMode === 'my' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                        내 글
+                    </button>
                 </div>
 
                 <div className="flex items-center gap-3 overflow-x-auto w-full md:w-auto pb-2 md:pb-0">
                     {/* 음악 필터 */}
-                    <button 
+                    <button
                         onClick={() => setFilterMusic(!filterMusic)}
-                        className={`flex items-center px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${filterMusic ? 'bg-indigo-100 border-indigo-300 text-indigo-700' : 'bg-white border-gray-300 text-gray-600'}`}
+                        className={`flex items-center px-3 py-2 rounded-lg text-xs font-medium border transition-all whitespace-nowrap ${filterMusic ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
                     >
-                        <Music className="w-3 h-3 mr-1"/> 음악 포함만
+                        <Music className={`w-3.5 h-3.5 mr-1.5 ${filterMusic ? 'text-indigo-600' : 'text-gray-400'}`} />
+                        음악 포함
                     </button>
 
-                    {/* 정렬 드롭다운 (또는 버튼 그룹) */}
-                    <div className="flex bg-white border border-gray-200 rounded-lg p-0.5">
-                        <button onClick={() => setSortBy('latest')} className={`px-3 py-1 text-xs rounded-md ${sortBy === 'latest' ? 'bg-gray-100 font-bold text-gray-900' : 'text-gray-500'}`}>최신순</button>
-                        <button onClick={() => setSortBy('views')} className={`px-3 py-1 text-xs rounded-md ${sortBy === 'views' ? 'bg-gray-100 font-bold text-gray-900' : 'text-gray-500'}`}>조회순</button>
-                        <button onClick={() => setSortBy('likes')} className={`px-3 py-1 text-xs rounded-md ${sortBy === 'likes' ? 'bg-gray-100 font-bold text-gray-900' : 'text-gray-500'}`}>좋아요순</button>
-                        <button onClick={() => setSortBy('comments')} className={`px-3 py-1 text-xs rounded-md ${sortBy === 'comments' ? 'bg-gray-100 font-bold text-gray-900' : 'text-gray-500'}`}>댓글순</button>
+                    {/* 정렬 드롭다운 */}
+                    <div className="relative">
+                        <select
+                            value={sortBy}
+                            onChange={handleSortChange}
+                            className="appearance-none pl-3 pr-8 py-2 rounded-lg border border-gray-200 text-xs font-medium text-gray-700 focus:ring-2 focus:ring-indigo-500 outline-none bg-white cursor-pointer hover:border-gray-300 transition-colors"
+                        >
+                            <option value="latest">최신순</option>
+                            <option value="views">조회순</option>
+                            <option value="likes">좋아요순</option>
+                            <option value="comments">댓글순</option>
+                        </select>
+                        <SlidersHorizontal className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     </div>
-                    
-                    <button onClick={() => setShowWriteForm(!showWriteForm)} className="...">
-                        <Plus className="w-4 h-4"/> 글쓰기
-                    </button>
                 </div>
             </div>
 
@@ -398,7 +479,7 @@ function BoardListContent() {
                                                 </span>
                                             )}
                                             {post.tags && post.tags.map((tag, idx) => (
-                                                <span key={idx} className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-600">
+                                                <span key={idx} className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200">
                                                     #{tag}
                                                 </span>
                                             ))}
@@ -424,14 +505,14 @@ function BoardListContent() {
                                             </span>
 
                                             <div className="flex items-center gap-3 ml-auto md:ml-0 pl-4 border-l border-gray-200">
-                                                <span className="flex items-center hover:text-gray-700">
-                                                    <Eye className="w-3.5 h-3.5 mr-1" /> {post.views}
+                                                <span className="flex items-center hover:text-gray-700" title="조회수">
+                                                    <Eye className="w-3.5 h-3.5 mr-1.5" /> {post.views}
                                                 </span>
-                                                <span className="flex items-center text-pink-500">
-                                                    <Heart className={`w-3.5 h-3.5 mr-1 ${post.is_liked ? 'fill-current' : ''}`} /> {post.like_count}
+                                                <span className="flex items-center text-pink-500" title="좋아요">
+                                                    <Heart className={`w-3.5 h-3.5 mr-1.5 ${post.is_liked ? 'fill-current' : ''}`} /> {post.like_count}
                                                 </span>
-                                                <span className="flex items-center text-blue-500">
-                                                    <MessageCircle className="w-3.5 h-3.5 mr-1" /> {post.comments_count}
+                                                <span className="flex items-center text-blue-500" title="댓글">
+                                                    <MessageCircle className="w-3.5 h-3.5 mr-1.5" /> {post.comments_count}
                                                 </span>
                                             </div>
                                         </div>
@@ -439,14 +520,14 @@ function BoardListContent() {
 
                                     {/* 썸네일 역할 (음악 아이콘) */}
                                     {post.track && (
-                                        <div className="hidden md:flex items-center justify-center w-16 h-16 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl border border-indigo-100 text-indigo-400 flex-shrink-0">
+                                        <div className="hidden md:flex items-center justify-center w-16 h-16 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl border border-indigo-100 text-indigo-400 flex-shrink-0 shadow-sm group-hover:scale-105 transition-transform">
                                             <Music className="w-8 h-8 opacity-50" />
                                         </div>
                                     )}
                                 </div>
                             </div>
-                        )))
-                    }
+                        ))
+                    )}
                 </div>
             )}
         </div>

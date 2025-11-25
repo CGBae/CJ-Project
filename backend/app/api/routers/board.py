@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, insert, delete, desc, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
-from typing import List, Optional
+from typing import List, Optional,Literal
 
 from app.db import get_db
 from app.models import User, BoardPost, BoardComment, Track, BoardLike
@@ -27,10 +27,7 @@ async def get_posts(
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional)
 ):
-    # 기본 쿼리: 댓글 수, 좋아요 수 서브쿼리 준비
-    comments_count_sub = select(func.count(BoardComment.id)).where(BoardComment.post_id == BoardPost.id).scalar_subquery()
-    likes_count_sub = select(func.count(BoardLike.user_id)).where(BoardLike.post_id == BoardPost.id).scalar_subquery()
-
+    # 기본 쿼리
     query = select(BoardPost).options(joinedload(BoardPost.author), joinedload(BoardPost.track))
     
     # 1. 검색
@@ -44,13 +41,13 @@ async def get_posts(
     if has_music:
         query = query.where(BoardPost.track_id.isnot(None))
 
-    # 3. 정렬
+    # 3. 정렬 로직
     if sort_by == 'latest':
         query = query.order_by(desc(BoardPost.created_at))
     elif sort_by == 'views':
         query = query.order_by(desc(BoardPost.views), desc(BoardPost.created_at))
     elif sort_by == 'likes':
-        # 좋아요 수로 정렬 (서브쿼리 활용)
+        # 좋아요 수로 정렬 (서브쿼리 조인)
         query = query.outerjoin(BoardLike).group_by(BoardPost.id).order_by(func.count(BoardLike.user_id).desc(), desc(BoardPost.created_at))
     elif sort_by == 'comments':
         # 댓글 수로 정렬
@@ -58,12 +55,12 @@ async def get_posts(
 
     query = query.offset(skip).limit(limit)
     
-    # 실행 (유니크 처리 필요할 수 있음)
+    # 실행 (유니크 처리)
     posts = (await db.execute(query)).unique().scalars().all()
     
     response = []
     for post in posts:
-        # 카운트 별도 조회 (group_by 쿼리가 복잡해질 수 있어 안전하게 개별 조회)
+        # 카운트 별도 조회 (group_by 문제 방지)
         c_count = (await db.execute(select(func.count(BoardComment.id)).where(BoardComment.post_id == post.id))).scalar() or 0
         l_count = (await db.execute(select(func.count(BoardLike.user_id)).where(BoardLike.post_id == post.id))).scalar() or 0
         is_liked = False
@@ -76,37 +73,6 @@ async def get_posts(
             author_name=post.author.name or "익명", author_id=post.author_id, author_role=post.author.role,
             created_at=post.created_at, track=map_track_to_schema(post.track),
             comments_count=c_count, views=post.views, tags=post.tags or [], like_count=l_count, is_liked=is_liked
-        ))
-    return response
-
-# 💡 2. [핵심 수정] "내가 쓴 글 조회" (순서 중요: /{post_id} 보다 위에 있어야 함!)
-@router.get("/my", response_model=List[PostResponse])
-async def get_my_posts(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    # 💡 내 ID(current_user.id)와 일치하는 글만 필터링
-    query = (
-        select(BoardPost)
-        .where(BoardPost.author_id == current_user.id) 
-        .options(joinedload(BoardPost.author), joinedload(BoardPost.track))
-        .order_by(desc(BoardPost.created_at))
-    )
-    
-    posts = (await db.execute(query)).scalars().all()
-    
-    response = []
-    for post in posts:
-        c_count = (await db.execute(select(func.count(BoardComment.id)).where(BoardComment.post_id == post.id))).scalar() or 0
-        l_count = (await db.execute(select(func.count(BoardLike.user_id)).where(BoardLike.post_id == post.id))).scalar() or 0
-        # 내 글이니 좋아요 여부는 내가 눌렀는지만 체크
-        liked = (await db.execute(select(BoardLike).where(BoardLike.post_id == post.id, BoardLike.user_id == current_user.id))).scalar_one_or_none()
-        
-        response.append(PostResponse(
-            id=post.id, title=post.title, content=post.content,
-            author_name=post.author.name or "익명", author_id=post.author_id, author_role=post.author.role,
-            created_at=post.created_at, track=map_track_to_schema(post.track),
-            comments_count=c_count, views=post.views, tags=post.tags or [], like_count=l_count, is_liked=bool(liked)
         ))
     return response
 
