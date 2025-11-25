@@ -153,7 +153,7 @@ export default function MessengerPage() {
             {/* 왼쪽: 대화 상대 목록 */}
             <div className="w-1/3 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
                 <div className="p-4 border-b border-gray-100 bg-white flex justify-between items-center">
-                    <span className="font-bold text-lg text-gray-800">쪽지함</span>
+                    <span className="font-bold text-lg text-gray-800">메시지</span>
                     <button onClick={fetchPartners} className="p-1.5 hover:bg-gray-100 rounded-full transition-colors" title="새로고침">
                         <RefreshCcw className="w-4 h-4 text-gray-500"/>
                     </button>
