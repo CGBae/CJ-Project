@@ -5,7 +5,7 @@ import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/contexts/AuthContext';
 // 💡 1. [추가] 전문적인 UI를 위한 아이콘 임포트
-import { User, LogOut, Settings, ChevronDown, Music, BarChart3,Sparkles,Volume2, LayoutDashboard, Users,FilePen,MessageSquare } from 'lucide-react';
+import { User, LogOut, Settings, ChevronDown, Music, BarChart3,Sparkles,Volume2, LayoutDashboard, Users,FilePen,MessageSquare, MessageCircle } from 'lucide-react';
 
 export default function Header() {
   // 💡 2. [수정] role 대신 user 객체를 가져옴
@@ -71,6 +71,7 @@ export default function Header() {
                     <NavLink href="/compose" pathname={pathname}><Sparkles className="w-4 h-4 mr-1.5"/>작곡체험</NavLink>
                     <NavLink href="/music" pathname={pathname}><Volume2 className="w-4 h-4 mr-1.5"/>내 음악</NavLink>
                     <NavLink href="/board" pathname={pathname}><Users className="w-4 h-4 mr-1.5" />커뮤니티</NavLink>
+                    <NavLink href="/messenger" pathname={pathname}><MessageCircle className="w-4 h-4 mr-1.5"/>메시지</NavLink>
                   </>
                 )}
                 {role === 'therapist' && (
@@ -80,6 +81,7 @@ export default function Header() {
                     <NavLink href="/intake/counselor" pathname={pathname}><FilePen className="w-4 h-4 mr-1.5"/>음악 처방</NavLink>
                     <NavLink href="/manage-music" pathname={pathname}><Volume2 className="w-4 h-4 mr-1.5"/>음악 관리</NavLink>
                     <NavLink href="/board" pathname={pathname}><Users className="w-4 h-4 mr-1.5" />커뮤니티</NavLink>
+                    <NavLink href="/messenger" pathname={pathname}><MessageCircle className="w-4 h-4 mr-1.5"/>메시지</NavLink>
                   </>
                 )}
               </nav>

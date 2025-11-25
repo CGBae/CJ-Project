@@ -323,3 +323,47 @@ class PostDetailResponse(PostResponse):
 
 class TrackUpdate(BaseModel):
     title: str = Field(..., min_length=1, max_length=50)
+
+class MessageCreate(BaseModel):
+    receiver_id: int
+    content: str
+
+class MessageResponse(BaseModel):
+    id: int
+    content: str
+    sender_id: int
+    receiver_id: int
+    created_at: datetime
+    is_read: bool
+    class Config:
+        from_attributes = True
+
+# 대화 상대방 정보 (목록용)
+class ChatPartner(BaseModel):
+    user_id: int
+    name: str
+    role: str
+    unread_count: int
+    last_message: Optional[str] = None
+    last_message_time: Optional[datetime] = None
+
+# 💡 [신규] 연결 요청 스키마 (ID 또는 이메일)
+class ConnectionRequest(BaseModel):
+    target_id: Optional[int] = None
+    email: Optional[str] = None
+
+# 💡 [신규] 통합 연결 정보 스키마 (마이페이지 리스트용)
+class ConnectionInfo(BaseModel):
+    connection_id: int
+    partner_id: int
+    partner_name: str
+    partner_email: str
+    partner_role: str
+    status: str # 'PENDING', 'ACCEPTED'
+    created_at: datetime
+    
+    # 내가 요청을 보낸 사람인지, 받은 사람인지 구분하기 위함
+    is_sender: bool 
+
+    class Config:
+        from_attributes = True

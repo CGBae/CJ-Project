@@ -10,7 +10,7 @@ export default function CounselorLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // 💡 1. [수정] role 대신 user 객체를 가져옵니다.
+  // 💡 1. [수정] role 대신 user객체를 가져옵니다.
   const { user, isAuthed, isLoading } = useAuth();
   const router = useRouter();
 

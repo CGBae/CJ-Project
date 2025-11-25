@@ -342,3 +342,20 @@ class BoardLike(Base):
     post_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("board_posts.id", ondelete="CASCADE"), primary_key=True)
     
     post: Mapped["BoardPost"] = relationship("BoardPost", back_populates="likes")
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    
+    # 보낸 사람
+    sender_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    sender: Mapped["User"] = relationship("User", foreign_keys=[sender_id])
+    
+    # 받는 사람
+    receiver_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    receiver: Mapped["User"] = relationship("User", foreign_keys=[receiver_id])
+
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False) # 읽음 여부
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

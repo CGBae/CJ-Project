@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 // 💡 1. [수정] 'Palette' (컬러테라피) 아이콘 import 제거
 import {
     Play, Pause, Music, Trash2, ArrowLeft, Volume2, Loader2, FileText, MessageSquare, ChevronDown, User, AlertTriangle, Heart,
-    Volume1, VolumeX, RefreshCcw, Edit2, Check, X
+    Volume1, VolumeX, RefreshCcw, Edit2, Check, X, Share2
 } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext'; // 💡 AuthContext 임포트
 // 💡 2. [수정] MusicTrackInfo 타입 (백엔드 schemas.py와 일치)
@@ -178,21 +178,22 @@ export default function MusicPlaylistPage() {
         setEditingTrackId(Number(track.id));
         setEditTitle(track.title);
     };
-    const saveTitle = async () => {
+    const saveTitle = async (e: React.MouseEvent) => {
+        e.stopPropagation();
         if (!editingTrackId || !editTitle.trim()) return;
         const token = localStorage.getItem('accessToken');
         try {
-            const res = await fetch(`${API_URL}/music/track/${editingTrackId}`, {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/music/track/${editingTrackId}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ title: editTitle })
             });
             if (res.ok) {
+                // 로컬 상태 업데이트 (새로고침 없이 반영)
+                setPlaylist(prev => prev.map(t => t.id === editingTrackId ? { ...t, title: editTitle } : t));
                 setEditingTrackId(null);
-                // 목록 새로고침 (fetchPlaylist 호출)
-                // ...
-            }
-        } catch (e) { alert("수정 실패"); }
+            } else { alert("수정 실패"); }
+        } catch (e) { alert("오류 발생"); }
     };
     // handlePlay (오디오 재생) - 변경 없음
     const handlePlay = async (e: React.MouseEvent, track: MusicTrackInfo) => {
@@ -387,37 +388,17 @@ export default function MusicPlaylistPage() {
                                                 } ${expandedTrackId === track.id ? 'text-white' : ''}`} />
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            {/* 제목 + 수정 버튼 */}
-                                            {editingTrackId === Number(track.id) ? (
-                                                <div className="flex items-center gap-2">
-                                                    <input
-                                                        value={editTitle}
-                                                        onChange={(e) => setEditTitle(e.target.value)}
-                                                        className="border p-1 rounded text-sm w-40"
-                                                    />
-                                                    <button onClick={saveTitle} className="text-green-600">
-                                                        <Check className="w-4 h-4" />
-                                                    </button>
-                                                    <button onClick={() => setEditingTrackId(null)} className="text-red-600">
-                                                        <X className="w-4 h-4" />
-                                                    </button>
+                                            {editingTrackId === track.id ? (
+                                                <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                                    <input value={editTitle} onChange={e => setEditTitle(e.target.value)} className="border p-1 rounded text-sm w-full" autoFocus />
+                                                    <button onClick={saveTitle} className="text-green-600 hover:bg-green-100 p-1 rounded"><Check className="w-4 h-4" /></button>
+                                                    <button onClick={(e) => { e.stopPropagation(); setEditingTrackId(null) }} className="text-red-600 hover:bg-red-100 p-1 rounded"><X className="w-4 h-4" /></button>
                                                 </div>
                                             ) : (
                                                 <div className="flex items-center gap-2 group">
-                                                    <p
-                                                        className={`font-semibold text-gray-900 truncate ${expandedTrackId === track.id ? 'text-indigo-700' : ''
-                                                            }`}
-                                                    >
-                                                        {getDynamicTitle(track)}
-                                                    </p>
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation(); // 펼치기 방지
-                                                            startEditing(track);
-                                                        }}
-                                                        className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-indigo-600 transition-opacity"
-                                                    >
-                                                        <Edit2 className="w-4 h-4" />
+                                                    <p className="font-medium text-gray-900 truncate">{getDynamicTitle(track)}</p>
+                                                    <button onClick={(e) => { e.stopPropagation(); startEditing(track) }} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-indigo-600 transition-opacity">
+                                                        <Edit2 className="w-3 h-3" />
                                                     </button>
                                                 </div>
                                             )}
