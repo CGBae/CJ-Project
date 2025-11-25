@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { User, Mail, Calendar, ShieldCheck, Link as LinkIcon, Plus, LogOut, Loader2, Trash2, CheckCircle, XCircle } from 'lucide-react';
+import { User, Mail, Calendar, ShieldCheck, Link as LinkIcon, Plus, LogOut, Loader2, Trash2, CheckCircle, Edit2, XCircle } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -12,7 +12,6 @@ interface UserProfile {
     name: string;
     email: string;
     role: 'patient' | 'therapist';
-    // 💡 dob 제거, age 유지
     age: number | null; 
 }
 
@@ -28,12 +27,16 @@ interface ConnectionInfo {
 
 export default function MyPage() {
     const router = useRouter();
-    const { user, logout, isAuthed } = useAuth();
+    const { logout, isAuthed } = useAuth();
     
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [connections, setConnections] = useState<ConnectionInfo[]>([]);
     const [searchInput, setSearchInput] = useState('');
     const [loading, setLoading] = useState(true);
+    
+    // 나이 수정 상태
+    const [isEditingAge, setIsEditingAge] = useState(false);
+    const [editAge, setEditAge] = useState('');
 
     const fetchData = async () => {
         const token = localStorage.getItem('accessToken');
@@ -43,9 +46,13 @@ export default function MyPage() {
             setLoading(true);
             // 1. 프로필 조회
             const meRes = await fetch(`${API_URL}/auth/me`, { headers: { 'Authorization': `Bearer ${token}` } });
-            if (meRes.ok) setProfile(await meRes.json());
+            if (meRes.ok) {
+                const data = await meRes.json();
+                setProfile(data);
+                setEditAge(data.age ? String(data.age) : '');
+            }
 
-            // 💡 2. 연결 목록 조회 (주석 해제 및 경로 수정)
+            // 2. 연결 목록 조회
             const connRes = await fetch(`${API_URL}/connection/list`, { headers: { 'Authorization': `Bearer ${token}` } });
             if (connRes.ok) setConnections(await connRes.json());
             
@@ -64,9 +71,7 @@ export default function MyPage() {
         const token = localStorage.getItem('accessToken');
         if (!token) return;
 
-        // 💡 payload 타입 지정
         const payload: { target_id?: number; email?: string } = {};
-        
         if (!isNaN(Number(searchInput))) {
             payload.target_id = Number(searchInput);
         } else {
@@ -112,7 +117,7 @@ export default function MyPage() {
         } catch(e) { alert("처리 실패"); }
     };
 
-    // 연결 삭제/취소
+    // 연결 삭제
     const handleDeleteConnection = async (connectionId: number) => {
         if (!confirm("연결을 끊거나 요청을 취소하시겠습니까?")) return;
         const token = localStorage.getItem('accessToken');
@@ -128,29 +133,49 @@ export default function MyPage() {
         } catch (e) { alert("삭제 실패"); }
     }
 
-    // 💡 나이 수정 (간단한 프롬프트 방식 - 필요시 모달로 변경 가능)
-    const handleUpdateAge = async () => {
-        const newAgeStr = prompt("수정할 나이를 입력하세요:", String(profile?.age || ''));
-        if (newAgeStr === null) return;
-        
-        const newAge = parseInt(newAgeStr, 10);
-        if (isNaN(newAge) || newAge < 1 || newAge > 150) {
+    // 나이 수정 핸들러
+    const handleSaveAge = async () => {
+        const ageNum = parseInt(editAge, 10);
+        if (isNaN(ageNum) || ageNum < 1 || ageNum > 150) {
             alert("유효한 나이를 입력해주세요.");
             return;
         }
 
         const token = localStorage.getItem('accessToken');
         try {
-            // age 수정을 위한 별도 API가 필요할 수 있음. 
-            // 여기서는 기존 /auth/me PUT이 있다면 사용하거나, 없다면 추가 구현 필요.
-            // (auth.py에 update_users_me가 dob 대신 age를 받도록 수정되어야 함)
+            const res = await fetch(`${API_URL}/auth/me`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ age: ageNum }) // auth.py의 update_users_me가 age를 받도록 되어있어야 함
+            });
+            if (res.ok) {
+                alert("나이가 수정되었습니다.");
+                setIsEditingAge(false);
+                fetchData();
+            } else {
+                alert("수정 실패");
+            }
+        } catch (e) { alert("오류 발생"); }
+    };
+
+    // 계정 탈퇴 핸들러
+    const handleDeleteAccount = async () => {
+        if(!confirm("정말 탈퇴하시겠습니까? 모든 데이터가 삭제되며 복구할 수 없습니다.")) return;
+        const token = localStorage.getItem('accessToken');
+        try {
+            // auth.py에 delete_users_me API가 있어야 함
+            const res = await fetch(`${API_URL}/auth/me`, { 
+                method: 'DELETE', 
+                headers: { 'Authorization': `Bearer ${token}` } 
+            });
             
-            // *주의: auth.py 수정 없이 이 기능은 작동하지 않을 수 있습니다.
-            // 만약 age 수정 기능이 꼭 필요하다면 auth.py의 update_users_me도 수정해야 합니다.
-            
-            // 임시: 단순히 UI 업데이트만 하는 것이 아니라 실제 API 호출 필요
-            alert("나이 수정 기능은 백엔드 업데이트가 필요합니다.");
-        } catch(e) {}
+            if (res.ok) {
+                alert("탈퇴 처리되었습니다.");
+                logout();
+            } else {
+                alert("탈퇴 처리에 실패했습니다.");
+            }
+        } catch(e) { alert("오류 발생"); }
     };
 
     if (loading) return <div className="flex justify-center items-center h-screen"><Loader2 className="w-10 h-10 animate-spin text-indigo-600"/></div>;
@@ -168,24 +193,39 @@ export default function MyPage() {
                     <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center"><User className="w-6 h-6 mr-2 text-indigo-600"/> 내 정보</h2>
                     
                     <div className="space-y-5 relative z-10">
-                        <div className="flex justify-between border-b border-gray-100 pb-3">
+                        <div className="flex justify-between items-center border-b border-gray-100 pb-3">
                             <span className="text-gray-500 flex items-center text-sm"><User className="w-4 h-4 mr-2"/> 이름</span>
                             <span className="font-medium text-gray-900">{profile.name}</span>
                         </div>
-                        <div className="flex justify-between border-b border-gray-100 pb-3">
+                        <div className="flex justify-between items-center border-b border-gray-100 pb-3">
                             <span className="text-gray-500 flex items-center text-sm"><Mail className="w-4 h-4 mr-2"/> 이메일</span>
                             <span className="font-medium text-gray-900">{profile.email}</span>
                         </div>
-                        <div className="flex justify-between border-b border-gray-100 pb-3">
+                        <div className="flex justify-between items-center border-b border-gray-100 pb-3">
                             <span className="text-gray-500 flex items-center text-sm"><ShieldCheck className="w-4 h-4 mr-2"/> 고유 ID</span>
                             <span className="font-medium text-gray-900">{profile.id}</span>
                         </div>
-                        <div className="flex justify-between border-b border-gray-100 pb-3">
+                        <div className="flex justify-between items-center border-b border-gray-100 pb-3">
                             <span className="text-gray-500 flex items-center text-sm"><Calendar className="w-4 h-4 mr-2"/> 나이</span>
-                            <span className="font-medium text-gray-900">
-                                {/* 💡 dob 제거하고 age만 표시 */}
-                                {profile.age ? `${profile.age}세` : '정보 없음'}
-                            </span>
+                            <div className="flex items-center gap-2">
+                                {isEditingAge ? (
+                                    <>
+                                        <input 
+                                            type="number" 
+                                            value={editAge} 
+                                            onChange={e => setEditAge(e.target.value)} 
+                                            className="w-16 p-1 border rounded text-right"
+                                        />
+                                        <button onClick={handleSaveAge} className="text-green-600"><CheckCircle className="w-4 h-4"/></button>
+                                        <button onClick={() => setIsEditingAge(false)} className="text-red-500"><XCircle className="w-4 h-4"/></button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="font-medium text-gray-900">{profile.age ? `${profile.age}세` : '미입력'}</span>
+                                        <button onClick={() => setIsEditingAge(true)} className="text-gray-400 hover:text-indigo-600"><Edit2 className="w-3 h-3"/></button>
+                                    </>
+                                )}
+                            </div>
                         </div>
                         <div className="flex justify-between items-center pb-2">
                             <span className="text-gray-500 flex items-center text-sm"><ShieldCheck className="w-4 h-4 mr-2"/> 계정 유형</span>
@@ -194,7 +234,10 @@ export default function MyPage() {
                             </span>
                         </div>
                     </div>
-                    <button onClick={logout} className="mt-8 w-full py-3 flex justify-center gap-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-xl font-medium"><LogOut className="w-4 h-4"/> 로그아웃</button>
+                    <div className="mt-8 space-y-3">
+                        <button onClick={logout} className="w-full py-3 flex justify-center gap-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-xl font-medium"><LogOut className="w-4 h-4"/> 로그아웃</button>
+                        <button onClick={handleDeleteAccount} className="w-full py-3 flex justify-center gap-2 text-red-500 hover:bg-red-50 rounded-xl font-medium text-sm">회원 탈퇴</button>
+                    </div>
                 </section>
 
                 {/* 2. 연결 관리 카드 */}
@@ -206,7 +249,9 @@ export default function MyPage() {
 
                     {/* 연결 요청 폼 */}
                     <div className="bg-gray-50 p-5 rounded-2xl mb-6">
-                        <p className="text-sm text-gray-600 mb-3 font-medium flex items-center gap-1"><Plus className="w-4 h-4"/> 새로운 연결 요청</p>
+                        <p className="text-sm text-gray-600 mb-3 font-medium flex items-center gap-1">
+                            <Plus className="w-4 h-4"/> 새로운 연결 요청
+                        </p>
                         <div className="flex gap-2">
                             <input 
                                 type="text" 
