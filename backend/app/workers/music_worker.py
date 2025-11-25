@@ -28,8 +28,8 @@ async def handle_message(payload: dict):
         if track.status in ("COMPLETED", "FAILED"):
             return
 
-        # IN_PROGRESS로 전이
-        await db.execute(update(Track).where(Track.id == task_id).values(status="IN_PROGRESS"))
+        # PROCESSING로 전이
+        await db.execute(update(Track).where(Track.id == task_id).values(status="PROCESSING"))
         await db.commit()
 
         headers = {"xi-api-key": ELEVEN_API_KEY}  # 예시
@@ -50,7 +50,7 @@ async def handle_message(payload: dict):
                     data = st.json()
                     if data.get("status") == "completed":
                         audio_url = data.get(ELEVEN_DOWNLOAD_FIELD)
-                        await db.execute(update(Track).where(Track.id == task_id).values(status="COMPLETED", track_url=audio_url))
+                        await db.execute(update(Track).where(Track.id == task_id).values(status="READY", track_url=audio_url))
                         await db.commit()
                         return
                     if data.get("status") == "failed":

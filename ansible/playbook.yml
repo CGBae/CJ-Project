@@ -51,7 +51,16 @@
         mode: "0600"
       no_log: true
 
-    - name: 6. docker-compose.yml 복사
+    - name: 6. kafka.env 생성
+      copy:
+        content: "{{ kafka_env_b64 | b64decode | regex_replace(' +', '\n') | trim }}\n"
+        dest: "{{ deploy_dir }}/kafka.env"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0600"
+      no_log: true
+
+    - name: 7. docker-compose.yml 복사
       copy:
         src: ./docker-compose.yml
         dest: "{{ deploy_dir }}/docker-compose.yml"
@@ -59,14 +68,14 @@
         group: ubuntu
         mode: "0644"
 
-    - name: 7. 기존 컨테이너 중지 및 제거
+    - name: 8. 기존 컨테이너 중지 및 제거
       community.docker.docker_compose:
         project_src: "{{ deploy_dir }}"
         state: absent
         remove_orphans: yes
 
     # ⬇️⬇️ (필수!) 8. DB 데이터 볼륨 완전 삭제 (초기화) ⬇️⬇️
-    - name: 8. (초기화) DB 데이터 볼륨(db-data) 완전 삭제
+    - name: 9. (초기화) DB 데이터 볼륨(db-data) 완전 삭제
       community.docker.docker_volume:
         name: cj-project_db-data # ◀ docker-compose가 생성한 볼륨 이름
         state: absent
@@ -83,7 +92,7 @@
     #   ignore_errors: yes
 
 
-    - name: 9. DB만 먼저 올리기
+    - name: 10. DB만 먼저 올리기
       community.docker.docker_compose:
         project_src: "{{ deploy_dir }}"
         services:
@@ -94,7 +103,7 @@
         FRONTEND_IMAGE_TAG: "{{ fe_image_tag }}"
         BACKEND_IMAGE_TAG: "{{ be_image_tag }}"
 
-    - name: 10. Postgres 준비 완료 대기(pg_isready)
+    - name: 11. Postgres 준비 완료 대기(pg_isready)
       shell: |
         set -e
         for i in $(seq 1 60); do
@@ -107,7 +116,7 @@
       args:
         chdir: "{{ deploy_dir }}"
 
-    - name: 11. Run Database Migrations (Alembic)
+    - name: 12. Run Database Migrations (Alembic)
       ansible.builtin.shell:
         cmd: |
           docker-compose -f docker-compose.yml pull backend
@@ -119,7 +128,7 @@
         FRONTEND_IMAGE_TAG: "{{ fe_image_tag }}"
         BACKEND_IMAGE_TAG: "{{ be_image_tag }}"
 
-    - name: 11. 전체 서비스 기동(backend, frontend 포함)
+    - name: 13. 전체 서비스 기동(backend, frontend 포함)
       community.docker.docker_compose:
         project_src: "{{ deploy_dir }}"
         state: present
