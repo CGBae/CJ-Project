@@ -20,7 +20,7 @@ function getApiUrl() {
 }
 
 const API_URL = getApiUrl();
-// 웹소켓 URL 변환 (http -> ws, https -> wss)
+// 웹소켓 URL 변환 (http -> ws,  https -> wss)
 const WS_URL = API_URL.replace(/^http/, 'ws') + '/messenger/ws';
 
 interface ChatPartner {
