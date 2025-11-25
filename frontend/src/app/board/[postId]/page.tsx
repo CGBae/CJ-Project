@@ -9,22 +9,21 @@ import {
 import { useAuth } from '@/lib/contexts/AuthContext';
 
 function getApiUrl() {
-  // 1순위: 내부 통신용 (docker 네트워크 안에서 backend 이름으로 호출)
-  if (process.env.INTERNAL_API_URL) {
-    return process.env.INTERNAL_API_URL;
-  }
+    // 1순위: 내부 통신용 (docker 네트워크 안에서 backend 이름으로 호출)
+    if (process.env.INTERNAL_API_URL) {
+        return process.env.INTERNAL_API_URL;
+    }
 
-  // 2순위: 공개용 API URL (빌드 시점에라도 이건 거의 항상 들어있음)
-  if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL;
-  }
+    // 2순위: 공개용 API URL (빌드 시점에라도 이건 거의 항상 들어있음)
+    if (process.env.NEXT_PUBLIC_API_URL) {
+        return process.env.NEXT_PUBLIC_API_URL;
+    }
 
-  // 3순위: 최후 fallback - 도커 네트워크 기준으로 backend 서비스 직접 호출
-  return 'http://backend:8000';
+    // 3순위: 최후 fallback - 도커 네트워크 기준으로 backend 서비스 직접 호출
+    return 'http://backend:8000';
 }
 
 const API_URL = getApiUrl();
-
 interface Comment {
     id: number; content: string; author_name: string; author_role: string;
     created_at: string; author_id: number;
@@ -37,7 +36,6 @@ interface BoardPostDetail {
     views: number; tags: string[]; like_count: number; is_liked: boolean;
 }
 
-// 작성자 뱃지 컴포넌트
 const AuthorBadge = ({ name, role, date }: { name: string, role: string, date: string }) => (
     <div className="flex items-center gap-3">
         <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold ${
@@ -207,7 +205,7 @@ export default function PostDetailPage() {
                         onClick={handleToggleLike}
                         className={`flex items-center gap-2 px-8 py-3 rounded-full border-2 transition-all font-bold text-sm ${
                             post.is_liked 
-                                ? 'bg-pink-500 border-pink-500 text-white shadow-md transform scale-105' 
+                                ? 'bg-pink-50 border-pink-500 text-white shadow-md transform scale-105' 
                                 : 'bg-white border-gray-300 text-gray-600 hover:border-pink-300 hover:text-pink-500'
                         }`}
                     >

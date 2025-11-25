@@ -22,59 +22,131 @@ async def get_posts(
     skip: int = 0, 
     limit: int = 20, 
     keyword: Optional[str] = None,
-    sort_by: Literal['latest', 'views', 'likes', 'comments'] = 'latest', # 💡 정렬 기준
-    has_music: bool = False, # 💡 음악 포함 여부 필터
+    sort_by: Literal['latest', 'views', 'likes', 'comments'] = 'latest',
+    has_music: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     # 기본 쿼리
-    query = select(BoardPost).options(joinedload(BoardPost.author), joinedload(BoardPost.track))
-    
-    # 1. 검색
+    query = select(BoardPost).options(
+        joinedload(BoardPost.author),
+        joinedload(BoardPost.track)
+    )
+
+    # 🔍 검색
     if keyword:
-        query = query.where(or_(
-            BoardPost.title.ilike(f"%{keyword}%"),
-            BoardPost.content.ilike(f"%{keyword}%")
-        ))
-    
-    # 2. 음악 필터
+        query = query.where(
+            or_(
+                BoardPost.title.ilike(f"%{keyword}%"),
+                BoardPost.content.ilike(f"%{keyword}%")
+            )
+        )
+
+    # 🎵 음악 포함 필터
     if has_music:
         query = query.where(BoardPost.track_id.isnot(None))
 
-    # 3. 정렬 로직
-    if sort_by == 'latest':
-        query = query.order_by(desc(BoardPost.created_at))
+    # -----------------------------------------
+    # 🔥 정렬 서브쿼리 방식 (PostgreSQL 100% 정상 동작)
+    # -----------------------------------------
+
+    if sort_by == 'likes':
+        like_sub = (
+            select(
+                BoardLike.post_id,
+                func.count(BoardLike.user_id).label("like_count")
+            )
+            .group_by(BoardLike.post_id)
+            .subquery()
+        )
+
+        query = (
+            query
+            .outerjoin(like_sub, like_sub.c.post_id == BoardPost.id)
+            .order_by(desc(func.coalesce(like_sub.c.like_count, 0)))
+            .order_by(desc(BoardPost.created_at))
+        )
+
+    elif sort_by == 'comments':
+        comment_sub = (
+            select(
+                BoardComment.post_id,
+                func.count(BoardComment.id).label("comment_count")
+            )
+            .group_by(BoardComment.post_id)
+            .subquery()
+        )
+
+        query = (
+            query
+            .outerjoin(comment_sub, comment_sub.c.post_id == BoardPost.id)
+            .order_by(desc(func.coalesce(comment_sub.c.comment_count, 0)))
+            .order_by(desc(BoardPost.created_at))
+        )
+
     elif sort_by == 'views':
         query = query.order_by(desc(BoardPost.views), desc(BoardPost.created_at))
-    elif sort_by == 'likes':
-        # 좋아요 수로 정렬 (서브쿼리 조인)
-        query = query.outerjoin(BoardLike).group_by(BoardPost.id).order_by(func.count(BoardLike.user_id).desc(), desc(BoardPost.created_at))
-    elif sort_by == 'comments':
-        # 댓글 수로 정렬
-        query = query.outerjoin(BoardComment).group_by(BoardPost.id).order_by(func.count(BoardComment.id).desc(), desc(BoardPost.created_at))
 
+    else:  # latest
+        query = query.order_by(desc(BoardPost.created_at))
+
+    # 페이징
     query = query.offset(skip).limit(limit)
-    
-    # 실행 (유니크 처리)
+
+    # 실행
     posts = (await db.execute(query)).unique().scalars().all()
-    
+
+    # -----------------------------------------
+    # 🔥 각 게시글에 대해 좋아요/댓글 카운트 정확하게 다시 계산
+    # (정렬은 서브쿼리 기준, 실제 값은 여기서 보장)
+    # -----------------------------------------
+
     response = []
     for post in posts:
-        # 카운트 별도 조회 (group_by 문제 방지)
-        c_count = (await db.execute(select(func.count(BoardComment.id)).where(BoardComment.post_id == post.id))).scalar() or 0
-        l_count = (await db.execute(select(func.count(BoardLike.user_id)).where(BoardLike.post_id == post.id))).scalar() or 0
+        c_count = (
+            await db.execute(
+                select(func.count(BoardComment.id)).where(BoardComment.post_id == post.id)
+            )
+        ).scalar() or 0
+
+        l_count = (
+            await db.execute(
+                select(func.count(BoardLike.user_id)).where(BoardLike.post_id == post.id)
+            )
+        ).scalar() or 0
+
         is_liked = False
         if current_user:
-            liked = (await db.execute(select(BoardLike).where(BoardLike.post_id == post.id, BoardLike.user_id == current_user.id))).scalar_one_or_none()
+            liked = (
+                await db.execute(
+                    select(BoardLike).where(
+                        BoardLike.post_id == post.id,
+                        BoardLike.user_id == current_user.id
+                    )
+                )
+            ).scalar_one_or_none()
             is_liked = bool(liked)
 
-        response.append(PostResponse(
-            id=post.id, title=post.title, content=post.content,
-            author_name=post.author.name or "익명", author_id=post.author_id, author_role=post.author.role,
-            created_at=post.created_at, track=map_track_to_schema(post.track),
-            comments_count=c_count, views=post.views, tags=post.tags or [], like_count=l_count, is_liked=is_liked
-        ))
+        response.append(
+            PostResponse(
+                id=post.id,
+                title=post.title,
+                content=post.content,
+                author_name=post.author.name or "익명",
+                author_id=post.author_id,
+                author_role=post.author.role,
+                created_at=post.created_at,
+                track=map_track_to_schema(post.track),
+                comments_count=c_count,
+                views=post.views,
+                tags=post.tags or [],
+                like_count=l_count,
+                is_liked=is_liked,
+            )
+        )
+
     return response
+
 
 # 3. 게시글 작성
 @router.post("/", response_model=PostResponse)
