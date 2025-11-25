@@ -99,7 +99,7 @@ export default function MessengerPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isAuthed]);
 
-    // 채팅방 선택 시 메시지 로드 및 주기적 갱신 (3초마다 대화 내용 갱신)
+    // 채팅방 선택시 메시지 로드 및 주기적 갱신 (3초마다 대화 내용 갱신)
     useEffect(() => {
         if (selectedPartnerId) {
             fetchMessages(selectedPartnerId);
