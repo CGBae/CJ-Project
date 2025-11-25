@@ -352,32 +352,29 @@ function BoardListContent() {
                 </div>
 
                 <div className="flex items-center gap-3 w-full md:w-auto justify-end">
-                    {/* 필터 및 정렬 */}
-                    {viewMode === 'all' && (
-                        <>
-                            <button
-                                onClick={() => setFilterMusic(!filterMusic)}
-                                className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium border transition-all ${filterMusic ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-                            >
-                                <Music className={`w-4 h-4 mr-2 ${filterMusic ? 'text-indigo-600' : 'text-gray-400'}`} />
-                                음악 포함
-                            </button>
+                    <>
+                        <button
+                            onClick={() => setFilterMusic(!filterMusic)}
+                            className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium border transition-all ${filterMusic ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                        >
+                            <Music className={`w-4 h-4 mr-2 ${filterMusic ? 'text-indigo-600' : 'text-gray-400'}`} />
+                            음악 포함
+                        </button>
 
-                            <div className="relative">
-                                <select
-                                    value={sortBy}
-                                    onChange={(e) => setSortBy(e.target.value as SortOption)}
-                                    className="appearance-none pl-4 pr-10 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 focus:ring-2 focus:ring-indigo-500 outline-none bg-white cursor-pointer hover:border-gray-300 transition-colors"
-                                >
-                                    <option value="latest">최신순</option>
-                                    <option value="views">조회순</option>
-                                    <option value="likes">좋아요순</option>
-                                    <option value="comments">댓글순</option>
-                                </select>
-                                <SlidersHorizontal className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                            </div>
-                        </>
-                    )}
+                        <div className="relative">
+                            <select
+                                value={sortBy}
+                                onChange={(e) => setSortBy(e.target.value as SortOption)}
+                                className="appearance-none pl-4 pr-10 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 focus:ring-2 focus:ring-indigo-500 outline-none bg-white cursor-pointer hover:border-gray-300 transition-colors"
+                            >
+                                <option value="latest">최신순</option>
+                                <option value="views">조회순</option>
+                                <option value="likes">좋아요순</option>
+                                <option value="comments">댓글순</option>
+                            </select>
+                            <SlidersHorizontal className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        </div>
+                    </>
 
                     <button
                         onClick={() => setShowWriteForm(true)}
