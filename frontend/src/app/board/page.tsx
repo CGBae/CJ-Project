@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { 
     MessageCircle, Plus, Loader2, Music, User, Calendar, ShieldCheck, Trash2, 
-    Search, Heart, Eye, Tag, ArrowLeft, PenLine, Filter, SlidersHorizontal
+    Search, Heart, Eye, Tag, ArrowLeft, PenLine, SlidersHorizontal
 } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 
@@ -26,39 +26,17 @@ function getApiUrl() {
 const API_URL = getApiUrl();
 
 // --- 타입 정의 ---
-interface MusicTrack {
-    id: number;
-    title: string;
-    created_at: string;
-}
-interface BoardTrack {
-    id: number;
-    title: string;
-    audioUrl?: string;
-}
+interface MusicTrack { id: number; title: string; created_at: string; }
+interface BoardTrack { id: number; title: string; audioUrl?: string; }
 interface BoardPost {
-    id: number;
-    title: string;
-    content: string;
-    author_name: string;
-    author_role: string; 
-    author_id: number;
-    created_at: string;
-    comments_count: number;
-    track?: BoardTrack | null;
-    views: number;
-    tags: string[];
-    like_count: number;
-    is_liked: boolean;
+    id: number; title: string; content: string; author_name: string; author_role: string; author_id: number;
+    created_at: string; comments_count: number; track?: BoardTrack | null;
+    views: number; tags: string[]; like_count: number; is_liked: boolean;
 }
-interface RawMusicData {
-    id?: number; music_id?: number; title?: string; music_title?: string; created_at: string;
-}
+interface RawMusicData { id?: number; music_id?: number; title?: string; music_title?: string; created_at: string; }
 
-// 정렬 옵션 타입
 type SortOption = 'latest' | 'views' | 'likes' | 'comments';
 
-// --- 메인 컨텐츠 컴포넌트 ---
 function BoardListContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -75,10 +53,7 @@ function BoardListContent() {
     const [searchTerm, setSearchTerm] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
 
-    // 화면 전환 상태 (true면 작성 폼만 보임)
     const [showWriteForm, setShowWriteForm] = useState(false);
-
-    // 작성 폼 입력 상태
     const [newTitle, setNewTitle] = useState('');
     const [newContent, setNewContent] = useState('');
     const [newTags, setNewTags] = useState('');
@@ -91,14 +66,14 @@ function BoardListContent() {
         return () => clearTimeout(timer);
     }, [searchTerm]);
 
-    // URL 파라미터 처리 (공유하기 등)
+    // URL 파라미터 처리
     useEffect(() => {
         const writeMode = searchParams.get('write');
         const trackId = searchParams.get('trackId');
         const trackTitle = searchParams.get('title');
 
         if (writeMode === 'true') {
-            setShowWriteForm(true); // 작성 모드로 전환
+            setShowWriteForm(true);
             if (trackId) setSelectedTrackId(Number(trackId));
             if (trackTitle) {
                 setNewTitle(`[음악 공유] ${decodeURIComponent(trackTitle)}`);
@@ -107,16 +82,20 @@ function BoardListContent() {
         }
     }, [searchParams]);
 
-    // 게시글 목록 조회
-    const fetchPosts = async () => {
+    // 💡 [핵심 수정] fetchPosts를 useCallback으로 감싸서 안정화
+    const fetchPosts = useCallback(async () => {
         setLoading(true);
         try {
             const endpoint = viewMode === 'my' ? `${API_URL}/board/my` : `${API_URL}/board/`;
             const params = new URLSearchParams();
+            
             if (debouncedSearch) params.append('keyword', debouncedSearch);
             
-            params.append('sort_by', sortBy);
-            if (filterMusic) params.append('has_music', 'true');
+            // 'my' 모드일 때는 정렬/필터가 필요 없을 수도 있지만, API가 지원한다면 추가
+            if (viewMode === 'all') {
+                 params.append('sort_by', sortBy);
+                 if (filterMusic) params.append('has_music', 'true');
+            }
             
             const urlWithParams = `${endpoint}?${params.toString()}`;
 
@@ -136,7 +115,7 @@ function BoardListContent() {
             }
         } catch (e) { console.error(e); } 
         finally { setLoading(false); }
-    };
+    }, [viewMode, debouncedSearch, sortBy, filterMusic]);
 
     // 내 음악 목록 조회
     const fetchMyMusic = async () => {
@@ -156,13 +135,16 @@ function BoardListContent() {
         } catch (e) {}
     };
 
+    // 💡 [핵심 수정] 의존성 배열 간소화 (fetchPosts 자체가 의존성을 가짐)
     useEffect(() => {
         fetchPosts();
+    }, [fetchPosts]);
+
+    useEffect(() => {
         if (isAuthed) fetchMyMusic();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [viewMode, debouncedSearch, sortBy, filterMusic, isAuthed, user]);
+    }, [isAuthed, user]);
 
-    // 게시글 작성 핸들러
     const handleCreatePost = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newTitle.trim() || !newContent.trim()) return;
@@ -184,9 +166,9 @@ function BoardListContent() {
 
             if (res.ok) {
                 alert("게시글이 등록되었습니다.");
-                setShowWriteForm(false); // 목록으로 복귀
+                setShowWriteForm(false);
                 setNewTitle(''); setNewContent(''); setNewTags(''); setSelectedTrackId(null);
-                fetchPosts(); // 목록 갱신
+                fetchPosts(); 
             } else {
                 alert("작성 실패");
             }
@@ -194,11 +176,9 @@ function BoardListContent() {
         finally { setIsSubmitting(false); }
     };
 
-    // 게시글 삭제 핸들러
     const handleDeletePost = async (e: React.MouseEvent, postId: number) => {
         e.stopPropagation();
         if (!window.confirm("정말 삭제하시겠습니까?")) return;
-        
         const token = localStorage.getItem('accessToken');
         if (!token) return;
 
@@ -213,12 +193,10 @@ function BoardListContent() {
         } catch (e) { console.error(e); }
     };
 
-    // 정렬 변경 핸들러
     const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         setSortBy(e.target.value as SortOption);
     };
 
-    // --- 렌더링: 작성 폼 화면 ---
     if (showWriteForm) {
         return (
             <div className="max-w-3xl mx-auto p-6 min-h-screen bg-gray-50">
@@ -308,10 +286,8 @@ function BoardListContent() {
         );
     }
 
-    // --- 렌더링: 목록 화면 ---
     return (
         <div className="max-w-4xl mx-auto p-6 min-h-screen bg-gray-50">
-            {/* 헤더 */}
             <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
                 <div className="text-left w-full md:w-auto">
                     <h1 className="text-3xl font-extrabold text-gray-900 flex items-center mb-2">
@@ -339,7 +315,6 @@ function BoardListContent() {
                 </div>
             </div>
 
-            {/* 탭, 정렬, 필터 UI */}
             <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
                  <div className="flex bg-gray-200 p-1 rounded-lg">
                     <button onClick={() => setViewMode('all')} className={`px-6 py-2 rounded-md text-sm font-medium transition-all ${viewMode === 'all' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>전체 글</button>
@@ -347,7 +322,6 @@ function BoardListContent() {
                 </div>
 
                 <div className="flex items-center gap-3 overflow-x-auto w-full md:w-auto pb-2 md:pb-0">
-                    {/* 음악 필터 */}
                     <button 
                         onClick={() => setFilterMusic(!filterMusic)}
                         className={`flex items-center px-3 py-2 rounded-lg text-xs font-medium border transition-all whitespace-nowrap ${filterMusic ? 'bg-indigo-100 border-indigo-300 text-indigo-700' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}
@@ -356,7 +330,6 @@ function BoardListContent() {
                         음악 포함
                     </button>
 
-                    {/* 정렬 드롭다운 */}
                     <div className="relative">
                         <select 
                             value={sortBy} 
@@ -373,7 +346,6 @@ function BoardListContent() {
                 </div>
             </div>
 
-            {/* 게시글 리스트 */}
             {loading ? (
                 <div className="py-20 flex flex-col items-center justify-center text-gray-400">
                     <Loader2 className="w-10 h-10 animate-spin mb-3"/>
@@ -451,7 +423,6 @@ function BoardListContent() {
                                         </div>
                                     </div>
                                     
-                                    {/* 썸네일 역할 (음악 아이콘) */}
                                     {post.track && (
                                         <div className="hidden md:flex items-center justify-center w-16 h-16 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl border border-indigo-100 text-indigo-400 flex-shrink-0 shadow-sm group-hover:scale-105 transition-transform">
                                             <Music className="w-8 h-8 opacity-50"/>
