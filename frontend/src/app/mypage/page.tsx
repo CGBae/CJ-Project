@@ -34,7 +34,7 @@ export default function MyPage() {
     const [searchInput, setSearchInput] = useState('');
     const [loading, setLoading] = useState(true);
     
-    // 나이 수정 상태
+    // 나이 수정상태
     const [isEditingAge, setIsEditingAge] = useState(false);
     const [editAge, setEditAge] = useState('');
 
