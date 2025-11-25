@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, User, Loader2, MessageSquare, ShieldCheck } from 'lucide-react';
+import { Send, User, Loader2, MessageSquare, ShieldCheck, RefreshCcw } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 
 function getApiUrl() {
@@ -20,8 +20,6 @@ function getApiUrl() {
 }
 
 const API_URL = getApiUrl();
-// 웹소켓 URL 변환 (http -> ws,  https -> wss)
-const WS_URL = API_URL.replace(/^http/, 'ws') + '/messenger/ws';
 
 interface ChatPartner {
     user_id: number;
@@ -36,172 +34,157 @@ interface Message {
     id: number;
     content: string;
     sender_id: number;
-    receiver_id: number; // 추가
+    receiver_id: number;
     created_at: string;
     is_read: boolean;
 }
 
 export default function MessengerPage() {
     const { user, isAuthed } = useAuth();
+    
     const [partners, setPartners] = useState<ChatPartner[]>([]);
     const [selectedPartnerId, setSelectedPartnerId] = useState<number | null>(null);
     const [messages, setMessages] = useState<Message[]>([]);
     const [newMessage, setNewMessage] = useState('');
     const [loading, setLoading] = useState(true);
+    const [sending, setSending] = useState(false);
     
-    const socketRef = useRef<WebSocket | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    // 1. 초기 데이터 로드 (파트너 목록)
-    useEffect(() => {
-        const fetchPartners = async () => {
-            const token = localStorage.getItem('accessToken');
-            if (!token) return;
-            try {
-                const res = await fetch(`${API_URL}/messenger/partners`, { headers: { 'Authorization': `Bearer ${token}` } });
-                if (res.ok) setPartners(await res.json());
-            } catch (e) {} finally { setLoading(false); }
-        };
-        if (isAuthed) fetchPartners();
-    }, [isAuthed]);
-
-    // 2. WebSocket 연결
-    useEffect(() => {
+    // 1. 대화 상대 목록 로드 (API 호출)
+    const fetchPartners = async () => {
         const token = localStorage.getItem('accessToken');
-        if (!token || !isAuthed) return;
-
-        // WebSocket 연결 생성 (쿼리 파라미터로 토큰 전달)
-        const ws = new WebSocket(`${WS_URL}?token=${token}`);
-        
-        ws.onopen = () => {
-            console.log('메신저 서버에 연결되었습니다.');
-        };
-
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            if (data.type === 'new_message') {
-                handleNewMessage(data.message);
+        if (!token) return;
+        try {
+            const res = await fetch(`${API_URL}/messenger/partners`, { 
+                headers: { 'Authorization': `Bearer ${token}` } 
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setPartners(data);
             }
-        };
+        } catch (e) {
+            console.error("파트너 목록 로드 실패", e);
+        } finally {
+            setLoading(false);
+        }
+    };
 
-        ws.onclose = () => {
-            console.log('메신저 서버 연결이 끊겼습니다.');
-        };
+    // 2. 특정 상대와의 메시지 로드 (API 호출)
+    const fetchMessages = async (partnerId: number) => {
+        const token = localStorage.getItem('accessToken');
+        if (!token) return;
+        try {
+            const res = await fetch(`${API_URL}/messenger/${partnerId}`, { 
+                headers: { 'Authorization': `Bearer ${token}` } 
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setMessages(data);
+                // 메시지를 읽었으니 파트너 목록(안읽은 뱃지)도 갱신
+                fetchPartners();
+            }
+        } catch (e) {
+            console.error("메시지 로드 실패", e);
+        }
+    };
 
-        socketRef.current = ws;
-
-        return () => {
-            ws.close();
-        };
+    // 초기 로딩 및 주기적 폴링 (5초마다 목록 갱신 - 새 메시지 확인용)
+    useEffect(() => {
+        if (isAuthed) {
+            fetchPartners();
+            const interval = setInterval(fetchPartners, 5000); 
+            return () => clearInterval(interval);
+        }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isAuthed]);
 
-    // 3. 새 메시지 도착 시 처리
-    const handleNewMessage = (msg: Message) => {
-        // (A) 현재 보고 있는 채팅방의 메시지라면 목록에 추가
-        setMessages(prev => {
-            // 중복 방지
-            if (prev.some(m => m.id === msg.id)) return prev;
-            // 내가 보냈거나, 내가 받고 있는 상대방의 메시지인 경우만 추가
-            if (msg.sender_id === selectedPartnerId || (msg.sender_id === user?.id && msg.receiver_id === selectedPartnerId)) {
-                setTimeout(scrollToBottom, 100);
-                return [...prev, msg];
-            }
-            return prev;
-        });
-
-        // (B) 파트너 목록 업데이트 (마지막 메시지, 안읽은 뱃지)
-        setPartners(prev => prev.map(p => {
-            // 상대방이 보낸 메시지인 경우
-            if (p.user_id === msg.sender_id) {
-                // 현재 채팅 중이 아니면 안 읽은 수 증가
-                const isChatting = selectedPartnerId === msg.sender_id;
-                return { 
-                    ...p, 
-                    last_message: msg.content, 
-                    last_message_time: msg.created_at,
-                    unread_count: isChatting ? p.unread_count : p.unread_count + 1 
-                };
-            }
-            // 내가 보낸 메시지인 경우
-            if (p.user_id === msg.receiver_id) {
-                return { 
-                    ...p, 
-                    last_message: msg.content, 
-                    last_message_time: msg.created_at 
-                };
-            }
-            return p;
-        }));
-    };
-
-    // 4. 채팅방 선택 시 과거 기록 로드
+    // 채팅방 선택 시 메시지 로드 및 주기적 갱신 (3초마다 대화 내용 갱신)
     useEffect(() => {
         if (selectedPartnerId) {
-            const fetchHistory = async () => {
-                const token = localStorage.getItem('accessToken');
-                try {
-                    const res = await fetch(`${API_URL}/messenger/${selectedPartnerId}`, { headers: { 'Authorization': `Bearer ${token}` } });
-                    if (res.ok) {
-                        setMessages(await res.json());
-                        scrollToBottom();
-                        // 해당 파트너의 안 읽은 수 0으로 초기화
-                        setPartners(prev => prev.map(p => p.user_id === selectedPartnerId ? { ...p, unread_count: 0 } : p));
-                    }
-                } catch (e) {}
-            };
-            fetchHistory();
+            fetchMessages(selectedPartnerId);
+            const interval = setInterval(() => fetchMessages(selectedPartnerId), 3000);
+            return () => clearInterval(interval);
         }
     }, [selectedPartnerId]);
 
-    const scrollToBottom = () => {
+    // 스크롤 자동 이동
+    useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    };
+    }, [messages]);
 
-    // 5. 메시지 전송
-    const handleSendMessage = (e: React.FormEvent) => {
+    // 3. 메시지 전송 (API 호출)
+    const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newMessage.trim() || !selectedPartnerId || !socketRef.current) return;
+        if (!newMessage.trim() || !selectedPartnerId) return;
+        
+        setSending(true);
+        const token = localStorage.getItem('accessToken');
+        
+        try {
+            const res = await fetch(`${API_URL}/messenger/`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json', 
+                    'Authorization': `Bearer ${token}` 
+                },
+                body: JSON.stringify({ 
+                    receiver_id: selectedPartnerId, 
+                    content: newMessage 
+                })
+            });
 
-        const payload = {
-            receiver_id: selectedPartnerId,
-            content: newMessage
-        };
-
-        // WebSocket으로 전송
-        socketRef.current.send(JSON.stringify(payload));
-        setNewMessage('');
+            if (res.ok) {
+                setNewMessage('');
+                fetchMessages(selectedPartnerId); // 전송 후 즉시 갱신
+            }
+        } catch (e) {
+            alert("메시지 전송에 실패했습니다.");
+        } finally {
+            setSending(false);
+        }
     };
 
-    if (loading) return <div className="flex justify-center items-center h-screen"><Loader2 className="animate-spin text-indigo-600"/></div>;
+    if (loading) return <div className="flex justify-center items-center h-screen"><Loader2 className="w-10 h-10 animate-spin text-indigo-600"/></div>;
 
     return (
-        <div className="max-w-5xl mx-auto p-4 h-[calc(100vh-80px)] flex gap-4 bg-gray-50">
+        <div className="max-w-6xl mx-auto p-4 h-[calc(100vh-80px)] flex gap-4 bg-gray-50">
             
             {/* 왼쪽: 대화 상대 목록 */}
             <div className="w-1/3 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
-                <div className="p-4 border-b border-gray-100 font-bold text-lg text-gray-800">메시지함</div>
+                <div className="p-4 border-b border-gray-100 bg-white flex justify-between items-center">
+                    <span className="font-bold text-lg text-gray-800">쪽지함</span>
+                    <button onClick={fetchPartners} className="p-1.5 hover:bg-gray-100 rounded-full transition-colors" title="새로고침">
+                        <RefreshCcw className="w-4 h-4 text-gray-500"/>
+                    </button>
+                </div>
+                
                 <div className="flex-1 overflow-y-auto">
                     {partners.length === 0 ? (
-                        <p className="p-4 text-center text-gray-500 text-sm mt-10">대화 가능한 상대가 없습니다.<br/>(상담 연결 후 이용 가능합니다)</p>
+                        <div className="p-6 text-center text-gray-400 text-sm mt-10">
+                            <MessageSquare className="w-10 h-10 mx-auto mb-2 opacity-20"/>
+                            <p>대화 가능한 상대가 없습니다.<br/>(상담 연결 후 이용 가능합니다)</p>
+                        </div>
                     ) : (
                         partners.map(partner => (
                             <div 
                                 key={partner.user_id}
                                 onClick={() => setSelectedPartnerId(partner.user_id)}
-                                className={`p-4 border-b border-gray-50 cursor-pointer hover:bg-indigo-50 transition-colors ${selectedPartnerId === partner.user_id ? 'bg-indigo-50' : ''}`}
+                                className={`p-4 border-b border-gray-50 cursor-pointer hover:bg-indigo-50 transition-all ${selectedPartnerId === partner.user_id ? 'bg-indigo-50 border-l-4 border-l-indigo-500 pl-3' : ''}`}
                             >
                                 <div className="flex justify-between items-start">
                                     <div className="flex items-center gap-3">
-                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${partner.role === 'therapist' ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
+                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white shadow-sm ${partner.role === 'therapist' ? 'bg-green-500' : 'bg-indigo-400'}`}>
                                             {partner.role === 'therapist' ? <ShieldCheck className="w-5 h-5"/> : <User className="w-5 h-5"/>}
                                         </div>
                                         <div className="min-w-0">
-                                            <div className="flex items-center gap-1">
+                                            <div className="flex items-center gap-1.5">
                                                 <p className="font-bold text-gray-900 text-sm">{partner.name}</p>
-                                                {partner.role === 'therapist' && <span className="text-[10px] bg-green-600 text-white px-1.5 py-0.5 rounded-full">상담사</span>}
+                                                {partner.role === 'therapist' && <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-bold">상담사</span>}
                                             </div>
-                                            <p className="text-xs text-gray-500 truncate w-32 mt-0.5">{partner.last_message || '대화 없음'}</p>
+                                            <p className={`text-xs truncate w-36 mt-1 ${partner.unread_count > 0 ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>
+                                                {partner.last_message || '대화 없음'}
+                                            </p>
                                         </div>
                                     </div>
                                     <div className="flex flex-col items-end gap-1">
@@ -209,7 +192,7 @@ export default function MessengerPage() {
                                             {partner.last_message_time ? new Date(partner.last_message_time).toLocaleDateString() : ''}
                                         </span>
                                         {partner.unread_count > 0 && (
-                                            <span className="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                            <span className="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm animate-pulse">
                                                 {partner.unread_count}
                                             </span>
                                         )}
@@ -222,37 +205,51 @@ export default function MessengerPage() {
             </div>
 
             {/* 오른쪽: 채팅창 */}
-            <div className="w-2/3 bg-white rounded-2xl shadow-sm border border-gray-200 flex flex-col overflow-hidden">
+            <div className="w-2/3 bg-white rounded-2xl shadow-sm border border-gray-200 flex flex-col overflow-hidden relative">
                 {!selectedPartnerId ? (
-                    <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
+                    <div className="flex-1 flex flex-col items-center justify-center text-gray-400 bg-gray-50/50">
                         <MessageSquare className="w-16 h-16 mb-4 opacity-20"/>
-                        <p>대화 상대를 선택하여 채팅을 시작하세요.</p>
+                        <p>왼쪽 목록에서 대화 상대를 선택하세요.</p>
                     </div>
                 ) : (
                     <>
-                        <div className="p-4 border-b border-gray-100 bg-white shadow-sm z-10 flex items-center">
+                        {/* 채팅 헤더 */}
+                        <div className="p-4 border-b border-gray-100 bg-white shadow-sm z-10 flex items-center justify-between">
                              {(() => {
                                  const p = partners.find(p => p.user_id === selectedPartnerId);
                                  return p ? (
-                                     <>
-                                        <span className="font-bold text-gray-800 mr-2">{p.name}</span>
+                                     <div className="flex items-center gap-2">
+                                        <span className="font-bold text-gray-800 text-lg">{p.name}</span>
                                         {p.role === 'therapist' && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold">상담사</span>}
-                                     </>
+                                     </div>
                                  ) : <span>대화 상대</span>
                              })()}
+                             <button onClick={() => fetchMessages(selectedPartnerId)} className="text-xs text-gray-500 hover:text-indigo-600 flex items-center gap-1">
+                                <RefreshCcw className="w-3 h-3"/> 갱신
+                             </button>
                         </div>
-                        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
+
+                        {/* 메시지 목록 */}
+                        <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-gray-50 scroll-smooth">
+                            {messages.length === 0 && (
+                                <div className="text-center py-10 text-gray-400 text-sm">
+                                    <p>대화 내역이 없습니다.</p>
+                                    <p>첫 메시지를 보내보세요!</p>
+                                </div>
+                            )}
                             {messages.map((msg, idx) => {
                                 const isMe = msg.sender_id === user?.id;
                                 return (
                                     <div key={idx} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                                        <div className={`max-w-[70%] p-3 rounded-2xl text-sm shadow-sm relative group ${
-                                            isMe ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white border border-gray-200 text-gray-800 rounded-tl-none'
+                                        <div className={`max-w-[70%] p-3.5 rounded-2xl text-sm shadow-sm relative group ${
+                                            isMe 
+                                            ? 'bg-indigo-600 text-white rounded-tr-none' 
+                                            : 'bg-white border border-gray-200 text-gray-800 rounded-tl-none'
                                         }`}>
                                             {msg.content}
-                                            <div className={`text-[10px] mt-1 text-right ${isMe ? 'text-indigo-200' : 'text-gray-400'}`}>
+                                            <div className={`text-[10px] mt-1.5 text-right opacity-70 ${isMe ? 'text-indigo-100' : 'text-gray-400'}`}>
                                                 {new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                                                {isMe && msg.is_read && " • 읽음"}
+                                                {isMe && msg.is_read && <span className="ml-1 font-bold text-yellow-300">• 읽음</span>}
                                             </div>
                                         </div>
                                     </div>
@@ -261,15 +258,21 @@ export default function MessengerPage() {
                             <div ref={messagesEndRef} />
                         </div>
                         
+                        {/* 입력창 */}
                         <form onSubmit={handleSendMessage} className="p-4 bg-white border-t border-gray-100 flex gap-2">
                             <input 
                                 value={newMessage}
                                 onChange={(e) => setNewMessage(e.target.value)}
                                 placeholder="메시지를 입력하세요..."
-                                className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                                className="flex-1 p-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                                disabled={sending}
                             />
-                            <button type="submit" disabled={!newMessage.trim()} className="p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:bg-gray-300 transition shadow-md">
-                                <Send className="w-5 h-5"/>
+                            <button 
+                                type="submit" 
+                                disabled={!newMessage.trim() || sending} 
+                                className="p-3.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:bg-gray-300 transition shadow-md flex items-center justify-center w-12"
+                            >
+                                {sending ? <Loader2 className="w-5 h-5 animate-spin"/> : <Send className="w-5 h-5"/>}
                             </button>
                         </form>
                     </>

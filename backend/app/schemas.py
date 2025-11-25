@@ -323,3 +323,26 @@ class PostDetailResponse(PostResponse):
 
 class TrackUpdate(BaseModel):
     title: str = Field(..., min_length=1, max_length=50)
+
+class MessageCreate(BaseModel):
+    receiver_id: int
+    content: str
+
+class MessageResponse(BaseModel):
+    id: int
+    content: str
+    sender_id: int
+    receiver_id: int
+    created_at: datetime
+    is_read: bool
+    class Config:
+        from_attributes = True
+
+# 대화 상대방 정보 (목록용)
+class ChatPartner(BaseModel):
+    user_id: int
+    name: str
+    role: str
+    unread_count: int
+    last_message: Optional[str] = None
+    last_message_time: Optional[datetime] = None
