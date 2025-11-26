@@ -14,7 +14,7 @@ from sqlalchemy.orm import joinedload, selectinload
 # 1. 함수 이름을 'compose_and_save'으로 변경합니다.
 from app.services.elevenlabs_client import compose_and_save, ElevenLabsError
 from app.api.routers.therapist import check_counselor_patient_access
-from app import kafka
+import app.kafka as kafka
 import os, uuid, datetime as dt
 router = APIRouter(prefix="/music", tags=["music"])
 
