@@ -38,6 +38,7 @@ interface ConnectionInfo {
     partner_role: string;
     status: 'PENDING' | 'ACCEPTED';
     created_at: string;
+    is_sender?: boolean;
 }
 
 export default function MyPage() {
