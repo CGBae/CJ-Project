@@ -5,7 +5,7 @@ import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/contexts/AuthContext';
 // 💡 1. [추가] 전문적인 UI를 위한 아이콘 임포트
-import { User, LogOut, Settings, ChevronDown, Music, BarChart3,Sparkles,Volume2, LayoutDashboard, Users,FilePen,MessageSquare, MessageCircle } from 'lucide-react';
+import { User, LogOut, Settings, ChevronDown, Music, UserCog, BarChart3,Sparkles,Volume2, LayoutDashboard, Users,FilePen,MessageSquare, MessageCircle } from 'lucide-react';
 
 export default function Header() {
   // 💡 2. [수정] role 대신 user 객체를 가져옴
@@ -104,7 +104,7 @@ export default function Header() {
                       <p className="text-xs text-gray-500">환자 ID: {user.id}</p>
                     )}
                     {role === 'therapist' && (
-                      <p className="text-xs text-gray-500">상담사</p>
+                      <p className="text-xs text-gray-500">상담사 ID: {user.id}</p>
                     )}
                   </div>
                   <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0" />
@@ -122,11 +122,11 @@ export default function Header() {
                     </div>
                     {/* 설정 페이지 링크 */}
                     <Link 
-                      href={role === 'patient' ? "/patientoption" : "/counseloroption"} 
+                      href={"/mypage"} 
                       className="block w-full text-left px-3 py-2 text-sm text-gray-700 rounded-md hover:bg-gray-100"
                     >
-                      <Settings className="w-4 h-4 mr-2 inline-block opacity-70" />
-                      설정
+                      <UserCog className="w-4 h-4 mr-2 inline-block opacity-70" />
+                      내 정보
                     </Link>
                     {/* 로그아웃 버튼 */}
                     <button

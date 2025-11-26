@@ -66,6 +66,15 @@ class Connection(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
 
+    initiator_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    initiator: Mapped["User"] = relationship(
+        "User", foreign_keys=[initiator_id]
+    )
+
     # 치료사 ID (연결 요청을 보낸/관리를 담당할 치료사)
     therapist_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
