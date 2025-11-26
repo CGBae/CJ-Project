@@ -143,50 +143,58 @@ async def get_my_connections(
     """
     내가 맺은 모든 연결(대기중, 수락됨)을 상대방 정보와 함께 반환합니다.
     """
-    # 내가 환자면 -> 상담사 정보를 가져옴
-    if current_user.role == 'patient':
-        stmt = (
-            select(Connection, User)
-            .outerjoin(User, Connection.therapist_id == User.id)
-            .where(Connection.patient_id == current_user.id)
-        )
-    # 내가 상담사면 -> 환자 정보를 가져옴
-    else:
-        stmt = (
-            select(Connection, User)
-            .outerjoin(User, Connection.patient_id == User.id)
-            .where(Connection.therapist_id == current_user.id)
-        )
-
-    result = await db.execute(stmt)
-    rows = result.all()
-
-    connections = []
-    for conn, partner in rows:
-        if partner is None:
-            # 연결 상대방이 삭제되었거나 없는 경우
-            partner_id = None
-            partner_name = "알 수 없는 사용자"
-            partner_email = None
-            partner_role = None
+    try:
+        if current_user.role == 'patient':
+            stmt = (
+                select(Connection, User)
+                .outerjoin(User, Connection.therapist_id == User.id)
+                .where(Connection.patient_id == current_user.id)
+            )
         else:
-            partner_id = partner.id
-            partner_name = partner.name or "이름 없음"
-            partner_email = partner.email
-            partner_role = partner.role
+            stmt = (
+                select(Connection, User)
+                .outerjoin(User, Connection.patient_id == User.id)
+                .where(Connection.therapist_id == current_user.id)
+            )
 
-        connections.append(ConnectionInfo(
-            connection_id=conn.id,
-            partner_id=partner_id,
-            partner_name=partner_name,
-            partner_email=partner_email,
-            partner_role=partner_role,
-            status=conn.status,
-            created_at=conn.created_at,
-            is_sender=False  # 임시값
-        ))
+        result = await db.execute(stmt)
+        rows = result.all()
 
-    return connections
+        connections = []
+        for conn, partner in rows:
+            try:
+                if partner is None:
+                    partner_id = None
+                    partner_name = "알 수 없는 사용자"
+                    partner_email = None
+                    partner_role = None
+                else:
+                    partner_id = partner.id
+                    partner_name = partner.name or "이름 없음"
+                    partner_email = partner.email
+                    partner_role = partner.role
+
+                connections.append(ConnectionInfo(
+                    connection_id=conn.id,
+                    partner_id=partner_id,
+                    partner_name=partner_name,
+                    partner_email=partner_email,
+                    partner_role=partner_role,
+                    status=conn.status,
+                    created_at=conn.created_at,
+                    is_sender=False  # 임시값
+                ))
+            except Exception as e_inner:
+                print(f"Error processing row conn_id={conn.id}: {e_inner}")
+
+        return connections
+
+    except Exception as e:
+        print("Error in /connection/list:", e)
+        raise HTTPException(
+            status_code=500,
+            detail=f"서버 내부 오류 발생: {str(e)}"
+        )
 
 # 💡 [신규] 연결 삭제/취소
 @router.delete("/{connection_id}", status_code=204)
