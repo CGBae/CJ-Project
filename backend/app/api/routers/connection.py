@@ -128,45 +128,40 @@ async def request_connection(
     
     return {"message": "연결 요청을 보냈습니다."}
 
-# 💡 [신규] 내 연결 목록 조회 (전체)
-@router.get("/list", response_model=List[ConnectionInfo])
-async def get_my_connections(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
+@router.get("/connection/list", response_model=List[dict])
+async def list_connections(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """
-    나와 연결된(혹은 대기중인) 모든 상대방 정보를 반환합니다.
+    로그인한 유저 기준으로 연결 목록 조회
+    상대방 정보 포함
     """
-    if current_user.role == 'patient':
-        stmt = (
-            select(Connection, User)
-            .join(User, Connection.therapist_id == User.id)
-            .where(Connection.patient_id == current_user.id)
-        )
-    else: # therapist
-        stmt = (
-            select(Connection, User)
-            .join(User, Connection.patient_id == User.id)
-            .where(Connection.therapist_id == current_user.id)
-        )
-        
+    user_id = current_user.id
+
+    # 현재 유저가 therapist인 경우 patient 연결, patient인 경우 therapist 연결
+    stmt = select(Connection).where(
+        (Connection.therapist_id == user_id) | (Connection.patient_id == user_id)
+    )
     result = await db.execute(stmt)
-    rows = result.all()
-    
-    connections = []
-    for conn, partner in rows:
-        connections.append(ConnectionInfo(
-            connection_id=conn.id,
-            partner_id=partner.id,
-            partner_name=partner.name or "이름 없음",
-            partner_email=partner.email,
-            partner_role=partner.role,
-            status=conn.status,
-            created_at=conn.created_at,
-            is_sender=False # (DB 모델 미수정 시 정확한 판별 불가하므로 기본값)
-        ))
-        
-    return connections
+    connections = result.scalars().all()
+
+    response = []
+    for conn in connections:
+        # 상대방 정보 선택
+        if conn.therapist_id == user_id:
+            partner = conn.patient
+        else:
+            partner = conn.therapist
+
+        response.append({
+            "connection_id": conn.id,
+            "partner_id": partner.id,
+            "partner_name": partner.name or "",
+            "partner_email": partner.email or "",
+            "partner_role": partner.role,
+            "status": conn.status,
+            "created_at": conn.requested_at.isoformat() if conn.requested_at else None
+        })
+
+    return response
 
 # 💡 [신규] 연결 삭제
 @router.delete("/{connection_id}", status_code=204)
