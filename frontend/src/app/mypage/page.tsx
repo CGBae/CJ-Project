@@ -32,9 +32,9 @@ interface UserProfile {
 
 interface ConnectionInfo {
     connection_id: number;
-    partner_id: number;
+    partner_id: number | null;
     partner_name: string;
-    partner_email: string;
+    partner_email: string | null;
     partner_role: string;
     status: 'PENDING' | 'ACCEPTED';
     created_at: string;

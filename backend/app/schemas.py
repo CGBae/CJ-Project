@@ -355,9 +355,9 @@ class ConnectionRequest(BaseModel):
 # 💡 [신규] 통합 연결 정보 스키마 (마이페이지 리스트용)
 class ConnectionInfo(BaseModel):
     connection_id: int
-    partner_id: int
+    partner_id: Optional[int] = None
     partner_name: str
-    partner_email: str
+    partner_email: Optional[str] = None
     partner_role: str
     status: str # 'PENDING', 'ACCEPTED'
     created_at: datetime
