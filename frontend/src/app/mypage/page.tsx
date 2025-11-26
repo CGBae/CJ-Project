@@ -2,10 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { 
-    User, Mail, Calendar, ShieldCheck, Link as LinkIcon, 
-    Plus, LogOut, Loader2, Trash2, CheckCircle, Edit2, X, XCircle, Check
-} from 'lucide-react';
+import { User, Mail, Calendar, ShieldCheck, Link as LinkIcon, Plus, LogOut, Loader2, Trash2, CheckCircle, X, Edit2, Check } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 
 function getApiUrl() {
@@ -25,7 +22,6 @@ function getApiUrl() {
 
 const API_URL = getApiUrl();
 
-// 💡 UserProfile: dob 제거, age 사용
 interface UserProfile {
     id: number;
     name: string;
@@ -71,7 +67,7 @@ export default function MyPage() {
                 setEditAge(data.age ? String(data.age) : '');
             }
 
-            // 2. 연결 목록 조회 (/connection/list 사용)
+            // 2. 연결 목록 조회
             const connRes = await fetch(`${API_URL}/connection/list`, { headers: { 'Authorization': `Bearer ${token}` } });
             if (connRes.ok) setConnections(await connRes.json());
             
@@ -90,7 +86,10 @@ export default function MyPage() {
         const token = localStorage.getItem('accessToken');
         if (!token) return;
 
+        // 💡 [수정] any 대신 명확한 타입 지정 (id 또는 email을 가질 수 있는 객체)
+        // 백엔드 schemas.py의 ConnectionRequest와 호환됨
         const payload: { target_id?: number; email?: string } = {};
+        
         if (!isNaN(Number(searchInput))) {
             payload.target_id = Number(searchInput);
         } else {
@@ -161,7 +160,6 @@ export default function MyPage() {
         }
         const token = localStorage.getItem('accessToken');
         try {
-            // auth.py에 update_users_me API가 있어야 함 (PUT /auth/me)
             const res = await fetch(`${API_URL}/auth/me`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
