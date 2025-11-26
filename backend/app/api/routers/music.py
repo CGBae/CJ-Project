@@ -14,7 +14,7 @@ from sqlalchemy.orm import joinedload, selectinload
 # 1. 함수 이름을 'compose_and_save'으로 변경합니다.
 from app.services.elevenlabs_client import compose_and_save, ElevenLabsError
 from app.api.routers.therapist import check_counselor_patient_access
-from app.kafka import producer
+from app import kafka
 import os, uuid, datetime as dt
 router = APIRouter(prefix="/music", tags=["music"])
 
@@ -82,7 +82,7 @@ async def compose_music(
     await db.flush()  # new_track.id 확보
 
     # 3) Kafka 메시지 발행
-    if not producer:
+    if not kafka.producer:
         raise HTTPException(503, "music queue not available")
     payload = {
         "task_id": new_track.id,
@@ -92,7 +92,7 @@ async def compose_music(
         "force_instrumental": req.force_instrumental,
         "extra": req.extra or {},
     }
-    await producer.send_and_wait(
+    await kafka.producer.send_and_wait(
         os.getenv("KAFKA_TOPIC_REQUESTS", "music.gen.requests"),
         key=new_track.id,
         value=payload,
