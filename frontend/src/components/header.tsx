@@ -72,7 +72,6 @@ export default function Header() {
                     <NavLink href="/music" pathname={pathname}><Volume2 className="w-4 h-4 mr-1.5"/>내 음악</NavLink>
                     <NavLink href="/board" pathname={pathname}><Users className="w-4 h-4 mr-1.5" />커뮤니티</NavLink>
                     <NavLink href="/messenger" pathname={pathname}><MessageCircle className="w-4 h-4 mr-1.5"/>메시지</NavLink>
-                    <NavLink href="/mypage" pathname={pathname}><UserCog className="w-4 h-4 mr-1.5"/>내 정보</NavLink>
                   </>
                 )}
                 {role === 'therapist' && (
@@ -83,7 +82,6 @@ export default function Header() {
                     <NavLink href="/manage-music" pathname={pathname}><Volume2 className="w-4 h-4 mr-1.5"/>음악 관리</NavLink>
                     <NavLink href="/board" pathname={pathname}><Users className="w-4 h-4 mr-1.5" />커뮤니티</NavLink>
                     <NavLink href="/messenger" pathname={pathname}><MessageCircle className="w-4 h-4 mr-1.5"/>메시지</NavLink>
-                    <NavLink href="/mypage" pathname={pathname}><UserCog className="w-4 h-4 mr-1.5"/>내 정보</NavLink>
                   </>
                 )}
               </nav>
@@ -106,7 +104,7 @@ export default function Header() {
                       <p className="text-xs text-gray-500">환자 ID: {user.id}</p>
                     )}
                     {role === 'therapist' && (
-                      <p className="text-xs text-gray-500">상담사</p>
+                      <p className="text-xs text-gray-500">상담사 ID: {user.id}</p>
                     )}
                   </div>
                   <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0" />
@@ -124,11 +122,11 @@ export default function Header() {
                     </div>
                     {/* 설정 페이지 링크 */}
                     <Link 
-                      href={role === 'patient' ? "/patientoption" : "/counseloroption"} 
+                      href={"/mypage"} 
                       className="block w-full text-left px-3 py-2 text-sm text-gray-700 rounded-md hover:bg-gray-100"
                     >
-                      <Settings className="w-4 h-4 mr-2 inline-block opacity-70" />
-                      설정
+                      <UserCog className="w-4 h-4 mr-2 inline-block opacity-70" />
+                      내 정보
                     </Link>
                     {/* 로그아웃 버튼 */}
                     <button
