@@ -355,15 +355,13 @@ class ConnectionRequest(BaseModel):
 # 💡 [신규] 통합 연결 정보 스키마 (마이페이지 리스트용)
 class ConnectionInfo(BaseModel):
     connection_id: int
-    partner_id: Optional[int] = None
+    partner_id: Optional[int]
     partner_name: str
-    partner_email: Optional[str] = None
+    partner_email: Optional[str]
     partner_role: str
-    status: str # 'PENDING', 'ACCEPTED'
-    created_at: datetime
-    
-    # 내가 요청을 보낸 사람인지, 받은 사람인지 구분하기 위함
-    is_sender: bool 
+    status: str
+    created_at: Optional[str]
+    is_sender: Optional[bool] = False 
 
     class Config:
         from_attributes = True

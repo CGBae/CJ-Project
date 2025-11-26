@@ -134,7 +134,6 @@ async def get_my_connections(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # 쿼리 구성
     if current_user.role == 'patient':
         stmt = (
             select(Connection, User)
@@ -149,17 +148,10 @@ async def get_my_connections(
         )
 
     result = await db.execute(stmt)
-    rows = result.all()  # [(Connection, User), ...]
+    rows = result.all()
 
     connections = []
     for conn, partner in rows:
-        # conn.id가 attribute인지 확인
-        connection_id = getattr(conn, "id", None)
-        if connection_id is None:
-            # 안전하게 None 처리
-            continue
-
-        # partner 정보 처리
         if partner is None:
             partner_name = "삭제된 사용자"
             partner_email = None
@@ -172,17 +164,18 @@ async def get_my_connections(
             partner_role = getattr(partner, "role", "unknown")
 
         connections.append(ConnectionInfo(
-            connection_id=connection_id,         # 이제 확실히 variable
+            connection_id=getattr(conn, "id", 0),
             partner_id=partner_id,
             partner_name=partner_name,
             partner_email=partner_email,
             partner_role=partner_role,
             status=getattr(conn, "status", "PENDING"),
-            created_at=getattr(conn, "created_at", None).isoformat() if getattr(conn, "created_at", None) else None,
-            is_sender=False
+            created_at=getattr(conn, "created_at", None).isoformat() if getattr(conn, "created_at", None) else "",
+            is_sender=(current_user.id == getattr(conn, "therapist_id", None))
         ))
 
     return connections
+
 
 
 # 💡 [신규] 연결 삭제
