@@ -128,24 +128,20 @@ async def request_connection(
     
     return {"message": "연결 요청을 보냈습니다."}
 
+# 💡 [핵심 수정] 내 모든 연결 목록 조회 (500 에러 해결)
 @router.get("/list", response_model=List[ConnectionInfo])
 async def get_my_connections(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    내가 맺은 모든 연결(대기중, 수락됨)을 상대방 정보와 함께 반환합니다.
-    """
-    # 1. 상대방 정보와 연결 테이블을 OUTER JOIN하여 가져옴
+    # 쿼리 구성
     if current_user.role == 'patient':
-        # 환자는 therapist_id로 상대방(User) 조인
         stmt = (
             select(Connection, User)
             .outerjoin(User, Connection.therapist_id == User.id)
             .where(Connection.patient_id == current_user.id)
         )
     else:
-        # 상담사는 patient_id로 상대방(User) 조인
         stmt = (
             select(Connection, User)
             .outerjoin(User, Connection.patient_id == User.id)
@@ -153,35 +149,39 @@ async def get_my_connections(
         )
 
     result = await db.execute(stmt)
-    # result.all()은 [(Connection, User), (Connection, User), ...] 형태의 튜플 리스트를 반환합니다.
-    rows = result.all()
+    rows = result.all()  # [(Connection, User), ...]
 
     connections = []
     for conn, partner in rows:
-        # 💡 [오류 방지] partner가 None일 경우 안전하게 처리 (LEFT JOIN 결과)
+        # conn.id가 attribute인지 확인
+        connection_id = getattr(conn, "id", None)
+        if connection_id is None:
+            # 안전하게 None 처리
+            continue
+
+        # partner 정보 처리
         if partner is None:
-            # 상대방이 삭제되어 User 정보가 없는 경우
-            partner_name = "알 수 없는 사용자"
-            partner_email = "삭제된 계정"
-            partner_id = None
+            partner_name = "삭제된 사용자"
+            partner_email = None
             partner_role = "unknown"
+            partner_id = None
         else:
-            partner_id = partner.id
-            partner_name = partner.name or "이름 없음"
-            partner_email = partner.email or ""
-            partner_role = partner.role
-            
+            partner_id = getattr(partner, "id", None)
+            partner_name = getattr(partner, "name", "이름 없음")
+            partner_email = getattr(partner, "email", None)
+            partner_role = getattr(partner, "role", "unknown")
+
         connections.append(ConnectionInfo(
-            connection_id=conn.id,
+            connection_id=connection_id,         # 이제 확실히 variable
             partner_id=partner_id,
             partner_name=partner_name,
             partner_email=partner_email,
             partner_role=partner_role,
-            status=conn.status,
-            created_at=conn.created_at,
-            is_sender=False 
+            status=getattr(conn, "status", "PENDING"),
+            created_at=getattr(conn, "created_at", None).isoformat() if getattr(conn, "created_at", None) else None,
+            is_sender=False
         ))
-        
+
     return connections
 
 
