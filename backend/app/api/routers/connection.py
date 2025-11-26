@@ -121,7 +121,8 @@ async def request_connection(
     new_conn = Connection(
         patient_id=patient_id,
         therapist_id=therapist_id,
-        status="PENDING"
+        status="PENDING",
+        initiator_id=current_user.id
     )
     db.add(new_conn)
     await db.commit()
@@ -171,7 +172,7 @@ async def get_my_connections(
             partner_role=partner_role,
             status=getattr(conn, "status", "PENDING"),
             created_at=getattr(conn, "created_at", None).isoformat() if getattr(conn, "created_at", None) else "",
-            is_sender=(current_user.id == getattr(conn, "therapist_id", None))
+            is_sender=(getattr(conn, "initiator_id", None) == current_user.id)
         ))
 
     return connections
