@@ -2,11 +2,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { User, Mail, Calendar, ShieldCheck, Link as LinkIcon, Plus, LogOut, Loader2, Trash2, CheckCircle, Edit2, XCircle } from 'lucide-react';
+import { User, Mail, Calendar, ShieldCheck, Link as LinkIcon, Plus, LogOut, Loader2, Trash2, CheckCircle, XCircle, Edit2 } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+// 💡 dob 제거, age 사용
 interface UserProfile {
     id: number;
     name: string;
@@ -33,8 +34,8 @@ export default function MyPage() {
     const [connections, setConnections] = useState<ConnectionInfo[]>([]);
     const [searchInput, setSearchInput] = useState('');
     const [loading, setLoading] = useState(true);
-    
-    // 나이 수정상태
+
+    // 나이 수정 상태
     const [isEditingAge, setIsEditingAge] = useState(false);
     const [editAge, setEditAge] = useState('');
 
@@ -52,7 +53,7 @@ export default function MyPage() {
                 setEditAge(data.age ? String(data.age) : '');
             }
 
-            // 2. 연결 목록 조회
+            // 2. 연결 목록 조회 (확장된 connection.py API 사용)
             const connRes = await fetch(`${API_URL}/connection/list`, { headers: { 'Authorization': `Bearer ${token}` } });
             if (connRes.ok) setConnections(await connRes.json());
             
@@ -117,7 +118,7 @@ export default function MyPage() {
         } catch(e) { alert("처리 실패"); }
     };
 
-    // 연결 삭제
+    // 연결 삭제/취소
     const handleDeleteConnection = async (connectionId: number) => {
         if (!confirm("연결을 끊거나 요청을 취소하시겠습니까?")) return;
         const token = localStorage.getItem('accessToken');
@@ -133,20 +134,19 @@ export default function MyPage() {
         } catch (e) { alert("삭제 실패"); }
     }
 
-    // 나이 수정 핸들러
-    const handleSaveAge = async () => {
+    // 나이 수정
+    const handleUpdateAge = async () => {
         const ageNum = parseInt(editAge, 10);
         if (isNaN(ageNum) || ageNum < 1 || ageNum > 150) {
             alert("유효한 나이를 입력해주세요.");
             return;
         }
-
         const token = localStorage.getItem('accessToken');
         try {
             const res = await fetch(`${API_URL}/auth/me`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ age: ageNum }) // auth.py의 update_users_me가 age를 받도록 되어있어야 함
+                body: JSON.stringify({ age: ageNum })
             });
             if (res.ok) {
                 alert("나이가 수정되었습니다.");
@@ -157,24 +157,14 @@ export default function MyPage() {
             }
         } catch (e) { alert("오류 발생"); }
     };
-
-    // 계정 탈퇴 핸들러
+    
+    // 계정 탈퇴
     const handleDeleteAccount = async () => {
-        if(!confirm("정말 탈퇴하시겠습니까? 모든 데이터가 삭제되며 복구할 수 없습니다.")) return;
+        if(!confirm("정말 탈퇴하시겠습니까? 모든 데이터가 삭제됩니다.")) return;
         const token = localStorage.getItem('accessToken');
         try {
-            // auth.py에 delete_users_me API가 있어야 함
-            const res = await fetch(`${API_URL}/auth/me`, { 
-                method: 'DELETE', 
-                headers: { 'Authorization': `Bearer ${token}` } 
-            });
-            
-            if (res.ok) {
-                alert("탈퇴 처리되었습니다.");
-                logout();
-            } else {
-                alert("탈퇴 처리에 실패했습니다.");
-            }
+            await fetch(`${API_URL}/auth/me`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+            logout();
         } catch(e) { alert("오류 발생"); }
     };
 
@@ -214,9 +204,9 @@ export default function MyPage() {
                                             type="number" 
                                             value={editAge} 
                                             onChange={e => setEditAge(e.target.value)} 
-                                            className="w-16 p-1 border rounded text-right"
+                                            className="w-16 p-1 border rounded text-right bg-gray-50"
                                         />
-                                        <button onClick={handleSaveAge} className="text-green-600"><CheckCircle className="w-4 h-4"/></button>
+                                        <button onClick={handleUpdateAge} className="text-green-600"><CheckCircle className="w-4 h-4"/></button>
                                         <button onClick={() => setIsEditingAge(false)} className="text-red-500"><XCircle className="w-4 h-4"/></button>
                                     </>
                                 ) : (
@@ -235,7 +225,7 @@ export default function MyPage() {
                         </div>
                     </div>
                     <div className="mt-8 space-y-3">
-                        <button onClick={logout} className="w-full py-3 flex justify-center gap-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-xl font-medium"><LogOut className="w-4 h-4"/> 로그아웃</button>
+                        <button onClick={logout} className="w-full py-3 flex justify-center gap-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-medium"><LogOut className="w-4 h-4"/> 로그아웃</button>
                         <button onClick={handleDeleteAccount} className="w-full py-3 flex justify-center gap-2 text-red-500 hover:bg-red-50 rounded-xl font-medium text-sm">회원 탈퇴</button>
                     </div>
                 </section>
