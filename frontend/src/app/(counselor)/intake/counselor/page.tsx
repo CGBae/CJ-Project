@@ -230,7 +230,8 @@ export default function CounselorIntakePage() {
             );
             setLoading(false);
             
-            router.push(`/counselor/${patientIdToUse}`);
+            // router.push(`/counselor/${patientIdToUse}`);
+            return;
 
         } catch (err: unknown) {
             console.error('Intake music generation failed:', err);

@@ -161,7 +161,14 @@ async def get_my_music(
             elif sess.initiator_type == "patient":
                 title = f"AI 상담 음악" if sess.patient_intake and sess.patient_intake.has_dialog else f"작곡 체험 음악"
         
-        prompt_txt = (sess.prompt or {}).get("music_prompt") or "프롬프트 없음" if isinstance(sess.prompt, dict) else "프롬프트 없음"
+        if isinstance(sess.prompt, dict):
+            prompt_txt = sess.prompt.get("music_prompt") or "프롬프트 없음"
+        else:
+            # 문자열 / None / 기타 타입은 일단 한 줄 요약 정도만 보여주고, 최소한 에러는 안 내게
+            if isinstance(sess.prompt, str) and sess.prompt.strip():
+                prompt_txt = sess.prompt
+            else:
+                prompt_txt = "프롬프트 없음"
         
         res.append(MusicTrackInfo(
             id=t.id, title=title, prompt=prompt_txt, track_url=t.track_url, audioUrl=t.track_url,
@@ -205,7 +212,13 @@ async def get_my_favorite_music(
         elif session.initiator_type == "patient":
             if intake and intake.has_dialog: title = "AI 상담 기반 음악"
             else: title = "작곡 체험 음악"
-        session_prompt_text = (session.prompt or {}).get("music_prompt", "프롬프트 없음")
+        if isinstance(session.prompt, dict):
+            session_prompt_text = session.prompt.get("music_prompt", "프롬프트 없음")
+        else:
+            if isinstance(session.prompt, str) and session.prompt.strip():
+                session_prompt_text = session.prompt
+            else:
+                session_prompt_text = "프롬프트 없음"
              
         response_tracks.append(MusicTrackInfo(
             id=track.id, title=title, prompt=session_prompt_text, track_url=track.track_url,
