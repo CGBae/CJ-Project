@@ -128,15 +128,17 @@ async def request_connection(
     
     return {"message": "연결 요청을 보냈습니다."}
 
-@router.get("/connection/list", response_model=List[dict])
-async def list_connections(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@router.get("/list", response_model=List[dict])
+async def list_connections(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
     """
-    로그인한 유저 기준으로 연결 목록 조회
+    로그인한 유저 기준 연결 목록 조회
     상대방 정보 포함
     """
     user_id = current_user.id
 
-    # 현재 유저가 therapist인 경우 patient 연결, patient인 경우 therapist 연결
     stmt = select(Connection).where(
         (Connection.therapist_id == user_id) | (Connection.patient_id == user_id)
     )
@@ -145,7 +147,6 @@ async def list_connections(current_user: User = Depends(get_current_user), db: A
 
     response = []
     for conn in connections:
-        # 상대방 정보 선택
         if conn.therapist_id == user_id:
             partner = conn.patient
         else:
