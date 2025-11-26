@@ -2,28 +2,30 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { User, Mail, Calendar, ShieldCheck, Link as LinkIcon, Plus, LogOut, Loader2, Trash2, CheckCircle, XCircle, Edit2 } from 'lucide-react';
+import { 
+    User, Mail, Calendar, ShieldCheck, Link as LinkIcon, 
+    Plus, LogOut, Loader2, Trash2, CheckCircle, Edit2, X, XCircle, Check
+} from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 
-
 function getApiUrl() {
-  // 1순위: 내부 통신용 (docker 네트워크 안에서 backend 이름으로 호출)
-  if (process.env.INTERNAL_API_URL) {
-    return process.env.INTERNAL_API_URL;
-  }
+    // 1순위: 내부 통신용 (docker 네트워크 안에서 backend 이름으로 호출)
+    if (process.env.INTERNAL_API_URL) {
+        return process.env.INTERNAL_API_URL;
+    }
 
-  // 2순위: 공개용 API URL (빌드 시점에라도 이건 거의 항상 들어있음)
-  if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL;
-  }
+    // 2순위: 공개용 API URL (빌드 시점에라도 이건 거의 항상 들어있음)
+    if (process.env.NEXT_PUBLIC_API_URL) {
+        return process.env.NEXT_PUBLIC_API_URL;
+    }
 
-  // 3순위: 최후 fallback - 도커 네트워크 기준으로 backend 서비스 직접 호출
-  return 'http://backend:8000';
+    // 3순위: 최후 fallback - 도커 네트워크 기준으로 backend 서비스 직접 호출
+    return 'http://backend:8000';
 }
 
 const API_URL = getApiUrl();
 
-// 💡 dob 제거, age 사용
+// 💡 UserProfile: dob 제거, age 사용
 interface UserProfile {
     id: number;
     name: string;
@@ -69,7 +71,7 @@ export default function MyPage() {
                 setEditAge(data.age ? String(data.age) : '');
             }
 
-            // 2. 연결 목록 조회 (확장된 connection.py API 사용)
+            // 2. 연결 목록 조회 (/connection/list 사용)
             const connRes = await fetch(`${API_URL}/connection/list`, { headers: { 'Authorization': `Bearer ${token}` } });
             if (connRes.ok) setConnections(await connRes.json());
             
@@ -159,6 +161,7 @@ export default function MyPage() {
         }
         const token = localStorage.getItem('accessToken');
         try {
+            // auth.py에 update_users_me API가 있어야 함 (PUT /auth/me)
             const res = await fetch(`${API_URL}/auth/me`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -220,15 +223,15 @@ export default function MyPage() {
                                             type="number" 
                                             value={editAge} 
                                             onChange={e => setEditAge(e.target.value)} 
-                                            className="w-16 p-1 border rounded text-right bg-gray-50"
+                                            className="w-16 p-1 border rounded text-right bg-gray-50 text-sm"
                                         />
-                                        <button onClick={handleUpdateAge} className="text-green-600"><CheckCircle className="w-4 h-4"/></button>
-                                        <button onClick={() => setIsEditingAge(false)} className="text-red-500"><XCircle className="w-4 h-4"/></button>
+                                        <button onClick={handleUpdateAge} className="text-green-600 hover:bg-green-50 p-1 rounded"><Check className="w-4 h-4"/></button>
+                                        <button onClick={() => setIsEditingAge(false)} className="text-red-500 hover:bg-red-50 p-1 rounded"><X className="w-4 h-4"/></button>
                                     </>
                                 ) : (
                                     <>
                                         <span className="font-medium text-gray-900">{profile.age ? `${profile.age}세` : '미입력'}</span>
-                                        <button onClick={() => setIsEditingAge(true)} className="text-gray-400 hover:text-indigo-600"><Edit2 className="w-3 h-3"/></button>
+                                        <button onClick={() => setIsEditingAge(true)} className="text-gray-400 hover:text-indigo-600 p-1"><Edit2 className="w-3 h-3"/></button>
                                     </>
                                 )}
                             </div>
