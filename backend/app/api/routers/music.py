@@ -189,20 +189,18 @@ async def get_my_music(
                 else:
                     prompt_txt = "프롬프트 없음"
 
-            res.append(
-                MusicTrackInfo(
-                    id=t.id,
-                    title=title,
-                    prompt=prompt_txt,
-                    track_url=t.track_url,
-                    audioUrl=t.track_url,
-                    session_id=sess.id,
-                    initiator_type=sess.initiator_type,
-                    has_dialog=bool(intake and getattr(intake, "has_dialog", False)),
-                    created_at=t.created_at,
-                    is_favorite=t.is_favorite,
-                )
-            )
+            res.append(MusicTrackInfo(
+                id=t.id,
+                title=title,
+                prompt=prompt_txt,
+                track_url=t.track_url or "",      # 🔥 None이면 ""로
+                audioUrl=t.track_url or "",
+                session_id=sess.id,
+                initiator_type=sess.initiator_type,
+                has_dialog=bool(sess.patient_intake and sess.patient_intake.has_dialog),
+                created_at=t.created_at,
+                is_favorite=t.is_favorite,
+            ))
 
         return res
 
@@ -258,10 +256,16 @@ async def get_my_favorite_music(
                 session_prompt_text = "프롬프트 없음"
              
         response_tracks.append(MusicTrackInfo(
-            id=track.id, title=title, prompt=session_prompt_text, track_url=track.track_url,
-            session_id=session.id, initiator_type=session.initiator_type,
+            id=track.id,
+            title=title,
+            prompt=session_prompt_text,
+            track_url=track.track_url or "",    # 🔥
+            audioUrl=track.track_url or "",     # (필요하면 여기도 맞춰주기)
+            session_id=session.id,
+            initiator_type=session.initiator_type,
             has_dialog=intake.has_dialog if intake else False,
-            created_at=track.created_at, is_favorite=track.is_favorite
+            created_at=track.created_at,
+            is_favorite=track.is_favorite,
         ))
     return response_tracks
 
