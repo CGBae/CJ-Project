@@ -10,23 +10,35 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.abspath(os.path.join(current_dir, ".."))
 sys.path.insert(0, project_root)
 
-# 여기서 Base만 가져오고, 비동기 엔진은 건드리지 않게 만들기
 from app.models import Base  # noqa: E402
 
 # Alembic 설정 객체
 config = context.config
 
-# 로깅 설정
+# logging 설정
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# autogenerate에서 사용할 메타데이터
+# 대상 메타데이터 (모든 모델의 Base.metadata)
 target_metadata = Base.metadata
 
 
+def get_db_url() -> str:
+    """
+    DB URL 우선순위:
+    1) 환경변수 ALEMBIC_DB_URL
+    2) 환경변수 DATABASE_URL
+    3) alembic.ini 의 sqlalchemy.url (fallback)
+    """
+    env_url = os.getenv("ALEMBIC_DB_URL") or os.getenv("DATABASE_URL")
+    if env_url:
+        return env_url
+    return config.get_main_option("sqlalchemy.url")
+
+
 def run_migrations_offline() -> None:
-    """'offline' 모드에서 마이그레이션 실행 (DB 연결 X)."""
-    url = config.get_main_option("sqlalchemy.url")
+    """offline 모드 (SQL 출력 전용)"""
+    url = get_db_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -39,13 +51,13 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    """'online' 모드에서 마이그레이션 실행 (DB 연결 O)."""
-
-    # alembic.ini 의 [alembic] 섹션 가져오기
+    """online 모드 (실제 DB에 적용)"""
+    # alembic.ini 의 섹션 설정 복사
     configuration = config.get_section(config.config_ini_section) or {}
 
-    # 여기서 sqlalchemy.url 은 우리가 alembic.ini 에 적어둔
-    # postgresql+pg8000://cjuser:1234@localhost:5432/cj_db 를 사용
+    # 여기서 DB URL 강제로 override
+    configuration["sqlalchemy.url"] = get_db_url()
+
     connectable = engine_from_config(
         configuration,
         prefix="sqlalchemy.",

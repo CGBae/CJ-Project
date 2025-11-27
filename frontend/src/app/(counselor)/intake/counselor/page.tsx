@@ -57,6 +57,8 @@ export default function CounselorIntakePage() {
     const router = useRouter();
     const [vocalsAllowed, setVocalsAllowed] = useState(false);
 
+    const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
     // --- (기존 loadPatients, useEffect 로직 - 변경 없음) ---
     const loadPatients = useCallback(async () => {
         setIsPatientListLoading(true);
@@ -122,6 +124,7 @@ export default function CounselorIntakePage() {
         e.preventDefault();
         setLoading(true);
         setError(null);
+        setSuccessMessage(null);
 
         const token = localStorage.getItem('accessToken');
         if (!token) {
@@ -201,7 +204,7 @@ export default function CounselorIntakePage() {
             if (!generateResponse.ok) throw new Error('음악 프롬프트 생성에 실패했습니다.');
             await generateResponse.json();
 
-                        const musicResponse = await fetch(`${API_URL}/music/compose`, {
+            const musicResponse = await fetch(`${API_URL}/music/compose`, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
@@ -220,9 +223,15 @@ export default function CounselorIntakePage() {
                  throw new Error(errorData.detail || 'ElevenLabs 음악 생성 API 호출에 실패했습니다.');
             }
             const result = await musicResponse.json();
-            if (!result.track_url) throw new Error("음악 생성 결과가 올바르지 않습니다.");
+            console.log('music compose queued:', result);
+
+            setSuccessMessage(
+              "음악 처방 요청이 정상적으로 접수되었습니다. 잠시 후 '음악 관리'에서 생성된 음악을 확인하실 수 있습니다."
+            );
+            setLoading(false);
             
-            router.push(`/counselor/${patientIdToUse}`);
+            // router.push(`/counselor/${patientIdToUse}`);
+            return;
 
         } catch (err: unknown) {
             console.error('Intake music generation failed:', err);
@@ -479,6 +488,13 @@ export default function CounselorIntakePage() {
                             placeholder="예: 잔잔한 피아노 아르페지오 위주로, 타악기 배제" />
                     </div>
                 </fieldset>
+
+                {successMessage && (
+                    <div className="flex items-center justify-center p-3 bg-green-100 text-green-700 rounded-lg text-sm font-medium">
+                        <Info className="w-5 h-5 mr-2 flex-shrink-0" />
+                        <p>{successMessage}</p>
+                    </div>
+                )}
                 
                 {/* --- 에러 메시지 --- */}
                 {error && (

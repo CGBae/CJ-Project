@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status # 💡 1. s
 from pydantic import BaseModel, Field
 from sqlalchemy import select, update, insert, desc
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
+from typing import List, Literal, Optional
 import json
 from app.schemas import MusicTrackInfo, MusicTrackDetail, SimpleChatMessage, SimpleIntakeData, TherapistManualInput, TrackUpdate
 from app.db import get_db
@@ -14,6 +14,8 @@ from sqlalchemy.orm import joinedload, selectinload
 # 1. 함수 이름을 'compose_and_save'으로 변경합니다.
 from app.services.elevenlabs_client import compose_and_save, ElevenLabsError
 from app.api.routers.therapist import check_counselor_patient_access
+import app.kafka as kafka
+import os, uuid, datetime as dt
 router = APIRouter(prefix="/music", tags=["music"])
 
 # --- (ComposeReq, ComposeResp 클래스는 변경 없음) ---
@@ -25,24 +27,9 @@ class ComposeReq(BaseModel):
 
 class ComposeResp(BaseModel):
     session_id: int
-    track_url: str
-
-# 💡 3. [추가] therapist.py의 권한 확인 헬퍼 함수
-async def check_counselor_patient_access(
-    patient_id: int,
-    counselor_id: int,
-    db: AsyncSession
-):
-    """(헬퍼 함수) 상담사가 해당 환자에게 접근 권한(ACCEPTED)이 있는지 확인"""
-    q = select(Connection).where(
-        Connection.therapist_id == counselor_id,
-        Connection.patient_id == patient_id,
-        Connection.status == "ACCEPTED"
-    )
-    connection = (await db.execute(q)).scalar_one_or_none()
-    if not connection:
-        raise HTTPException(status_code=403, detail="이 환자에 대한 접근 권한이 없습니다.")
-
+    track_id: int
+    status: Literal["QUEUED", "PROCESSING", "READY", "FAILED"]
+    track_url: Optional[str] = None
 
 # --- 💡 4. [핵심 수정] /compose API 권한 검사 로직 변경 ---
 @router.post("/compose", response_model=ComposeResp)
@@ -79,43 +66,46 @@ async def compose_music(
 
     # --- (이하 로직은 변경 없음) ---
     
-    # 2) 프롬프트 확인
-    prompt = (session.prompt or {}).get("text")
-    if not prompt:
-        q = select(SessionPrompt.data).where(
-            SessionPrompt.session_id == req.session_id,
-            SessionPrompt.stage == "final",
-        ).order_by(SessionPrompt.created_at.desc())
-        row = (await db.execute(q)).first()
-        prompt = (row[0] or {}).get("text") if row else None
-    if not prompt:
-        raise HTTPException(400, "no final prompt for this session")
-
-    # 3) ElevenLabs 호출
-    try:
-        track_url = await compose_and_save(
-            prompt,
-            music_length_ms=req.music_length_ms,
-            force_instrumental=req.force_instrumental,
-            extra=req.extra,
-        )
-    except ElevenLabsError as e:
-        raise HTTPException(502, f"music provider error: {e}")
-
-    # 4) DB 기록
-    await db.execute(insert(Track).values(
+    prompt_data = session.prompt if isinstance(session.prompt, dict) else {}
+    prompt_text = prompt_data.get("music_prompt") or prompt_data.get("text") or ""
+    
+    # 2) Track 레코드 생성
+    new_track = Track(
         session_id=req.session_id,
-        track_url=track_url,
-        duration_sec=int(req.music_length_ms / 1000),
+        status="QUEUED",
         provider="ElevenLabs",
+        prompt=prompt_text,
+        duration_sec=int(req.music_length_ms / 1000),
         quality=req.extra.get("preset") if req.extra else None,
-    ))
-    await db.execute(update(Session).where(Session.id==req.session_id).values(
-        track_url=track_url, provider="ElevenLabs"
-    ))
+    )
+    db.add(new_track)
+    await db.flush()  # new_track.id 확보
+
+    # 3) Kafka 메시지 발행
+    if not kafka.producer:
+        raise HTTPException(503, "music queue not available")
+    payload = {
+        "task_id": new_track.id,
+        "session_id": req.session_id,
+        "prompt": prompt_text,
+        "music_length_ms": req.music_length_ms,
+        "force_instrumental": req.force_instrumental,
+        "extra": req.extra or {},
+    }
+    await kafka.producer.send_and_wait(
+        os.getenv("KAFKA_TOPIC_REQUESTS", "music.gen.requests"),
+        key=new_track.id,
+        value=payload,
+    )
+
     await db.commit()
 
-    return ComposeResp(session_id=req.session_id, track_url=track_url)
+    return {
+        "session_id": req.session_id,
+        "track_id": new_track.id,
+        "status": new_track.status,
+        "track_url": None,
+    }
 
 @router.patch("/track/{track_id}", response_model=MusicTrackInfo)
 async def update_track_title(
@@ -151,35 +141,77 @@ async def update_track_title(
 async def get_my_music(
     limit: int | None = Query(None, ge=1),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
-    query = select(Track).options(joinedload(Track.session).joinedload(Session.patient_intake)).join(Session).where(Session.created_by == current_user.id).order_by(Track.created_at.desc())
-    if limit: query = query.limit(limit)
-    result = await db.execute(query)
-    tracks = result.scalars().unique().all()
-    
-    res = []
-    for t in tracks:
-        sess = t.session
-        
-        # 💡 제목 결정 로직: DB에 title이 있으면 그것 사용, 없으면 자동 생성
-        if t.title:
-            title = t.title
-        else:
-            title = f"AI 트랙 (세션 {sess.id})"
-            if sess.initiator_type == "therapist": title = f"상담사 처방 음악"
-            elif sess.initiator_type == "patient":
-                title = f"AI 상담 음악" if sess.patient_intake and sess.patient_intake.has_dialog else f"작곡 체험 음악"
-        
-        prompt_txt = (sess.prompt or {}).get("music_prompt") or "프롬프트 없음" if isinstance(sess.prompt, dict) else "프롬프트 없음"
-        
-        res.append(MusicTrackInfo(
-            id=t.id, title=title, prompt=prompt_txt, track_url=t.track_url, audioUrl=t.track_url,
-            session_id=sess.id, initiator_type=sess.initiator_type, 
-            has_dialog=bool(sess.patient_intake and sess.patient_intake.has_dialog), 
-            created_at=t.created_at, is_favorite=t.is_favorite
-        ))
-    return res
+    try:
+        query = (
+            select(Track)
+            .options(
+                joinedload(Track.session).joinedload(Session.patient_intake)
+            )
+            .join(Session)
+            .where(Session.created_by == current_user.id)
+            .order_by(Track.created_at.desc())
+        )
+
+        if limit:
+            query = query.limit(limit)
+
+        result = await db.execute(query)
+        tracks = result.scalars().unique().all()
+
+        res: list[MusicTrackInfo] = []
+
+        for t in tracks:
+            sess = t.session
+            intake = getattr(sess, "patient_intake", None)
+
+            # 제목 결정
+            if t.title:
+                title = t.title
+            else:
+                if sess.initiator_type == "therapist":
+                    title = "상담사 처방 음악"
+                elif sess.initiator_type == "patient":
+                    if intake and getattr(intake, "has_dialog", False):
+                        title = "AI 상담 음악"
+                    else:
+                        title = "작곡 체험 음악"
+                else:
+                    title = f"AI 트랙 (세션 {sess.id})"
+
+            # prompt 안전 처리
+            if isinstance(sess.prompt, dict):
+                prompt_txt = sess.prompt.get("music_prompt") or "프롬프트 없음"
+            else:
+                if isinstance(sess.prompt, str) and sess.prompt.strip():
+                    prompt_txt = sess.prompt
+                else:
+                    prompt_txt = "프롬프트 없음"
+
+            res.append(MusicTrackInfo(
+                id=t.id,
+                title=title,
+                prompt=prompt_txt,
+                track_url=t.track_url or "",      # 🔥 None이면 ""로
+                audioUrl=t.track_url or "",
+                session_id=sess.id,
+                initiator_type=sess.initiator_type,
+                has_dialog=bool(sess.patient_intake and sess.patient_intake.has_dialog),
+                created_at=t.created_at,
+                is_favorite=t.is_favorite,
+            ))
+
+        return res
+
+    except Exception as e:
+        # 💥 디버깅용: 실제 에러 메시지를 바로 응답으로 확인
+        import traceback
+        print("ERROR in /music/my:", traceback.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail=f"/music/my internal error: {e!r}",
+        )
 
 @router.get("/my/favorites", response_model=List[MusicTrackInfo])
 async def get_my_favorite_music(
@@ -215,13 +247,25 @@ async def get_my_favorite_music(
         elif session.initiator_type == "patient":
             if intake and intake.has_dialog: title = "AI 상담 기반 음악"
             else: title = "작곡 체험 음악"
-        session_prompt_text = (session.prompt or {}).get("music_prompt", "프롬프트 없음")
+        if isinstance(session.prompt, dict):
+            session_prompt_text = session.prompt.get("music_prompt", "프롬프트 없음")
+        else:
+            if isinstance(session.prompt, str) and session.prompt.strip():
+                session_prompt_text = session.prompt
+            else:
+                session_prompt_text = "프롬프트 없음"
              
         response_tracks.append(MusicTrackInfo(
-            id=track.id, title=title, prompt=session_prompt_text, track_url=track.track_url,
-            session_id=session.id, initiator_type=session.initiator_type,
+            id=track.id,
+            title=title,
+            prompt=session_prompt_text,
+            track_url=track.track_url or "",    # 🔥
+            audioUrl=track.track_url or "",     # (필요하면 여기도 맞춰주기)
+            session_id=session.id,
+            initiator_type=session.initiator_type,
             has_dialog=intake.has_dialog if intake else False,
-            created_at=track.created_at, is_favorite=track.is_favorite
+            created_at=track.created_at,
+            is_favorite=track.is_favorite,
         ))
     return response_tracks
 

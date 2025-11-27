@@ -67,6 +67,7 @@ export default function ComposePage() {
     const [error, setError] = useState<string | null>(null);
     const [loadingStatus, setLoadingStatus] = useState('');
     const router = useRouter();
+    const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
     // --- (기존 useEffect 로직 - 변경 없음) ---
     useEffect(() => {
@@ -101,6 +102,7 @@ export default function ComposePage() {
         setLoading(true);
         setLoadingStatus('');
         setError(null);
+        setSuccessMessage(null);
 
         const token = localStorage.getItem('accessToken');
         if (!token) {
@@ -183,17 +185,21 @@ export default function ComposePage() {
             });
             if (musicResponse.status === 401) throw new Error('인증 실패(음악생성)');
             if (!musicResponse.ok) {
-                const errorData = await musicResponse.json();
+                const errorData = await musicResponse.json().catch(() => ({}));
                 throw new Error(errorData.detail || `음악 생성 실패 (${musicResponse.status})`);
             }
             const result = await musicResponse.json();
-            if (!result.track_url) throw new Error("음악 생성 결과 URL 없음");
+            console.log('music compose queued:', result);
+
+            setSuccessMessage(
+                "음악 생성 요청이 정상적으로 접수되었습니다. 잠시 후 '내 음악'에서 생성된 트랙을 확인하실 수 있어요."
+            );
 
             // --- 4단계: '가짜 DB' 저장 로직 *삭제* ---
 
             // --- 5단계: 음악 목록 페이지로 이동 ---
-            alert("음악 생성이 완료되었습니다! 플레이리스트에서 확인하세요.");
-            router.push('/music');
+            // alert("음악 생성이 완료되었습니다! 플레이리스트에서 확인하세요.");
+            // router.push('/music');
 
         } catch (err) {
             console.error('Compose music failed:', err);
@@ -356,6 +362,14 @@ export default function ComposePage() {
                         className="w-full p-3 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                         placeholder="예: 조용하게 시작해서 점점 고조되는 느낌으로 만들어줘 / 빗소리를 약하게 넣어줘" />
                 </fieldset>
+
+                {/* --- 성공 메시지 --- */}
+                {successMessage && (
+                    <div className="flex items-center justify-center p-3 bg-green-100 text-green-700 rounded-lg text-sm font-medium mb-4">
+                        <Info className="w-5 h-5 mr-2 flex-shrink-0" />
+                        <p>{successMessage}</p>
+                    </div>
+                )}
 
                 {/* --- 에러 메시지 --- */}
                 {error && (

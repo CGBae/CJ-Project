@@ -11,8 +11,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
 from app.api.routers import patient, therapist, chat, music, auth, sessions, user, connection, board, messenger
 from fastapi.staticfiles import StaticFiles
+from contextlib import asynccontextmanager
+from app.kafka import start_kafka, stop_kafka
 
-app = FastAPI(title="TheraMusic API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 앱 시작 시
+    await start_kafka()
+    try:
+        # 여기가 실제 앱이 돌아가는 구간
+        yield
+    finally:
+        # 앱 종료 시
+        await stop_kafka()
+
+app = FastAPI(
+    title="TheraMusic API",
+    lifespan=lifespan,
+)
 
 origins = [
     "http://210.104.76.200",
