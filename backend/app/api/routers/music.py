@@ -141,42 +141,79 @@ async def update_track_title(
 async def get_my_music(
     limit: int | None = Query(None, ge=1),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
-    query = select(Track).options(joinedload(Track.session).joinedload(Session.patient_intake)).join(Session).where(Session.created_by == current_user.id).order_by(Track.created_at.desc())
-    if limit: query = query.limit(limit)
-    result = await db.execute(query)
-    tracks = result.scalars().unique().all()
-    
-    res = []
-    for t in tracks:
-        sess = t.session
-        
-        # 💡 제목 결정 로직: DB에 title이 있으면 그것 사용, 없으면 자동 생성
-        if t.title:
-            title = t.title
-        else:
-            title = f"AI 트랙 (세션 {sess.id})"
-            if sess.initiator_type == "therapist": title = f"상담사 처방 음악"
-            elif sess.initiator_type == "patient":
-                title = f"AI 상담 음악" if sess.patient_intake and sess.patient_intake.has_dialog else f"작곡 체험 음악"
-        
-        if isinstance(sess.prompt, dict):
-            prompt_txt = sess.prompt.get("music_prompt") or "프롬프트 없음"
-        else:
-            # 문자열 / None / 기타 타입은 일단 한 줄 요약 정도만 보여주고, 최소한 에러는 안 내게
-            if isinstance(sess.prompt, str) and sess.prompt.strip():
-                prompt_txt = sess.prompt
+    try:
+        query = (
+            select(Track)
+            .options(
+                joinedload(Track.session).joinedload(Session.patient_intake)
+            )
+            .join(Session)
+            .where(Session.created_by == current_user.id)
+            .order_by(Track.created_at.desc())
+        )
+
+        if limit:
+            query = query.limit(limit)
+
+        result = await db.execute(query)
+        tracks = result.scalars().unique().all()
+
+        res: list[MusicTrackInfo] = []
+
+        for t in tracks:
+            sess = t.session
+            intake = getattr(sess, "patient_intake", None)
+
+            # 제목 결정
+            if t.title:
+                title = t.title
             else:
-                prompt_txt = "프롬프트 없음"
-        
-        res.append(MusicTrackInfo(
-            id=t.id, title=title, prompt=prompt_txt, track_url=t.track_url, audioUrl=t.track_url,
-            session_id=sess.id, initiator_type=sess.initiator_type, 
-            has_dialog=bool(sess.patient_intake and sess.patient_intake.has_dialog), 
-            created_at=t.created_at, is_favorite=t.is_favorite
-        ))
-    return res
+                if sess.initiator_type == "therapist":
+                    title = "상담사 처방 음악"
+                elif sess.initiator_type == "patient":
+                    if intake and getattr(intake, "has_dialog", False):
+                        title = "AI 상담 음악"
+                    else:
+                        title = "작곡 체험 음악"
+                else:
+                    title = f"AI 트랙 (세션 {sess.id})"
+
+            # prompt 안전 처리
+            if isinstance(sess.prompt, dict):
+                prompt_txt = sess.prompt.get("music_prompt") or "프롬프트 없음"
+            else:
+                if isinstance(sess.prompt, str) and sess.prompt.strip():
+                    prompt_txt = sess.prompt
+                else:
+                    prompt_txt = "프롬프트 없음"
+
+            res.append(
+                MusicTrackInfo(
+                    id=t.id,
+                    title=title,
+                    prompt=prompt_txt,
+                    track_url=t.track_url,
+                    audioUrl=t.track_url,
+                    session_id=sess.id,
+                    initiator_type=sess.initiator_type,
+                    has_dialog=bool(intake and getattr(intake, "has_dialog", False)),
+                    created_at=t.created_at,
+                    is_favorite=t.is_favorite,
+                )
+            )
+
+        return res
+
+    except Exception as e:
+        # 💥 디버깅용: 실제 에러 메시지를 바로 응답으로 확인
+        import traceback
+        print("ERROR in /music/my:", traceback.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail=f"/music/my internal error: {e!r}",
+        )
 
 @router.get("/my/favorites", response_model=List[MusicTrackInfo])
 async def get_my_favorite_music(
