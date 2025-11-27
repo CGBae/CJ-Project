@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 // 💡 1. [수정] 'Palette' (컬러테라피) 아이콘 import 제거
 import {
     Play, Pause, Music, Trash2, ArrowLeft, Volume2, Loader2, FileText, MessageSquare, ChevronDown, User, AlertTriangle, Heart,
-    Volume1, VolumeX, RefreshCcw, Edit2, Check, X, Share2
+    Volume1, VolumeX, RefreshCcw, Edit2, Check, X,CheckSquare,Square, Share2
 } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext'; // 💡 AuthContext 임포트
 // 💡 2. [수정] MusicTrackInfo 타입 (백엔드 schemas.py와 일치)
@@ -103,6 +103,9 @@ export default function MusicPlaylistPage() {
     const [duration, setDuration] = useState(0);
     const [volume, setVolume] = useState(1.0);
     const [isLooping, setIsLooping] = useState(false);
+    const [isSelectionMode, setIsSelectionMode] = useState(false);
+    const [selectedTrackIds, setSelectedTrackIds] = useState<Set<number | string>>(new Set());
+
     // useEffect (음악 목록 API 호출) - 변경 없음
     useEffect(() => {
         if (typeof window !== "undefined" && !audioRef.current) {
@@ -241,6 +244,51 @@ export default function MusicPlaylistPage() {
         }
     };
 
+    const handleDelete = async (idsToDelete: (number | string)[]) => {
+        if (!confirm(idsToDelete.length > 1 ? `선택한 ${idsToDelete.length}곡을 삭제하시겠습니까?` : "정말 삭제하시겠습니까?")) return;
+
+        const token = localStorage.getItem('accessToken');
+        if (!token) return;
+
+        try {
+            // 여러 개 삭제를 위해 Promise.all 사용 (백엔드에 벌크 삭제 API가 없다면 반복 호출)
+            await Promise.all(idsToDelete.map(id => 
+                fetch(`${API_URL}/music/track/${id}`, { // 백엔드에 DELETE /music/track/{id} 구현되어 있다고 가정
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                })
+            ));
+
+            // 목록 갱신
+            setPlaylist(prev => prev.filter(t => !idsToDelete.includes(t.id)));
+            
+            // 선택 모드 초기화
+            setSelectedTrackIds(new Set());
+            if (idsToDelete.length > 1) setIsSelectionMode(false);
+
+            alert("삭제되었습니다.");
+        } catch (e) {
+            alert("삭제 중 오류가 발생했습니다.");
+        }
+    };
+
+    // 💡 [추가] 선택 토글
+    const toggleSelect = (id: number | string) => {
+        const newSet = new Set(selectedTrackIds);
+        if (newSet.has(id)) newSet.delete(id);
+        else newSet.add(id);
+        setSelectedTrackIds(newSet);
+    };
+
+    // 💡 [추가] 전체 선택 토글
+    const toggleSelectAll = () => {
+        if (selectedTrackIds.size === playlist.length) {
+            setSelectedTrackIds(new Set());
+        } else {
+            setSelectedTrackIds(new Set(playlist.map(t => t.id)));
+        }
+    };
+
     const handleToggleFavorite = async (e: React.MouseEvent, trackId: number | string) => {
         e.stopPropagation(); // 부모(펼치기) 클릭 방지
         const token = localStorage.getItem('accessToken');
@@ -330,37 +378,50 @@ export default function MusicPlaylistPage() {
     return (
         <div className="max-w-3xl mx-auto p-4 sm:p-6 bg-gray-50 min-h-screen">
             <header className="flex justify-between items-center pb-4 border-b border-gray-200 mb-6">
-                <button
-                    onClick={() => router.push('/dashboard/patient')} // 👈 대시보드로 돌아가기
-                    className="text-indigo-600 hover:text-indigo-800 flex items-center transition-colors text-sm"
-                >
-                    <ArrowLeft className="h-4 w-4 mr-1" /> 대시보드로 돌아가기
+                <button onClick={() => router.push('/dashboard/patient')} className="text-indigo-600 hover:text-indigo-800 flex items-center text-sm">
+                    <ArrowLeft className="h-4 w-4 mr-1" /> 대시보드로
                 </button>
                 <h1 className="text-2xl font-bold text-gray-800 flex items-center">
                     <Volume2 className="h-6 w-6 mr-2 text-indigo-600" /> 나의 AI 음악
                 </h1>
             </header>
 
-            <div className="flex justify-between items-center mb-6 px-1">
+            {/* 💡 [수정] 상단 컨트롤 바 (선택/삭제) */}
+            <div className="flex justify-between items-center mb-6 px-1 h-10">
                 <p className="text-sm text-gray-600">총 {playlist.length} 곡</p>
-                <div className="flex items-center gap-3">
-                    {/* (추가 생성하기 버튼은 '상담' 또는 '작곡체험'으로 가야 하므로, 
-                       환자 대시보드의 '새 상담' 버튼으로 유도하는 것이 더 명확할 수 있습니다.)
-                    */}
-                    <button
-                        onClick={() => router.push('/intake/patient')} // 👈 새 상담(접수) 페이지로
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 text-white rounded-md text-xs hover:bg-blue-600 transition-colors shadow-sm font-medium"
-                    >
-                        <Music className="w-4 h-4" />
-                        새 음악 생성하기
-                    </button>
-                    <button
-                        onClick={handleClear}
-                        disabled={playlist.length === 0}
-                        className="text-xs text-red-500 hover:text-red-700 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        <Trash2 className="h-3 w-3 mr-1" /> 전체 삭제
-                    </button>
+                
+                <div className="flex items-center gap-2">
+                    {isSelectionMode ? (
+                        <>
+                            <button 
+                                onClick={toggleSelectAll}
+                                className="text-xs font-medium text-gray-600 hover:text-gray-900 px-3 py-1.5 bg-white border rounded-md"
+                            >
+                                {selectedTrackIds.size === playlist.length ? '선택 해제' : '전체 선택'}
+                            </button>
+                            <button 
+                                onClick={() => handleDelete(Array.from(selectedTrackIds))}
+                                disabled={selectedTrackIds.size === 0}
+                                className="text-xs font-medium text-white bg-red-500 hover:bg-red-600 px-3 py-1.5 rounded-md disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-1"
+                            >
+                                <Trash2 className="w-3 h-3"/> 삭제 ({selectedTrackIds.size})
+                            </button>
+                            <button 
+                                onClick={() => { setIsSelectionMode(false); setSelectedTrackIds(new Set()); }}
+                                className="text-xs font-medium text-gray-600 hover:bg-gray-200 px-3 py-1.5 rounded-md"
+                            >
+                                취소
+                            </button>
+                        </>
+                    ) : (
+                        <button 
+                            onClick={() => setIsSelectionMode(true)}
+                            disabled={playlist.length === 0}
+                            className="text-xs text-gray-600 hover:text-indigo-600 transition-colors flex items-center gap-1 px-2 py-1 rounded hover:bg-gray-100"
+                        >
+                            <CheckSquare className="h-4 w-4" /> 선택 삭제
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -369,23 +430,36 @@ export default function MusicPlaylistPage() {
                     <div className="text-center p-10 border-2 border-dashed border-gray-300 rounded-xl mt-8 bg-white">
                         <Music className="h-10 w-10 text-gray-400 mx-auto mb-3" />
                         <p className="text-gray-500">아직 생성된 음악이 없습니다.</p>
-                        <p className="text-sm text-gray-400 mt-1">새 음악 생성하기를 통해 나만의 음악을 만들어보세요!</p>
                     </div>
                 ) : (
                     <ul className="space-y-3">
                         {playlist.map((track) => (
                             <Fragment key={track.id}>
                                 <li
-                                    className={`p-4 bg-white border border-gray-200 rounded-lg shadow-sm transition-all flex items-center justify-between cursor-pointer ${expandedTrackId === track.id ? 'border-indigo-300 shadow-md' : 'hover:bg-gray-50 hover:shadow-md'
-                                        }`}
-                                    onClick={() => handleToggleDetails(track.id)}
+                                    className={`p-4 bg-white border border-gray-200 rounded-lg shadow-sm transition-all flex items-center justify-between cursor-pointer relative
+                                        ${expandedTrackId === track.id ? 'border-indigo-300 shadow-md' : 'hover:bg-gray-50'}
+                                        ${isSelectionMode ? 'pl-12' : ''} 
+                                    `}
+                                    onClick={() => !isSelectionMode && handleToggleDetails(track.id)}
                                 >
-                                    {/* (왼쪽: 아이콘 + 제목) */}
+                                    {/* 💡 [추가] 선택 모드일 때 체크박스 */}
+                                    {isSelectionMode && (
+                                        <div 
+                                            className="absolute left-4 top-1/2 -translate-y-1/2 p-2 cursor-pointer z-10"
+                                            onClick={(e) => { e.stopPropagation(); toggleSelect(track.id); }}
+                                        >
+                                            {selectedTrackIds.has(track.id) ? (
+                                                <CheckSquare className="w-5 h-5 text-indigo-600 fill-indigo-50"/>
+                                            ) : (
+                                                <Square className="w-5 h-5 text-gray-400"/>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* 왼쪽: 아이콘 + 제목 */}
                                     <div className="flex items-center gap-4 min-w-0">
-                                        <div className={`flex-shrink-0 p-3 rounded-full ${currentTrackId === track.id ? 'bg-indigo-600' : 'bg-indigo-100'
-                                            } ${expandedTrackId === track.id ? 'bg-indigo-600' : ''}`}>
-                                            <Music className={`w-5 h-5 ${currentTrackId === track.id ? 'text-white' : 'text-indigo-600'
-                                                } ${expandedTrackId === track.id ? 'text-white' : ''}`} />
+                                        <div className={`flex-shrink-0 p-3 rounded-full ${currentTrackId === track.id ? 'bg-indigo-600' : 'bg-indigo-100'}`}>
+                                            <Music className={`w-5 h-5 ${currentTrackId === track.id ? 'text-white' : 'text-indigo-600'}`} />
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             {editingTrackId === track.id ? (
@@ -397,155 +471,73 @@ export default function MusicPlaylistPage() {
                                             ) : (
                                                 <div className="flex items-center gap-2 group">
                                                     <p className="font-medium text-gray-900 truncate">{getDynamicTitle(track)}</p>
-                                                    <button onClick={(e) => { e.stopPropagation(); startEditing(track) }} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-indigo-600 transition-opacity">
-                                                        <Edit2 className="w-3 h-3" />
-                                                    </button>
+                                                    {!isSelectionMode && (
+                                                        <button onClick={(e) => { e.stopPropagation(); startEditing(track) }} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-indigo-600 transition-opacity">
+                                                            <Edit2 className="w-3 h-3" />
+                                                        </button>
+                                                    )}
                                                 </div>
                                             )}
-
-                                            <p className="text-xs text-gray-500 mt-1">
-                                                {new Date(track.created_at).toLocaleString('ko-KR', {
-                                                    year: 'numeric', month: 'long', day: 'numeric'
-                                                })}
+                                            <p className="text-xs text-gray-500 mt-1 flex items-center gap-2">
+                                                <span>{new Date(track.created_at).toLocaleDateString()}</span>
+                                                <span className="w-1 h-1 bg-gray-300 rounded-full"></span>
+                                                <span>{track.initiator_type === 'therapist' ? '처방됨' : '자가진행'}</span>
                                             </p>
                                         </div>
                                     </div>
 
-                                    {/* (오른쪽: 버튼 영역) */}
-                                    <div className="flex-shrink-0 flex items-center gap-2 ml-4">
-                                        <button
-                                            onClick={(e) => handleToggleFavorite(e, track.id)}
-                                            className={`p-3 rounded-full transition-colors group ${track.is_favorite ? 'text-pink-500 bg-pink-100 hover:bg-pink-200' : 'text-gray-400 bg-gray-100 hover:bg-gray-200'
-                                                }`}
-                                            aria-label={track.is_favorite ? '즐겨찾기 해제' : '즐겨찾기'}
-                                        >
-                                            <Heart className={`h-5 w-5 ${track.is_favorite ? 'fill-pink-500' : 'fill-transparent group-hover:text-pink-500'
-                                                }`} />
-                                        </button>
-                                        {/* 재생/일시정지 버튼 */}
-                                        <button
-                                            onClick={(e) => handlePlay(e, track)}
-                                            className={`p-3 rounded-full transition-colors shadow-sm ${(isPlaying && currentTrack?.id === track.id) ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-600 hover:bg-indigo-700'
-                                                } text-white`}
-                                            aria-label={(isPlaying && currentTrack?.id === track.id) ? '일시정지' : '재생'}
-                                        >
-                                            {/* 💡 [핵심 수정] Pause 아이콘 사용 */}
-                                            {(isPlaying && currentTrack?.id === track.id) ? <Pause className="h-5 w-5 fill-white" /> : <Play className="h-5 w-5 fill-white pl-0.5" />}
-                                        </button>
+                                    {/* 오른쪽: 컨트롤 버튼들 (선택 모드가 아닐 때만 표시) */}
+                                    {!isSelectionMode && (
+                                        <div className="flex items-center gap-3">
+                                            <button onClick={(e) => handleToggleFavorite(e, track.id)} className={`p-2 rounded-full ${track.is_favorite ? 'text-pink-500 bg-pink-50' : 'text-gray-400 hover:bg-gray-100'}`}>
+                                                <Heart className={`h-5 w-5 ${track.is_favorite ? 'fill-current' : ''}`} />
+                                            </button>
+                                            
+                                            <button onClick={(e) => handlePlay(e, track)} className={`p-2.5 rounded-full ${isPlaying && currentTrack?.id === track.id ? 'bg-red-500 text-white' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
+                                                {isPlaying && currentTrack?.id === track.id ? <Pause className="h-4 w-4 fill-current" /> : <Play className="h-4 w-4 fill-current ml-0.5" />}
+                                            </button>
 
-                                        {/* 펼치기/접기 아이콘 */}
-                                        <ChevronDown className={`h-5 w-5 text-gray-400 transition-transform ${expandedTrackId === track.id ? 'rotate-180' : ''}`} />
-                                    </div>
+                                            <button onClick={(e) => { e.stopPropagation(); handleDelete([track.id]); }} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
+                                                <Trash2 className="w-5 h-5"/>
+                                            </button>
+
+                                            <ChevronDown className={`h-5 w-5 text-gray-400 transition-transform ${expandedTrackId === track.id ? 'rotate-180' : ''}`} />
+                                        </div>
+                                    )}
                                 </li>
 
-                                {/* 상세 정보 패널 (펼쳐졌을 때) */}
-                                {expandedTrackId === track.id && (
-                                    <div className="border border-t-0 rounded-b-lg p-6 bg-white shadow-inner mb-3 -mt-2 animate-in fade-in duration-200">
-                                        {/* 상세 정보 로딩 중 */}
-                                        {detailLoadingId === track.id && (
-                                            <div className="flex justify-center items-center p-4">
-                                                <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
-                                                <span className="ml-2 text-gray-500">상세 정보 로딩 중...</span>
-                                            </div>
-                                        )}
-                                        {/* 상세 정보 로드 완료 */}
-                                        {trackDetail && trackDetail.id === track.id && (
+                                {/* 상세 정보 패널 (선택 모드가 아닐 때만 표시 가능) */}
+                                {!isSelectionMode && expandedTrackId === track.id && (
+                                    <div className="border-t border-gray-100 bg-gray-50/50 p-5 animate-in slide-in-from-top-2 duration-200 rounded-b-lg mb-3 -mt-2">
+                                        {detailLoadingId === String(track.id) ? (
+                                            <div className="flex justify-center py-4"><Loader2 className="w-6 h-6 animate-spin text-indigo-400"/></div>
+                                        ) : !trackDetail ? (
+                                            <div className="text-center text-red-500 text-sm">정보를 불러오지 못했습니다.</div>
+                                        ) : (
                                             <div className="space-y-5">
-
-                                                {/* 💡 고급 오디오 플레이어 */}
-                                                {/* 💡 [수정] 현재 트랙이 아니더라도, 상세정보가 열린 트랙이면 플레이어 표시 */}
+                                                {/* 플레이어 */}
                                                 {(currentTrack?.id === track.id || !currentTrack) && (
                                                     <div className="p-4 bg-gray-100 rounded-lg border">
                                                         <div className="flex items-center gap-4">
                                                             <span className="text-xs font-mono text-gray-600">{formatTime(currentTime)}</span>
-                                                            <input
-                                                                type="range"
-                                                                min="0"
-                                                                max={duration || 0}
-                                                                value={currentTime}
-                                                                onChange={(e) => {
-                                                                    const time = Number(e.target.value);
-                                                                    setCurrentTime(time);
-                                                                    if (audioRef.current) audioRef.current.currentTime = time;
-                                                                }}
-                                                                className="flex-1 h-1.5 bg-gray-300 rounded-full appearance-none cursor-pointer accent-indigo-600"
-                                                            />
+                                                            <input type="range" min="0" max={duration || 0} value={currentTime} onChange={(e) => { const t = Number(e.target.value); setCurrentTime(t); if (audioRef.current) audioRef.current.currentTime = t; }} className="flex-1 h-1.5 bg-gray-300 rounded-full appearance-none cursor-pointer accent-indigo-600" />
                                                             <span className="text-xs font-mono text-gray-600">{formatTime(duration)}</span>
                                                         </div>
                                                         <div className="flex items-center justify-center gap-4 mt-3">
-                                                            <button
-                                                                onClick={() => {
-                                                                    const newVol = volume > 0 ? 0 : 1;
-                                                                    setVolume(newVol);
-                                                                    if (audioRef.current) audioRef.current.volume = newVol;
-                                                                }}
-                                                                className="text-gray-500 hover:text-indigo-600"
-                                                                aria-label={volume > 0 ? "음소거" : "음소거 해제"}
-                                                            >
-                                                                {volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume1 className="w-5 h-5" />}
+                                                            <button onClick={() => { const v = volume > 0 ? 0 : 1; setVolume(v); if (audioRef.current) audioRef.current.volume = v; }}>
+                                                                {volume === 0 ? <VolumeX className="w-5 h-5 text-gray-500" /> : <Volume1 className="w-5 h-5 text-gray-500" />}
                                                             </button>
-                                                            <input
-                                                                type="range"
-                                                                min="0"
-                                                                max="1"
-                                                                step="0.1"
-                                                                value={volume}
-                                                                onChange={(e) => {
-                                                                    const newVol = Number(e.target.value);
-                                                                    setVolume(newVol);
-                                                                    if (audioRef.current) audioRef.current.volume = newVol;
-                                                                }}
-                                                                className="w-20 h-1.5 bg-gray-300 rounded-full appearance-none cursor-pointer accent-indigo-600"
-                                                            />
-                                                            <button
-                                                                onClick={() => {
-                                                                    const newLoop = !isLooping;
-                                                                    setIsLooping(newLoop);
-                                                                    if (audioRef.current) audioRef.current.loop = newLoop;
-                                                                }}
-                                                                className={`p-2 rounded-full ${isLooping ? 'bg-indigo-100 text-indigo-600' : 'text-gray-500 hover:bg-gray-200'}`}
-                                                                aria-label="반복 재생"
-                                                            >
-                                                                <RefreshCcw className={`w-4 h-4`} />
+                                                            <input type="range" min="0" max="1" step="0.1" value={volume} onChange={(e) => { const v = Number(e.target.value); setVolume(v); if (audioRef.current) audioRef.current.volume = v; }} className="w-20 h-1.5 bg-gray-300 rounded-full appearance-none cursor-pointer accent-indigo-600" />
+                                                            <button onClick={() => { const l = !isLooping; setIsLooping(l); if (audioRef.current) audioRef.current.loop = l; }} className={`p-2 rounded-full ${isLooping ? 'bg-indigo-100 text-indigo-600' : 'text-gray-500'}`}>
+                                                                <RefreshCcw className="w-4 h-4" />
                                                             </button>
                                                         </div>
                                                     </div>
                                                 )}
-                                                {/* (1) 가사 */}
                                                 {trackDetail.lyrics && (
                                                     <div>
-                                                        <h4 className="font-semibold text-gray-800 flex items-center"><FileText className="w-4 h-4 mr-2 text-indigo-600" />생성된 가사</h4>
-                                                        <pre className="mt-2 p-3 bg-gray-50 rounded-md text-sm text-gray-600 whitespace-pre-wrap font-sans overflow-y-auto max-h-40 border">
-                                                            {trackDetail.lyrics}
-                                                        </pre>
-                                                    </div>
-                                                )}
-
-                                                {/* (2) 접수 기록 */}
-                                                {trackDetail.intake_data && (
-                                                    <div>
-                                                        <h4 className="font-semibold text-gray-800 flex items-center"><User className="w-4 h-4 mr-2 text-green-600" />당시 접수 내용 (목표)</h4>
-                                                        <p className="mt-2 p-3 bg-gray-50 rounded-md text-sm text-gray-600 italic border">
-                                                            {trackDetail.intake_data.goal_text || '기록 없음'}
-                                                        </p>
-                                                    </div>
-                                                )}
-
-                                                {/* (3) 채팅 요약 */}
-                                                {trackDetail.chat_history && trackDetail.chat_history.length > 0 && (
-                                                    <div>
-                                                        <h4 className="font-semibold text-gray-800 flex items-center"><MessageSquare className="w-4 h-4 mr-2 text-blue-500" />관련 대화</h4>
-                                                        {/* 💡 [수정] .slice(-4) 제거 (전체 스크롤) */}
-                                                        <div className="mt-2 space-y-2 p-3 bg-gray-50 rounded-md max-h-48 overflow-y-auto border">
-                                                            {trackDetail.chat_history.map(msg => (
-                                                                <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                                                    <div className={`p-2 rounded-lg text-sm max-w-[80%] ${msg.role === 'user' ? 'bg-blue-100 text-blue-900' : 'bg-gray-200 text-gray-800'
-                                                                        }`}>
-                                                                        <p className="whitespace-pre-wrap">{msg.content}</p>
-                                                                    </div>
-                                                                </div>
-                                                            ))}
-                                                        </div>
+                                                        <h4 className="font-semibold text-gray-800 flex items-center"><FileText className="w-4 h-4 mr-2 text-indigo-600" />가사</h4>
+                                                        <pre className="mt-2 p-3 bg-gray-50 rounded-md text-sm text-gray-600 whitespace-pre-wrap font-sans border">{trackDetail.lyrics}</pre>
                                                     </div>
                                                 )}
                                             </div>

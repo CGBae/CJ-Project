@@ -16,8 +16,7 @@ import { useAuth } from '@/lib/contexts/AuthContext';
 
 const TRANSLATIONS: Record<string, string> = {
     // 분위기
-    calming: '차분한', uplifting: '기분 좋아지는', energetic: '활기찬',
-    reflective: '사색적인', warm: '따뜻한', soothing: '위로하는',
+    calming: '잔잔한', uplifting: '기분 좋아지는', energetic: '경쾌한', warm: '따뜻한', soothing: '차분한',
     bright: '밝은', focusing: '집중 잘 되는', dreamy: '몽환적인', hopeful: '희망찬',
 
     // 악기

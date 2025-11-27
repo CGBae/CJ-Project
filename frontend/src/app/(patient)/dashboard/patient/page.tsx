@@ -151,41 +151,7 @@ export default function PatientDashboardPage() {
     fetchData();
   }, [isAuthed, isAuthLoading, router]); // 👈 [수정] 의존성
 
-  // 💡 6. [수정] handleDeleteSession (useCallback 추가)
-  const handleDeleteSession = useCallback(async (sessionId: number) => {
-    if (window.confirm(`상담 세션 #${sessionId}의 모든 대화 기록을 삭제하시겠습니까?`)) {
-      setDeletingId(sessionId);
-      setError(null);
-      const token = localStorage.getItem('accessToken');
-      if (!token) {
-        setError("로그인이 필요합니다.");
-        setDeletingId(null);
-        return;
-      }
-      try {
-        const response = await fetch(`${API_URL}/chat/history/${sessionId}`, {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (response.status === 401) throw new Error('인증 실패');
-        if (!response.ok) {
-          const err = await response.json();
-          throw new Error(err.detail || "삭제에 실패했습니다.");
-        }
-        setSessions(prevSessions => prevSessions.filter(s => s.id !== sessionId));
-        alert("상담 기록이 삭제되었습니다.");
-      } catch (err: unknown) {
-        const errorMessage = err instanceof Error ? err.message : "삭제 중 오류 발생";
-        setError(errorMessage);
-        if (errorMessage.includes('인증 실패')) {
-          localStorage.removeItem('accessToken');
-          router.push('/login?next=/dashboard/patient');
-        }
-      } finally {
-        setDeletingId(null);
-      }
-    }
-  }, []); // 👈 의존성 비우기
+  
 
   // 💡 7. [수정] toggleChatLog (useCallback 추가)
   const toggleChatLog = useCallback(async (sessionId: number) => {
@@ -466,21 +432,7 @@ export default function PatientDashboardPage() {
                           {/* 💡 [수정] 버튼 텍스트 '이어하기'로 고정 */}
                           이어하기
                         </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteSession(session.id);
-                          }}
-                          disabled={deletingId === session.id}
-                          className="p-2 text-red-500 hover:bg-red-100 rounded-md disabled:opacity-50"
-                          aria-label="기록 삭제"
-                        >
-                          {deletingId === session.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="w-4 h-4" />
-                          )}
-                        </button>
+                        
                       </div>
                     </div>
                   </Fragment>
