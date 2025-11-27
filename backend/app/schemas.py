@@ -116,7 +116,7 @@ class MusicTrackInfo(BaseModel):
     id: int # Track 모델의 id
     title: str # 프론트엔드에서 사용할 제목 (music.py에서 생성 필요)
     prompt: str # 프론트엔드에서 사용할 프롬프트 (music.py에서 생성 필요)
-    track_url: Optional[str] = Field(None, alias="audioUrl"))
+    track_url: Optional[str] = Field(None, alias="audioUrl")
     # 필요하다면 Track 모델의 다른 필드도 추가 가능 (예: created_at: datetime)
 
     session_id: int
