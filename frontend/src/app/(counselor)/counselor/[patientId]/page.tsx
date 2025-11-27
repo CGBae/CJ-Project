@@ -851,7 +851,7 @@ const CounselorIntakeView: React.FC<{ intake: CounselorIntakeData }> = ({ intake
     );
 };
 
-// 3. 채팅 내역
+// 3. 채팅내역
 const ChatHistoryView: React.FC<{ chatHistory: ChatMessage[] }> = ({ chatHistory }) => {
     return (
         <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
