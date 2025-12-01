@@ -1,6 +1,62 @@
 from __future__ import annotations
 from typing import Dict, Any, List
+from app.services.openai_chat import chat_complete
+async def generate_first_counseling_message(
+    user_name: str,
+    goal_text: str | None,
+    vas_data: dict | None
+) -> str:
+    """
+    환자의 이름, 목표, VAS 점수를 바탕으로 AI가 자연스러운 첫 인사를 생성합니다.
+    """
+    
+    # 1. VAS 점수 분석 (가장 높은 점수 찾기)
+    highest_vas = None
+    if vas_data:
+        # 점수가 높은 순으로 정렬
+        sorted_vas = sorted(
+            [("불안", vas_data.get('anxiety', 0)), 
+             ("우울", vas_data.get('depression', 0)), 
+             ("통증", vas_data.get('pain', 0))],
+            key=lambda x: x[1], reverse=True
+        )
+        # 가장 높은 점수가 5점 이상일 때만 언급
+        if sorted_vas[0][1] >= 6:
+            highest_vas = sorted_vas[0]
 
+    # 2. 프롬프트 구성
+    system_prompt = (
+        "당신은 따뜻하고 공감 능력이 뛰어난 전문 심리 상담사입니다. "
+        "환자의 이름과 사전 접수 내용(목표, 상태)을 바탕으로 첫 상담을 시작하는 오프닝 멘트를 작성하세요.\n"
+        "규칙:\n"
+        "- 환자의 이름을 부르며 정중하게 시작하세요.\n"
+        "- 환자가 작성한 '상담 목표'를 언급하며, 이를 돕겠다는 의지를 보여주세요.\n"
+        "- 만약 환자의 상태(VAS 점수 10점 만점, 5점은 보통)가 좋지 않다면, 그 감정을 알아차려주고 공감해주세요.\n"
+        "- 마지막은 환자가 편안하게 이야기를 시작할 수 있도록 열린 질문으로 끝내세요.\n"
+        "- 3~4문장 내외로 부드러운 말투(해요체)를 사용하세요."
+    )
+
+    user_context = f"환자 이름: {user_name}\n"
+    
+    if goal_text:
+        user_context += f"상담 목표: {goal_text}\n"
+    else:
+        user_context += "상담 목표: (작성하지 않음)\n"
+
+    if highest_vas:
+        user_context += f"현재 상태: '{highest_vas[0]}' 수치가 {highest_vas[1]}점(10점 만점)으로 높습니다.\n"
+    
+    # 3. AI에게 생성 요청
+    # openai_chat.py의 chat_complete 함수 사용
+    messages = [{"role": "user", "content": user_context}]
+    
+    try:
+        # system_prompt를 인자로 넘겨서 호출
+        response_text = await chat_complete(messages, system_prompt=system_prompt)
+        return response_text
+    except Exception as e:
+        print(f"First message generation failed: {e}")
+        return f"안녕하세요, {user_name}님. 오늘 상담을 통해 마음이 한결 편안해지시길 바랍니다. 어떤 이야기를 나누고 싶으신가요?"
 def build_extra_requirements_for_patient(
     vas: Dict[str,int]|None,
     prefs: Dict[str,Any]|None,

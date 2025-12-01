@@ -10,6 +10,7 @@ from app.models import ConversationMessage, Session, SessionPatientIntake, Thera
 from app.services.openai_chat import chat_complete, analyze_dialog_for_mood
 from app.services.intent_detector import is_compose_request
 from app.services.openai_client import generate_prompt_from_guideline
+from app.services.prompt_from_guideline import generate_first_counseling_message
 from app.services.prompt_from_guideline import (
     build_extra_requirements_for_patient,
     build_extra_requirements_for_therapist
@@ -17,6 +18,7 @@ from app.services.prompt_from_guideline import (
 
 from app.services.auth_service import get_current_user
 from app.models import User
+from app.schemas import SimpleChatMessage
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -148,57 +150,56 @@ class ChatHistoryResp(BaseModel):
 
 @router.get("/history/{session_id}", response_model=ChatHistoryResp)
 async def get_chat_history(
-    session_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user) # 👈 [추가] 인증
+    session_id: int, 
+    db: AsyncSession = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
 ):
-    """
-    (수정됨) 세션 ID에 해당하는 대화 기록과 '상담 목표'를 반환합니다.
-    """
+    # 1. 세션 조회
+    q = select(Session).where(
+        Session.id == session_id, 
+        Session.created_by == current_user.id
+    ).options(
+        selectinload(Session.messages), 
+        joinedload(Session.patient_intake)
+    )
+    session = (await db.execute(q)).scalar_one_or_none()
     
-    # 1. 세션, 채팅 기록(messages), Intake(상담 목표) 정보를 한 번에 로드
-    query = (
-        select(Session)
-        .where(Session.id == session_id)
-        .options(
-            selectinload(Session.messages), # 👈 채팅 기록 (models.py의 'messages' 관계)
-            joinedload(Session.patient_intake) # 👈 상담 목표 (Intake)
-        )
-    )
-    result = await db.execute(query)
-    session = result.scalars().unique().first()
-
     if not session:
-        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    p_intake = session.patient_intake
+    goal_text = p_intake.goal.get("text") if p_intake and p_intake.goal else None
+    
+    # 💡 [수정] DB에 메시지가 하나도 없으면 -> AI가 첫인사를 생성해서 저장!
+    if not session.messages:
+        vas_data = p_intake.vas if p_intake else None
         
-    # 2. 보안 검사 (본인 또는 담당 상담사)
-    if session.created_by != current_user.id:
-        if current_user.role == "therapist":
-            # (therapist.py의 check_counselor_patient_access 헬퍼를 import하거나,
-            #  여기서 Connection 테이블을 직접 쿼리해야 하나, 일단 환자 본인만 체크)
-            pass # (임시로 상담사는 통과 - 추후 보강 필요)
-        else:
-            raise HTTPException(status_code=403, detail="이 세션에 접근할 권한이 없습니다.")
-            
-    # 3. 데이터 가공 (채팅 기록)
-    # (created_at 기준으로 정렬)
-    sorted_messages = sorted(session.messages, key=lambda msg: msg.created_at)
-    history = [
-        {"id": str(msg.id), "role": msg.role, "content": msg.content} 
-        for msg in sorted_messages
-    ]
+        # AI 생성 요청
+        first_msg_content = await generate_first_counseling_message(
+            user_name=current_user.name or "회원",
+            goal_text=goal_text,
+            vas_data=vas_data
+        )
+        
+        # DB에 저장 (Role: assistant)
+        first_message = ConversationMessage(
+            session_id=session.id,
+            role="assistant",
+            content=first_msg_content
+        )
+        db.add(first_message)
+        await db.commit()
+        await db.refresh(first_message)
+        
+        history = [SimpleChatMessage.model_validate(first_message)]
+    else:
+        history = [SimpleChatMessage.model_validate(msg) for msg in session.messages]
 
-    # 4. 데이터 가공 (상담 목표)
-    goal_text = None
-    if session.patient_intake and isinstance(session.patient_intake.goal, dict):
-        goal_text = session.patient_intake.goal.get("text")
-
-    # 5. 수정된 응답 반환
     return ChatHistoryResp(
-        session_id=session_id, 
-        history=history, 
-        goal_text=goal_text
-    )
+    session_id=session_id,
+    history=[h.model_dump() for h in history],   # dict로 변환
+    goal_text=goal_text
+)
 
 
 class DeleteHistoryResp(BaseModel):

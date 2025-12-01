@@ -111,27 +111,11 @@ function CounselChat() {
                 // 💡 8. [수정] 새로운 API 응답 타입(ChatHistoryResponse)으로 파싱
                 const data: ChatHistoryResponse = await response.json();
 
-                if (data.history.length > 0) {
-                    // (기록이 있으면 그대로 표시)
+                if (data.history && data.history.length > 0) {
                     setMessages(data.history);
                 } else {
-                    // 💡 9. [핵심 수정] 기록이 0개일 때 (새 세션) -> 'goal_text'를 사용해 첫 질문 생성
-                    const goal = data.goal_text;
-                    const name = user?.name || '사용자';
-                    
-                    let firstMessage = `안녕하세요. ${name}님, AI 상담을 시작하겠습니다.`;
-                    
-                    if (goal) {
-                        // (목표가 있을 때)
-                        firstMessage = `안녕하세요. ${name}님. '${goal}'라고 상담 목표를 작성해주신 것을 확인했습니다. 이 문제에 대해 조금 더 자세히 말씀해 주시겠어요?`;
-                    } else {
-                        // (목표가 없을 때 - 예: 작곡 체험 세션 등)
-                        firstMessage = `안녕하세요. ${name}님, AI 상담을 시작하겠습니다. 오늘은 어떤 이야기를 나누고 싶으신가요?`;
-                    }
-                    
-                    setMessages([
-                        { id: 'initial', role: 'assistant', content: firstMessage },
-                    ]);
+                    // 만약 백엔드 오류로 빈 배열이 오더라도 기본 메시지 표시
+                    setMessages([{ id: 'error-fallback', role: 'assistant', content: '상담을 시작할 준비가 되었습니다.' }]);
                 }
             } else {
                 // --- B. 세션 ID가 없는 경우 (진행 중 세션 목록 로드) ---
