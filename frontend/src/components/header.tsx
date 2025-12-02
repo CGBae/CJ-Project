@@ -5,7 +5,7 @@ import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/contexts/AuthContext';
 // 💡 1. [추가] 전문적인 UI를 위한 아이콘 임포트
-import { User, LogOut, Settings, ChevronDown, Music, UserCog, BarChart3,Sparkles,Volume2, LayoutDashboard, Users,FilePen,MessageSquare, MessageCircle } from 'lucide-react';
+import { User, LogOut, Settings, ChevronDown, Music, UserCog, BarChart3, Sparkles, Volume2, LayoutDashboard, Users, FilePen, MessageSquare, MessageCircle, HelpCircle } from 'lucide-react';
 
 export default function Header() {
   // 💡 2. [수정] role 대신 user 객체를 가져옴
@@ -17,13 +17,13 @@ export default function Header() {
   // 💡 3. 'storageChanged' 이벤트 리스닝 (로그인/로그아웃 즉시 반영)
   useEffect(() => {
     checkAuth(); // 페이지 로드 시 첫 인증 실행
-    
+
     const handleStorageChange = () => checkAuth();
     window.addEventListener('storageChanged', handleStorageChange);
     return () => {
       window.removeEventListener('storageChanged', handleStorageChange);
     };
-  }, [checkAuth]); 
+  }, [checkAuth]);
 
   // 💡 4. 역할 기반 리다이렉트 (교통정리)
   useEffect(() => {
@@ -37,7 +37,7 @@ export default function Header() {
       }
     }
   }, [isLoading, isAuthed, user, role, pathname, router]); // 👈 user 추가
-  
+
   // 💡 5. 로그아웃 핸들러 (Context 함수 호출)
   const handleLogout = () => {
     logout();
@@ -47,7 +47,7 @@ export default function Header() {
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-white shadow-sm">
       <div className="max-w-6xl mx-auto flex items-center justify-between h-16 px-4">
-        
+
         {/* 1. 로고 */}
         <Link href="/" className="flex items-center gap-2 font-bold text-lg text-indigo-600">
           <Music className="w-6 h-6" />
@@ -65,23 +65,23 @@ export default function Header() {
               <nav className="hidden md:flex items-center gap-4">
                 {role === 'patient' && (
                   <>
-                    <NavLink href="/dashboard/patient" pathname={pathname}><LayoutDashboard className="w-4 h-4 mr-1.5"/>대시보드</NavLink>
-                    <NavLink href="/intake/patient" pathname={pathname}><FilePen className="w-4 h-4 mr-1.5"/>상담접수</NavLink>
-                    <NavLink href="/counsel" pathname={pathname}><MessageSquare className="w-4 h-4 mr-1.5"/>AI상담</NavLink>
-                    <NavLink href="/compose" pathname={pathname}><Sparkles className="w-4 h-4 mr-1.5"/>작곡체험</NavLink>
-                    <NavLink href="/music" pathname={pathname}><Volume2 className="w-4 h-4 mr-1.5"/>내 음악</NavLink>
+                    <NavLink href="/dashboard/patient" pathname={pathname}><LayoutDashboard className="w-4 h-4 mr-1.5" />대시보드</NavLink>
+                    <NavLink href="/intake/patient" pathname={pathname}><FilePen className="w-4 h-4 mr-1.5" />상담접수</NavLink>
+                    <NavLink href="/counsel" pathname={pathname}><MessageSquare className="w-4 h-4 mr-1.5" />AI상담</NavLink>
+                    <NavLink href="/compose" pathname={pathname}><Sparkles className="w-4 h-4 mr-1.5" />작곡체험</NavLink>
+                    <NavLink href="/music" pathname={pathname}><Volume2 className="w-4 h-4 mr-1.5" />내 음악</NavLink>
                     <NavLink href="/board" pathname={pathname}><Users className="w-4 h-4 mr-1.5" />커뮤니티</NavLink>
-                    <NavLink href="/messenger" pathname={pathname}><MessageCircle className="w-4 h-4 mr-1.5"/>메시지</NavLink>
+                    <NavLink href="/messenger" pathname={pathname}><MessageCircle className="w-4 h-4 mr-1.5" />메시지</NavLink>
                   </>
                 )}
                 {role === 'therapist' && (
                   <>
-                    <NavLink href="/dashboard/counselor" pathname={pathname}><BarChart3 className="w-4 h-4 mr-1.5"/>대시보드</NavLink>
-                    <NavLink href="/counselor" pathname={pathname}><User className="w-4 h-4 mr-1.5"/>환자 관리</NavLink>
-                    <NavLink href="/intake/counselor" pathname={pathname}><FilePen className="w-4 h-4 mr-1.5"/>음악 처방</NavLink>
-                    <NavLink href="/manage-music" pathname={pathname}><Volume2 className="w-4 h-4 mr-1.5"/>음악 관리</NavLink>
+                    <NavLink href="/dashboard/counselor" pathname={pathname}><BarChart3 className="w-4 h-4 mr-1.5" />대시보드</NavLink>
+                    <NavLink href="/counselor" pathname={pathname}><User className="w-4 h-4 mr-1.5" />환자 관리</NavLink>
+                    <NavLink href="/intake/counselor" pathname={pathname}><FilePen className="w-4 h-4 mr-1.5" />음악 처방</NavLink>
+                    <NavLink href="/manage-music" pathname={pathname}><Volume2 className="w-4 h-4 mr-1.5" />음악 관리</NavLink>
                     <NavLink href="/board" pathname={pathname}><Users className="w-4 h-4 mr-1.5" />커뮤니티</NavLink>
-                    <NavLink href="/messenger" pathname={pathname}><MessageCircle className="w-4 h-4 mr-1.5"/>메시지</NavLink>
+                    <NavLink href="/messenger" pathname={pathname}><MessageCircle className="w-4 h-4 mr-1.5" />메시지</NavLink>
                   </>
                 )}
               </nav>
@@ -94,7 +94,7 @@ export default function Header() {
                 <summary className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-gray-100 transition-colors list-none">
                   <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-semibold border border-indigo-200">
                     {/* 이름 첫 글자 또는 아이콘 */}
-                    {user.name ? user.name.charAt(0).toUpperCase() : <User className="w-5 h-5"/>}
+                    {user.name ? user.name.charAt(0).toUpperCase() : <User className="w-5 h-5" />}
                   </div>
                   <div className="text-left hidden sm:block">
                     {/* 💡 요청사항 1: 이름 표시 */}
@@ -121,12 +121,19 @@ export default function Header() {
                       )}
                     </div>
                     {/* 설정 페이지 링크 */}
-                    <Link 
-                      href={"/mypage"} 
+                    <Link
+                      href={"/mypage"}
                       className="block w-full text-left px-3 py-2 text-sm text-gray-700 rounded-md hover:bg-gray-100"
                     >
                       <UserCog className="w-4 h-4 mr-2 inline-block opacity-70" />
                       내 정보
+                    </Link>
+                    <Link
+                      href={"/help"}
+                      className="block w-full text-left px-3 py-2 text-sm text-gray-700 rounded-md hover:bg-gray-100"
+                    >
+                      <HelpCircle className="w-4 h-4 mr-2 inline-block opacity-70" />
+                      도움말
                     </Link>
                     {/* 로그아웃 버튼 */}
                     <button
@@ -143,12 +150,26 @@ export default function Header() {
             </>
           ) : (
             // --- 3. 로그아웃 상태 버튼 ---
-            <Link 
-              href="/login" 
-              className="flex items-center justify-center px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg shadow-sm hover:bg-indigo-700 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-            >
-              로그인
-            </Link>
+            <div className="flex space-x-4">
+              <Link
+                href="/login"
+                className="flex items-center justify-center px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg shadow-sm hover:bg-indigo-700 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+              >
+                로그인
+              </Link>
+
+              <Link
+                href="/help"
+                className="flex items-center justify-center px-4 py-2 text-sm font-semibold text-indigo-600 bg-white border border-indigo-600 rounded-lg shadow-sm hover:bg-indigo-50 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+              >
+                도움말
+              </Link>
+            </div>
+
+
+
+
+
           )}
         </div>
       </div>
@@ -160,11 +181,10 @@ export default function Header() {
 const NavLink = ({ href, pathname, children }: { href: string, pathname: string, children: React.ReactNode }) => {
   const isActive = pathname.startsWith(href) && (href !== '/' || pathname === '/');
   return (
-    <Link 
-      href={href} 
-      className={`flex items-center text-sm font-medium transition-colors ${
-        isActive ? 'text-indigo-600' : 'text-gray-600 hover:text-indigo-600'
-      }`}
+    <Link
+      href={href}
+      className={`flex items-center text-sm font-medium transition-colors ${isActive ? 'text-indigo-600' : 'text-gray-600 hover:text-indigo-600'
+        }`}
     >
       {children}
     </Link>

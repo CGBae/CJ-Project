@@ -8,11 +8,12 @@ import os
 from fastapi.responses import JSONResponse
 from app.db import get_db
 from app.models import User, Connection
+from app.schemas import UserCreate, Token, KakaoLoginRequest, UserPublic,KakaoLoginResponse, SocialRegisterRequest, UserUpdate,UserPasswordUpdate # 💡 [추가] 새 스키마
+
 from app.services.auth_service import (
-    create_access_token, verify_password, hash_password, get_current_user, create_temp_register_token, verify_temp_register_token # 💡 [추가] 임시 토큰 함수
+    create_access_token, verify_password, hash_password, get_current_user, create_temp_register_token, verify_temp_register_token,verify_password # 💡 [추가] 임시 토큰 함수
 )
 # app.schemas.py에 UserCreate, Token 스키마 추가 필요
-from app.schemas import UserCreate, Token, KakaoLoginRequest, UserPublic,KakaoLoginResponse, SocialRegisterRequest, UserUpdate# 💡 [추가] 새 스키마
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -277,3 +278,28 @@ async def delete_users_me(
     
     # 204 No Content는 본문(body)이 없어야 함
     return None
+
+@router.put("/me/password", status_code=status.HTTP_200_OK)
+async def update_password(
+    pw_update: UserPasswordUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    # 1. 현재 비밀번호 확인
+    if not current_user.password_hash:
+        raise HTTPException(status_code=400, detail="소셜 로그인 사용자는 비밀번호를 변경할 수 없습니다.")
+        
+    if not verify_password(pw_update.current_password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="현재 비밀번호가 일치하지 않습니다.")
+        
+    # 2. 새 비밀번호 해싱 및 저장
+    current_user.password_hash = hash_password(pw_update.new_password)
+    
+    try:
+        db.add(current_user)
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Password update failed: {e}")
+        
+    return {"message": "비밀번호가 성공적으로 변경되었습니다."}
