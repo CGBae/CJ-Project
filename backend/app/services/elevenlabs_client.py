@@ -18,6 +18,10 @@ DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"
 
 DEFAULT_TIMEOUT = 180.0
 
+
+MOCK_MUSIC_GENERATION = os.getenv("MOCK_MUSIC_GENERATION", "false").lower() == "true"
+MOCK_MUSIC_URL = "http://example.com/mocked-audio.mp3"
+
 class ElevenLabsError(RuntimeError):
     pass
 
@@ -43,6 +47,11 @@ async def compose_and_save(
     ElevenLabs API를 호출하여 오디오를 직접 받아 파일로 저장하고,
     해당 파일의 접근 URL을 반환합니다.
     """
+
+    if MOCK_MUSIC_GENERATION:
+        print("--- [MOCK ENABLED] ElevenLabs API call skipped. Returning fake URL. ---")
+        await asyncio.sleep(0.5) # 실제 API 호출처럼 보이도록 잠시 대기 (선택 사항)
+        return MOCK_MUSIC_URL
     
     # Text-to-Speech API를 사용하는 경우, URL에 voice_id가 포함되어야 합니다.
     path = CREATE_PATH.format(voice_id=DEFAULT_VOICE_ID)
