@@ -24,18 +24,19 @@ async def get_pending_connections(
     
     # 1. 쿼리 조건 분기
     if current_user.role == 'patient':
-        q = select(Connection).where(
-            Connection.patient_id == current_user.id,
-            Connection.status == "PENDING"
+        stmt = (
+            select(Connection, User)
+            .outerjoin(User, Connection.therapist_id == User.id)
+            .where(Connection.patient_id == current_user.id)
         )
-    else: # therapist
-        q = select(Connection).where(
-            Connection.therapist_id == current_user.id,
-            Connection.status == "PENDING"
+    else:
+        stmt = (
+            select(Connection, User)
+            .outerjoin(User, Connection.patient_id == User.id)
+            .where(Connection.therapist_id == current_user.id)
         )
-        
-    results = await db.execute(q)
-    connections = results.scalars().all()
+        results = await db.execute(q)
+        connections = results.scalars().all()
     
     response_list = []
     for conn in connections:
@@ -69,16 +70,20 @@ async def respond_to_connection(
 
     if not connection:
         raise HTTPException(status_code=404, detail="요청을 찾을 수 없습니다.")
+
     
-    # 권한 확인 (당사자만 가능)
+
+    # 권한 확인
     is_involved = (connection.patient_id == current_user.id) or (connection.therapist_id == current_user.id)
     if not is_involved:
         raise HTTPException(status_code=403, detail="권한이 없습니다.")
 
-    connection.status = req.response.value
+
+    connection.status = req.response if isinstance(req.response, str) else req.response.value
     await db.commit()
-    
-    return {"message": f"연결이 {req.response.value} 되었습니다."}
+
+    return {"message": f"연결이 {req.response if isinstance(req.response, str) else req.response.value} 되었습니다."}
+
 
 # 💡 [신규] 연결 요청 보내기 (ID 또는 이메일)
 @router.post("/request", status_code=status.HTTP_201_CREATED)
@@ -150,6 +155,9 @@ async def get_my_connections(
 
     result = await db.execute(stmt)
     rows = result.all()
+
+   
+
 
     connections = []
     for conn, partner in rows:

@@ -197,7 +197,7 @@ export default function CounselorPatientPage() {
                     <p className="text-gray-600 mt-1">담당 환자 목록 및 요약 정보를 확인합니다.</p>
                 </div>
                 <button
-                    onClick={() => router.push('/counseloroption')} 
+                    onClick={() => router.push('/mypage')} 
                     className="flex mt-4 sm:mt-0 items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700 transition-colors text-sm font-medium"
                 >
                     <Plus className="w-5 h-5" />

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { User, Mail, Calendar, ShieldCheck, Link as LinkIcon,Lock, Plus, LogOut, Loader2, Trash2, CheckCircle, X, Edit2, Check, XCircle } from 'lucide-react';
+import { User, Mail, Lock, Calendar, ShieldCheck, Link as LinkIcon, Plus, LogOut, Loader2, Trash2, CheckCircle, X, Edit2, Check } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 
 function getApiUrl() {
@@ -59,6 +59,7 @@ export default function MyPage() {
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [pwLoading, setPwLoading] = useState(false);
+
 
     const fetchData = async () => {
         const token = localStorage.getItem('accessToken');
@@ -139,8 +140,10 @@ export default function MyPage() {
                 const err = await res.json();
                 alert(err.detail);
             }
+
         } catch (e) { alert("처리 실패"); }
     };
+
 
     // 연결 삭제/취소
     const handleDeleteConnection = async (connectionId: number) => {
@@ -192,6 +195,7 @@ export default function MyPage() {
         } catch (e) { alert("오류 발생"); }
     };
 
+
     const handleChangePassword = async (e: React.FormEvent) => {
         e.preventDefault();
         if (newPassword !== confirmPassword) {
@@ -202,17 +206,17 @@ export default function MyPage() {
             alert("비밀번호는 8자 이상이어야 합니다.");
             return;
         }
-        
+
         setPwLoading(true);
         const token = localStorage.getItem('accessToken');
-        
+
         try {
             const res = await fetch(`${API_URL}/auth/me/password`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
             });
-            
+
             if (res.ok) {
                 alert("비밀번호가 변경되었습니다.");
                 setShowPwModal(false);
@@ -228,6 +232,7 @@ export default function MyPage() {
         }
     };
 
+
     if (loading) return <div className="flex justify-center items-center h-screen"><Loader2 className="w-10 h-10 animate-spin text-indigo-600" /></div>;
     if (!profile) return <div className="text-center p-10">정보를 불러올 수 없습니다.</div>;
 
@@ -236,67 +241,66 @@ export default function MyPage() {
             <h1 className="text-3xl font-bold text-gray-900 mb-8">마이페이지</h1>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                
+
                 {/* 1. 내 정보 카드 */}
                 <section className="bg-white p-8 rounded-3xl shadow-sm border border-gray-200 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 p-4 opacity-5"><User className="w-40 h-40 text-indigo-600"/></div>
-                    <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center"><User className="w-6 h-6 mr-2 text-indigo-600"/> 내 정보</h2>
-                    
+                    <div className="absolute top-0 right-0 p-4 opacity-5"><User className="w-40 h-40 text-indigo-600" /></div>
+                    <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center"><User className="w-6 h-6 mr-2 text-indigo-600" /> 내 정보</h2>
+
                     <div className="space-y-5 relative z-10">
                         <div className="flex justify-between items-center border-b border-gray-100 pb-3">
-                            <span className="text-gray-500 flex items-center text-sm"><User className="w-4 h-4 mr-2"/> 이름</span>
+                            <span className="text-gray-500 flex items-center text-sm"><User className="w-4 h-4 mr-2" /> 이름</span>
                             <span className="font-medium text-gray-900">{profile.name}</span>
                         </div>
                         <div className="flex justify-between items-center border-b border-gray-100 pb-3">
-                            <span className="text-gray-500 flex items-center text-sm"><Mail className="w-4 h-4 mr-2"/> 이메일</span>
+                            <span className="text-gray-500 flex items-center text-sm"><Mail className="w-4 h-4 mr-2" /> 이메일</span>
                             <span className="font-medium text-gray-900">{profile.email}</span>
                         </div>
                         <div className="flex justify-between items-center border-b border-gray-100 pb-3">
-                            <span className="text-gray-500 flex items-center text-sm"><ShieldCheck className="w-4 h-4 mr-2"/> 고유 ID</span>
+                            <span className="text-gray-500 flex items-center text-sm"><ShieldCheck className="w-4 h-4 mr-2" /> 고유 ID</span>
                             <span className="font-medium text-gray-900">{profile.id}</span>
                         </div>
                         <div className="flex justify-between items-center border-b border-gray-100 pb-3">
-                            <span className="text-gray-500 flex items-center text-sm"><Calendar className="w-4 h-4 mr-2"/> 나이</span>
+                            <span className="text-gray-500 flex items-center text-sm"><Calendar className="w-4 h-4 mr-2" /> 나이</span>
                             <div className="flex items-center gap-2">
                                 {isEditingAge ? (
                                     <>
-                                        <input 
-                                            type="number" 
-                                            value={editAge} 
-                                            onChange={e => setEditAge(e.target.value)} 
+                                        <input
+                                            type="number"
+                                            value={editAge}
+                                            onChange={e => setEditAge(e.target.value)}
                                             className="w-16 p-1 border rounded text-right bg-gray-50 text-sm"
                                         />
-                                        <button onClick={handleUpdateAge} className="text-green-600 hover:bg-green-50 p-1 rounded"><CheckCircle className="w-4 h-4"/></button>
-                                        <button onClick={() => setIsEditingAge(false)} className="text-red-500 hover:bg-red-50 p-1 rounded"><XCircle className="w-4 h-4"/></button>
+                                        <button onClick={handleUpdateAge} className="text-green-600 hover:bg-green-50 p-1 rounded"><Check className="w-4 h-4" /></button>
+                                        <button onClick={() => setIsEditingAge(false)} className="text-red-500 hover:bg-red-50 p-1 rounded"><X className="w-4 h-4" /></button>
                                     </>
                                 ) : (
                                     <>
                                         <span className="font-medium text-gray-900">{profile.age ? `${profile.age}세` : '미입력'}</span>
-                                        <button onClick={() => setIsEditingAge(true)} className="text-gray-400 hover:text-indigo-600 p-1"><Edit2 className="w-3 h-3"/></button>
+                                        <button onClick={() => setIsEditingAge(true)} className="text-gray-400 hover:text-indigo-600 p-1"><Edit2 className="w-3 h-3" /></button>
                                     </>
                                 )}
                             </div>
                         </div>
                         <div className="flex justify-between items-center pb-2">
-                            <span className="text-gray-500 flex items-center text-sm"><ShieldCheck className="w-4 h-4 mr-2"/> 계정 유형</span>
+                            <span className="text-gray-500 flex items-center text-sm"><ShieldCheck className="w-4 h-4 mr-2" /> 계정 유형</span>
                             <span className={`font-bold px-3 py-1 rounded-full text-sm ${profile.role === 'therapist' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
                                 {profile.role === 'therapist' ? '상담사' : '환자'}
                             </span>
                         </div>
                     </div>
-
                     {/* 💡 비밀번호 변경 버튼 추가 */}
                     <div className="mt-6 pt-4 border-t border-gray-100">
-                        <button 
+                        <button
                             onClick={() => setShowPwModal(true)}
                             className="w-full py-2 flex justify-center gap-2 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors font-medium text-sm"
                         >
-                            <Lock className="w-4 h-4"/> 비밀번호 변경
+                            <Lock className="w-4 h-4" /> 비밀번호 변경
                         </button>
                     </div>
 
                     <div className="mt-4 space-y-2">
-                        <button onClick={logout} className="w-full py-3 flex justify-center gap-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-medium"><LogOut className="w-4 h-4"/> 로그아웃</button>
+                        <button onClick={logout} className="w-full py-3 flex justify-center gap-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-medium"><LogOut className="w-4 h-4" /> 로그아웃</button>
                         <button onClick={handleDeleteAccount} className="w-full py-3 flex justify-center gap-2 text-red-500 hover:bg-red-50 rounded-xl font-medium text-sm">회원 탈퇴</button>
                     </div>
                 </section>
@@ -304,18 +308,18 @@ export default function MyPage() {
                 {/* 2. 연결 관리 카드 */}
                 <section className="bg-white p-8 rounded-3xl shadow-sm border border-gray-200">
                     <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center">
-                        <LinkIcon className="w-6 h-6 mr-2 text-indigo-600"/> 
+                        <LinkIcon className="w-6 h-6 mr-2 text-indigo-600" />
                         {profile.role === 'patient' ? '내 상담사 관리' : '내 환자 관리'}
                     </h2>
 
                     {/* 연결 요청 폼 */}
                     <div className="bg-gray-50 p-5 rounded-2xl mb-6">
                         <p className="text-sm text-gray-600 mb-3 font-medium flex items-center gap-1">
-                            <Plus className="w-4 h-4"/> 새로운 연결 요청
+                            <Plus className="w-4 h-4" /> 새로운 연결 요청
                         </p>
                         <div className="flex gap-2">
-                            <input 
-                                type="text" 
+                            <input
+                                type="text"
                                 placeholder="이메일 또는 ID 입력"
                                 value={searchInput}
                                 onChange={(e) => setSearchInput(e.target.value)}
@@ -344,18 +348,30 @@ export default function MyPage() {
                                         <p className="text-xs text-gray-500 mt-0.5">{conn.partner_email}</p>
                                     </div>
                                     <div className="flex items-center gap-3">
-                                        {conn.status === 'ACCEPTED' ? (
+                                        {conn.status === 'PENDING' ? (
+                                            conn.is_sender ? (
+                                                <span className="text-xs px-2 py-1 rounded bg-gray-200 text-gray-700">요청 보냄</span>
+                                            ) : (
+                                                <div className="flex gap-1">
+                                                    <button onClick={() => handleRespond(conn.connection_id, 'ACCEPTED')} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200">수락</button>
+                                                    <button onClick={() => handleRespond(conn.connection_id, 'REJECTED')} className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded hover:bg-red-200">거절</button>
+                                                </div>
+                                            )
+                                        ) : conn.status === 'ACCEPTED' ? (
                                             <span className="text-xs bg-green-100 text-green-700 px-2.5 py-1 rounded-full font-bold border border-green-200 flex items-center gap-1">
-                                                <CheckCircle className="w-3 h-3"/> 연결됨
+                                                <CheckCircle className="w-3 h-3" /> 연결됨
                                             </span>
-                                        ) : (
-                                            <div className="flex gap-1">
-                                                <button onClick={() => handleRespond(conn.connection_id, 'ACCEPTED')} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200">수락</button>
-                                                <button onClick={() => handleRespond(conn.connection_id, 'REJECTED')} className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded hover:bg-red-200">거절</button>
-                                            </div>
-                                        )}
+                                        ) : conn.status === 'REJECTED' ? (
+                                            <span className="text-xs bg-red-100 text-red-700 px-2.5 py-1 rounded-full font-bold border border-red-200">
+                                                거절됨
+                                            </span>
+                                        ) : conn.status === 'TERMINATED' ? (
+                                            <span className="text-xs bg-gray-300 text-gray-700 px-2.5 py-1 rounded-full font-bold border border-gray-400">
+                                                종료됨
+                                            </span>
+                                        ) : null}
                                         <button onClick={() => handleDeleteConnection(conn.connection_id)} className="text-gray-300 hover:text-red-500 transition-colors p-1" title="삭제/취소">
-                                            <Trash2 className="w-4 h-4"/>
+                                            <Trash2 className="w-4 h-4" />
                                         </button>
                                     </div>
                                 </div>
@@ -371,23 +387,23 @@ export default function MyPage() {
                     <div className="bg-white p-6 rounded-2xl w-full max-w-md shadow-2xl">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="text-lg font-bold text-gray-900">비밀번호 변경</h3>
-                            <button onClick={() => setShowPwModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5"/></button>
+                            <button onClick={() => setShowPwModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
                         </div>
                         <form onSubmit={handleChangePassword} className="space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">현재 비밀번호</label>
-                                <input type="password" value={currentPassword} onChange={e=>setCurrentPassword(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" required/>
+                                <input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" required />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">새 비밀번호 (8자 이상)</label>
-                                <input type="password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" required minLength={8}/>
+                                <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" required minLength={8} />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">새 비밀번호 확인</label>
-                                <input type="password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" required/>
+                                <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" required />
                             </div>
                             <button type="submit" disabled={pwLoading} className="w-full py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-medium disabled:bg-gray-400 mt-4">
-                                {pwLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto"/> : '변경하기'}
+                                {pwLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : '변경하기'}
                             </button>
                         </form>
                     </div>
