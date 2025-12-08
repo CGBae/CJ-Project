@@ -8,7 +8,7 @@ import {
     MUSIC_GENRE_OPTIONS
 } from '@/types/intake'; 
 // 💡 1. [수정] 전문적인 UI를 위한 아이콘 추가
-import { Info, Loader2, Link, User, FilePen, SlidersHorizontal, Music, Send, AlertTriangle } from 'lucide-react';
+import { Info, Loader2,  User, FilePen, SlidersHorizontal, Music, Send, AlertTriangle } from 'lucide-react';
 
 // 1. 실제 환자 타입 정의 (변경 없음)
 interface Patient {
