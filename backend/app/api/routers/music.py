@@ -31,6 +31,35 @@ class ComposeResp(BaseModel):
     status: Literal["QUEUED", "PROCESSING", "READY", "FAILED"]
     track_url: Optional[str] = None
 
+@router.delete("/track/{track_id}")
+async def delete_track(
+    track_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # 트랙 조회 + 세션 조인
+    result = await db.execute(
+        select(Track)
+        .join(Session)
+        .where(Track.id == track_id)
+        .options(joinedload(Track.session))
+    )
+    track = result.scalars().first()
+
+    if not track:
+        raise HTTPException(404, "Track not found")
+
+    # 소유자 체크
+    if track.session.created_by != current_user.id:
+        raise HTTPException(403, "삭제 권한 없음")
+
+    # 삭제
+    await db.delete(track)
+    await db.commit()
+
+    return {"success": True, "track_id": track_id}
+
+
 # --- 💡 4. [핵심 수정] /compose API 권한 검사 로직 변경 ---
 @router.post("/compose", response_model=ComposeResp)
 async def compose_music(
