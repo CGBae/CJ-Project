@@ -151,7 +151,7 @@ export default function CounselorDashboardPage() {
           <p className="text-lg text-gray-600 mt-1">배정된 환자 현황을 확인하세요.</p>
         </div>
         <button
-            onClick={() => router.push('/counseloroption')} // 👈 설정(옵션) 페이지로
+            onClick={() => router.push('/mypage')} // 👈 설정(옵션) 페이지로
             className="flex-shrink-0 w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3 bg-indigo-600 text-white text-md font-semibold rounded-lg shadow-lg hover:bg-indigo-700 transition-transform transform hover:scale-105"
         >
             <UserPlus className="w-5 h-5" />
