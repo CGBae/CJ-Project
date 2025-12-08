@@ -4,9 +4,9 @@
 import React, { useState, useEffect, useRef, FormEvent, useCallback, Fragment } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import {
-    Play, Pause, CheckCircle,
+    Play, Pause,
     ArrowLeft, Loader2, User, MessageSquare, Music,
-    AlertTriangle, ChevronDown, Plus, ClipboardList, Send, Trash2, XCircle, Info,
+    AlertTriangle, ChevronDown, Plus, Send, Trash2,
     FileText, // 👈 [추가]
     Brain,
     HeartPulse,
@@ -332,10 +332,10 @@ export default function PatientDetailPage() {
         if (expandedTrackId === trackId) {
             setExpandedTrackId(null); setTrackDetail(null); return;
         }
-        
+
         setExpandedTrackId(trackId); // 패널 열기
         setDetailLoadingId(String(trackId)); // 로딩 표시
-        setTrackDetail(null); 
+        setTrackDetail(null);
         setError(null);
 
         const token = localStorage.getItem('accessToken');
@@ -496,14 +496,14 @@ export default function PatientDetailPage() {
                         <h1 className="text-2xl font-bold text-gray-800">{patient.name || '이름 없음'}</h1>
                         <p className="text-gray-500 text-sm mt-1">{patient.age ? `만 ${patient.age}세` : '나이 정보 없음'}</p>
                         <div className="mt-4 pt-4 border-t border-gray-100 flex flex-col gap-2 text-sm text-gray-600">
-                             <span className="flex items-center justify-center gap-2">
-                                 📧 {getPatientIdentifier(patient)}
-                             </span>
+                            <span className="flex items-center justify-center gap-2">
+                                📧 {getPatientIdentifier(patient)}
+                            </span>
                         </div>
                     </div>
-                    
+
                     <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                        <h3 className="font-semibold text-gray-800 mb-4 flex items-center"><Activity className="w-4 h-4 mr-2 text-green-500"/> 활동 요약</h3>
+                        <h3 className="font-semibold text-gray-800 mb-4 flex items-center"><Activity className="w-4 h-4 mr-2 text-green-500" /> 활동 요약</h3>
                         <div className="space-y-4">
                             <div className="flex justify-between items-center p-3 bg-gray-50 rounded-xl">
                                 <span className="text-sm text-gray-600">총 상담</span>
@@ -536,10 +536,10 @@ export default function PatientDetailPage() {
                                     <Plus className="w-4 h-4" /> 새 처방
                                 </button>
                             </div>
-                            
+
                             {music.length === 0 ? (
                                 <div className="text-center py-12 bg-white rounded-2xl border border-dashed border-gray-300">
-                                    <Music className="w-10 h-10 text-gray-300 mx-auto mb-3"/>
+                                    <Music className="w-10 h-10 text-gray-300 mx-auto mb-3" />
                                     <p className="text-gray-500">아직 생성된 음악이 없습니다.</p>
                                 </div>
                             ) : (
@@ -564,11 +564,11 @@ export default function PatientDetailPage() {
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-3">
-                                                    <button 
+                                                    <button
                                                         onClick={(e) => handlePlay(e, track)}
                                                         className={`p-2.5 rounded-full transition-all ${currentTrackId === track.id ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
                                                     >
-                                                        {currentTrackId === track.id ? <Pause className="w-5 h-5 fill-current"/> : <Play className="w-5 h-5 fill-current ml-0.5"/>}
+                                                        {currentTrackId === track.id ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
                                                     </button>
                                                     <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${expandedTrackId === track.id ? 'rotate-180' : ''}`} />
                                                 </div>
@@ -578,21 +578,21 @@ export default function PatientDetailPage() {
                                             {expandedTrackId === track.id && (
                                                 <div className="border-t border-gray-100 bg-gray-50/50 p-5 animate-in slide-in-from-top-2 duration-200">
                                                     {detailLoadingId === String(track.id) ? (
-                                                        <div className="flex justify-center py-4"><Loader2 className="w-6 h-6 animate-spin text-indigo-400"/></div>
+                                                        <div className="flex justify-center py-4"><Loader2 className="w-6 h-6 animate-spin text-indigo-400" /></div>
                                                     ) : !trackDetail ? (
                                                         <div className="text-center text-red-500 text-sm">정보를 불러오지 못했습니다.</div>
                                                     ) : (
                                                         <div className="space-y-6">
                                                             {/* AI 상담 데이터 */}
                                                             {trackDetail.intake_data && <PatientIntakeView intake={trackDetail.intake_data} />}
-                                                            
+
                                                             {/* 💡 상담사 처방 데이터 (VAS 시각화 적용) */}
                                                             {trackDetail.therapist_manual && <CounselorIntakeView intake={trackDetail.therapist_manual} />}
 
                                                             {/* 가사 */}
                                                             {trackDetail.lyrics && (
                                                                 <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                                                                    <h4 className="font-semibold text-gray-800 text-sm mb-3 flex items-center"><FileText className="w-4 h-4 mr-2 text-indigo-500"/>생성된 가사</h4>
+                                                                    <h4 className="font-semibold text-gray-800 text-sm mb-3 flex items-center"><FileText className="w-4 h-4 mr-2 text-indigo-500" />생성된 가사</h4>
                                                                     <pre className="text-sm text-gray-600 whitespace-pre-wrap font-sans leading-relaxed">{trackDetail.lyrics}</pre>
                                                                 </div>
                                                             )}
@@ -617,12 +617,12 @@ export default function PatientDetailPage() {
                         <div className="space-y-6">
                             {/* ... 메모 리스트 ... */}
                             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
-                                <h3 className="font-bold text-gray-800 mb-4 flex items-center"><Plus className="w-5 h-5 mr-2 text-indigo-600"/>새 메모 작성</h3>
+                                <h3 className="font-bold text-gray-800 mb-4 flex items-center"><Plus className="w-5 h-5 mr-2 text-indigo-600" />새 메모 작성</h3>
                                 <form onSubmit={handleCreateMemo}>
-                                    <textarea value={newMemoContent} onChange={(e) => setNewMemoContent(e.target.value)} rows={3} className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all" placeholder="환자 특이사항이나 상담 내용을 기록하세요..." disabled={isSubmittingMemo}/>
+                                    <textarea value={newMemoContent} onChange={(e) => setNewMemoContent(e.target.value)} rows={3} className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all" placeholder="환자 특이사항이나 상담 내용을 기록하세요..." disabled={isSubmittingMemo} />
                                     <div className="flex justify-end mt-3">
                                         <button type="submit" disabled={isSubmittingMemo || !newMemoContent.trim()} className="px-5 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 shadow-sm flex items-center">
-                                            {isSubmittingMemo ? <Loader2 className="w-4 h-4 animate-spin"/> : <Send className="w-4 h-4 mr-1.5"/>} 저장하기
+                                            {isSubmittingMemo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 mr-1.5" />} 저장하기
                                         </button>
                                     </div>
                                 </form>
@@ -645,7 +645,7 @@ export default function PatientDetailPage() {
                                         <p className="text-gray-700 text-sm whitespace-pre-wrap leading-relaxed pl-10">{note.content}</p>
                                         {user && note.therapist_id === user.id && (
                                             <button onClick={() => handleDeleteMemo(note.id)} disabled={isDeletingMemoId === note.id} className="absolute top-4 right-4 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all">
-                                                {isDeletingMemoId === note.id ? <Loader2 className="w-4 h-4 animate-spin"/> : <Trash2 className="w-4 h-4"/>}
+                                                {isDeletingMemoId === note.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                                             </button>
                                         )}
                                     </div>
@@ -673,7 +673,7 @@ const PatientIntakeView: React.FC<{ intake: SimpleIntakeData }> = ({ intake }) =
         return 'bg-red-500';
     };
 
-    
+
 
     return (
         <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
@@ -771,8 +771,8 @@ const CounselorIntakeView: React.FC<{ intake: CounselorIntakeData }> = ({ intake
 
     // VAS 데이터 존재 여부 확인
     const hasVas = (intake.anxiety !== undefined && intake.anxiety !== null) ||
-                   (intake.depression !== undefined && intake.depression !== null) ||
-                   (intake.pain !== undefined && intake.pain !== null);
+        (intake.depression !== undefined && intake.depression !== null) ||
+        (intake.pain !== undefined && intake.pain !== null);
     return (
         <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
             <h4 className="font-bold text-gray-800 flex items-center mb-4">
@@ -859,8 +859,8 @@ const ChatHistoryView: React.FC<{ chatHistory: ChatMessage[] }> = ({ chatHistory
                 {chatHistory.map(msg => (
                     <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                         <div className={`max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed ${msg.role === 'user'
-                                ? 'bg-indigo-600 text-white rounded-tr-none shadow-md'
-                                : 'bg-gray-100 text-gray-800 rounded-tl-none'
+                            ? 'bg-indigo-600 text-white rounded-tr-none shadow-md'
+                            : 'bg-gray-100 text-gray-800 rounded-tl-none'
                             }`}>
                             {msg.content}
                         </div>
