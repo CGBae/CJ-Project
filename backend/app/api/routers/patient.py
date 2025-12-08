@@ -90,10 +90,19 @@ async def analyze_and_generate(
     # 💡 [핵심 수정] AI 분석가에게 '접수 내용(Intake)'도 전달하여 분석 정확도 향상
     intake_summary = [
         {"role": "system", "content": "--- [환자 사전 접수 내용] ---"},
-        {"role": "user", "content": f"상담 목표: {s_intake.goal.get('text') if s_intake.goal else 'N/A'}"},
-        {"role": "user", "content": f"선호 장르: {s_intake.prefs.get('preferredMusicGenres') if s_intake.prefs else 'N/A'}"},
-        {"role": "user", "content": f"비선호 장르: {s_intake.prefs.get('dislikedMusicGenres') if s_intake.prefs else 'N/A'}"},
-        {"role": "system", "content": "--- [AI 상담 대화 내용] ---"}
+        {
+            "role": "user",
+            "content": f"상담 목표: {s_intake.goal.get('text') if s_intake.goal else 'N/A'}",
+        },
+        {
+            "role": "user",
+            "content": f"선호 장르: {s_intake.prefs.get('preferredMusicGenres') if s_intake.prefs else 'N/A'}",
+        },
+        {
+            "role": "user",
+            "content": f"비선호 장르: {s_intake.prefs.get('dislikedMusicGenres') if s_intake.prefs else 'N/A'}",
+        },
+        {"role": "system", "content": "--- [AI 상담 대화 내용] ---"},
     ]
     
     # 💡 Intake 요약 + 실제 대화 기록
@@ -102,12 +111,20 @@ async def analyze_and_generate(
     # 3. 💡 [수정] OpenAI 대화 분석 호출 (full_history 사용)
     analyzed = await analyze_dialog_for_mood(full_history)
     
+    raw_conf = analyzed.get("confidence", 0.0)
+    try:
+        conf_val = float(raw_conf)
+    except (TypeError, ValueError):
+        conf_val = 0.0
+    
     # 4. 💡 [수정] 분석 결과 스냅샷 저장 (주석 해제)
     await db.execute(
          insert(SessionPrompt).values(
-             session_id=req.session_id, stage="analyzed", 
-             data=analyzed, confidence=analyzed.get("confidence", 0.0)
-         )
+            session_id=req.session_id,
+            stage="analyzed",
+            data=analyzed,          # JSONB
+            confidence=conf_val,    # 🔥 여기 이제 무조건 float
+        )
     )
 
     # 5. 💡 [수정] 환자 흐름용 '추가 요구사항' 텍스트 구성 (주석 해제)
