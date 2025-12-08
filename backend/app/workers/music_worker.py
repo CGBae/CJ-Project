@@ -11,14 +11,17 @@ TOPIC_REQ = os.getenv("KAFKA_TOPIC_REQUESTS", "music.gen.requests")
 GROUP_ID = os.getenv("KAFKA_GROUP_MUSIC_WORKERS", "music-workers")
 
 ELEVEN_BASE = os.getenv("ELEVEN_MUSIC_BASE", "https://api.elevenlabs.io")
-ELEVEN_CREATE = os.getenv("ELEVEN_MUSIC_CREATE", "/v1/music/generate")
-ELEVEN_STATUS = os.getenv("ELEVEN_MUSIC_STATUS", "/v1/music/tasks/{task_id}")
-ELEVEN_DOWNLOAD_FIELD = os.getenv("ELEVEN_MUSIC_DOWNLOAD_FIELD", "audio_url")
+ELEVEN_CREATE = os.getenv("ELEVEN_MUSIC_CREATE", "/v1/music/generate")  # /v1/music/compose 계열
 ELEVEN_API_KEY = os.getenv("ELEVEN_API_KEY", "")
 
 
+def _sanitize_for_db(s: str, limit: int = 500) -> str:
+    """Postgres TEXT에 안전하게 넣을 수 있도록 NUL 제거 + 길이 제한."""
+    return s.replace("\x00", "")[:limit]
+
+
 async def handle_message(payload: dict):
-    """Kafka에서 들어온 한 건의 음악 생성 요청을 처리"""
+    """Kafka에서 들어온 한 건의 음악 생성 요청을 처리 (동기 MP3 응답 방식)."""
 
     task_id = payload.get("task_id")
     if task_id is None:
@@ -27,229 +30,152 @@ async def handle_message(payload: dict):
 
     print(f"[music_worker] 🎵 handle_message 시작 - task_id={task_id}, payload={payload}")
 
-    # Kafka payload에서 길이/옵션 추출
     music_length_ms = int(payload.get("music_length_ms") or 60000)  # 기본 60초
-    duration_sec = max(music_length_ms // 1000, 5)                  # 최소 5초
+    duration_sec = max(music_length_ms // 1000, 5)
     force_instrumental = bool(payload.get("force_instrumental", False))
     extra = payload.get("extra") or {}
 
     async with async_session_maker() as db:  # type: AsyncSession
-        # 1) Track 조회
-        result = await db.execute(select(Track).where(Track.id == task_id))
-        track = result.scalar_one_or_none()
-        if not track:
-            print(f"[music_worker] ⚠️ Track(id={task_id})을 찾을 수 없습니다. payload={payload}")
-            return
-
-        # 이미 완료/실패인 경우 스킵
-        if track.status in ("READY", "COMPLETED", "FAILED"):
-            print(f"[music_worker] ⏭ 이미 처리된 트랙 (status={track.status}), id={task_id}")
-            return
-
-        # PROCESSING로 전이
-        await db.execute(
-            update(Track)
-            .where(Track.id == task_id)
-            .values(status="PROCESSING")
-        )
-        await db.commit()
-
-        # 프롬프트: payload 기준으로, 없으면 DB prompt 사용
-        prompt_text = payload.get("prompt") or track.prompt or ""
-        if not prompt_text:
-            err = "empty prompt"
-            print(f"[music_worker] ❌ 프롬프트가 비어있습니다. id={task_id}")
-            await db.execute(
-                update(Track)
-                .where(Track.id == task_id)
-                .values(status="FAILED", error=err)
-            )
-            await db.commit()
-            return
-
-        if not ELEVEN_API_KEY:
-            err = "ELEVEN_API_KEY is not set in environment"
-            print(f"[music_worker] ❌ {err}")
-            await db.execute(
-                update(Track)
-                .where(Track.id == task_id)
-                .values(status="FAILED", error=err)
-            )
-            await db.commit()
-            return
-
-        headers = {
-            "xi-api-key": ELEVEN_API_KEY,
-            "Content-Type": "application/json",
-        }
-
         try:
-            async with httpx.AsyncClient(base_url=ELEVEN_BASE, timeout=60) as client:
-                # 2) ElevenLabs 음악 생성 요청
-                #    - text / prompt / musicLengthMs 를 모두 넣어서 호환성 확보
-                body = {
-                    "text": prompt_text,          # 일부 예전 샘플에서 쓰는 필드
-                    "prompt": prompt_text,        # Eleven Music JS 클라이언트 스타일
-                    "musicLengthMs": music_length_ms,
-                }
-                # force_instrumental, extra 등 추가 옵션 병합
-                if force_instrumental:
-                    # API에 따라 다를 수 있으니, 기본적으로 힌트만 추가
-                    body["vocals"] = "off"
-                if isinstance(extra, dict):
-                    # extra에 API body에 넘겨야 할 옵션이 있다면 그대로 합침
-                    body.update(extra)
+            # 1) Track 조회
+            result = await db.execute(select(Track).where(Track.id == task_id))
+            track = result.scalar_one_or_none()
+            if not track:
+                print(f"[music_worker] ⚠️ Track(id={task_id})을 찾을 수 없습니다. payload={payload}")
+                return
 
-                print(
-                    f"[music_worker] ▶️ ElevenLabs 생성 요청: {ELEVEN_CREATE}, "
-                    f"duration={duration_sec}s, body keys={list(body.keys())}"
-                )
+            if track.status in ("READY", "COMPLETED", "FAILED"):
+                print(f"[music_worker] ⏭ 이미 처리된 트랙 (status={track.status}), id={task_id}")
+                return
 
-                create_resp = await client.post(ELEVEN_CREATE, json=body, headers=headers)
-                try:
-                    create_resp.raise_for_status()
-                except httpx.HTTPStatusError as he:
-                    # HTTP 에러 응답 본문까지 DB에 저장
-                    err_body = create_resp.text
-                    err_msg = f"create_http_error {he.response.status_code}: {err_body}"
-                    print(f"[music_worker] ❌ ElevenLabs 생성 요청 실패: {err_msg}")
-                    await db.execute(
-                        update(Track)
-                        .where(Track.id == task_id)
-                        .values(status="FAILED", error=err_msg)
-                    )
-                    await db.commit()
-                    return
+            # PROCESSING로 전이
+            await db.execute(
+                update(Track)
+                .where(Track.id == task_id)
+                .values(status="PROCESSING")
+            )
+            await db.commit()
 
-                try:
-                    create_json = create_resp.json()
-                except Exception as je:
-                    err_msg = f"create_json_parse_error: {je}, body={create_resp.text[:500]}"
-                    print(f"[music_worker] ❌ 생성 응답 JSON 파싱 실패: {err_msg}")
-                    await db.execute(
-                        update(Track)
-                        .where(Track.id == task_id)
-                        .values(status="FAILED", error=err_msg)
-                    )
-                    await db.commit()
-                    return
-
-                ext_task_id = create_json.get("task_id") or create_json.get("id")
-                if not ext_task_id:
-                    err_msg = f"no task_id in create response: {create_json}"
-                    print(f"[music_worker] ❌ {err_msg}")
-                    await db.execute(
-                        update(Track)
-                        .where(Track.id == task_id)
-                        .values(status="FAILED", error=err_msg)
-                    )
-                    await db.commit()
-                    return
-
-                print(f"[music_worker] ✅ ElevenLabs 생성 요청 성공 - ext_task_id={ext_task_id}")
-
+            # 프롬프트 결정
+            prompt_text = payload.get("prompt") or (track.prompt or "")
+            if not prompt_text:
+                err = "empty prompt"
+                print(f"[music_worker] ❌ 프롬프트가 비어있습니다. id={task_id}")
                 await db.execute(
                     update(Track)
                     .where(Track.id == task_id)
-                    .values(task_external_id=ext_task_id)
+                    .values(status="FAILED", error=err)
                 )
                 await db.commit()
+                return
 
-                # 3) 상태 폴링
-                backoff = 1.0
-                max_polls = 30
-                status_url = ELEVEN_STATUS.format(task_id=ext_task_id)
+            if not ELEVEN_API_KEY:
+                err = "ELEVEN_API_KEY is not set in environment"
+                print(f"[music_worker] ❌ {err}")
+                await db.execute(
+                    update(Track)
+                    .where(Track.id == task_id)
+                    .values(status="FAILED", error=err)
+                )
+                await db.commit()
+                return
 
-                for i in range(max_polls):
-                    print(f"[music_worker] ⏳ 상태 폴링 {i+1}/{max_polls} - {status_url}")
-                    st_resp = await client.get(status_url, headers=headers)
-                    try:
-                        st_resp.raise_for_status()
-                    except httpx.HTTPStatusError as he:
-                        err_body = st_resp.text
-                        err_msg = f"status_http_error {he.response.status_code}: {err_body}"
-                        print(f"[music_worker] ❌ 상태 폴링 HTTP 에러: {err_msg}")
-                        await db.execute(
-                            update(Track)
-                            .where(Track.id == task_id)
-                            .values(status="FAILED", error=err_msg)
-                        )
-                        await db.commit()
-                        return
+            headers = {
+                "xi-api-key": ELEVEN_API_KEY,
+                "Content-Type": "application/json",
+            }
 
-                    try:
-                        data = st_resp.json()
-                    except Exception as je:
-                        err_msg = f"status_json_parse_error: {je}, body={st_resp.text[:500]}"
-                        print(f"[music_worker] ❌ 상태 응답 JSON 파싱 실패: {err_msg}")
-                        await db.execute(
-                            update(Track)
-                            .where(Track.id == task_id)
-                            .values(status="FAILED", error=err_msg)
-                        )
-                        await db.commit()
-                        return
+            # 2) ElevenLabs에 직접 음악 생성 요청 (응답 = MP3 바이너리)
+            body = {
+                # 공식 문서 기준: prompt + music_length_ms
+                "prompt": prompt_text,
+                "music_length_ms": music_length_ms,
+            }
+            # 보수적으로 instrumental 옵션 힌트
+            if force_instrumental:
+                body["instrumental"] = True  # 실제 API에서 허용하는 필드면 사용됨
 
-                    st = data.get("status")
-                    print(f"[music_worker] 📡 현재 상태: {st}, data keys={list(data.keys())}")
+            if isinstance(extra, dict):
+                # extra에 추가 파라미터가 있다면 body에 병합
+                body.update(extra)
 
-                    if st == "completed":
-                        audio_url = data.get(ELEVEN_DOWNLOAD_FIELD) or data.get("audioUrl") or data.get("url")
-                        if not audio_url:
-                            err_msg = f"completed but no audio url in field '{ELEVEN_DOWNLOAD_FIELD}': {data}"
-                            print(f"[music_worker] ❌ {err_msg}")
-                            await db.execute(
-                                update(Track)
-                                .where(Track.id == task_id)
-                                .values(status="FAILED", error=err_msg)
-                            )
-                            await db.commit()
-                            return
+            print(
+                f"[music_worker] ▶️ ElevenLabs 생성 요청: {ELEVEN_CREATE}, "
+                f"duration={duration_sec}s, body keys={list(body.keys())}"
+            )
 
-                        print(f"[music_worker] 🎉 완료 - audio_url={audio_url}")
-                        await db.execute(
-                            update(Track)
-                            .where(Track.id == task_id)
-                            .values(status="READY", track_url=audio_url)
-                        )
-                        await db.commit()
-                        return
+            async with httpx.AsyncClient(base_url=ELEVEN_BASE, timeout=300) as client:
+                resp = await client.post(ELEVEN_CREATE, json=body, headers=headers)
+                # HTTP 에러면 여기서 먼저 처리
+                try:
+                    resp.raise_for_status()
+                except httpx.HTTPStatusError as he:
+                    # 응답 바디는 바이너리일 수도 있으니 조심해서 preview만
+                    raw = resp.content[:300]
+                    preview = _sanitize_for_db(raw.decode("utf-8", errors="ignore"))
+                    err_msg = _sanitize_for_db(
+                        f"create_http_error {he.response.status_code}: {preview}"
+                    )
+                    print(f"[music_worker] ❌ ElevenLabs HTTP 에러: {err_msg}")
+                    await db.execute(
+                        update(Track)
+                        .where(Track.id == task_id)
+                        .values(status="FAILED", error=err_msg)
+                    )
+                    await db.commit()
+                    return
 
-                    if st == "failed":
-                        err = data.get("error") or data.get("message") or "provider failed"
-                        print(f"[music_worker] ❌ provider failed: {err}")
-                        await db.execute(
-                            update(Track)
-                            .where(Track.id == task_id)
-                            .values(status="FAILED", error=str(err))
-                        )
-                        await db.commit()
-                        return
+                audio_bytes = resp.content
+                if not audio_bytes or len(audio_bytes) < 1000:
+                    err_msg = _sanitize_for_db(
+                        f"empty_or_too_small_audio len={len(audio_bytes)}"
+                    )
+                    print(f"[music_worker] ❌ 오디오 데이터가 비정상: {err_msg}")
+                    await db.execute(
+                        update(Track)
+                        .where(Track.id == task_id)
+                        .values(status="FAILED", error=err_msg)
+                    )
+                    await db.commit()
+                    return
 
-                    # 아직 처리 중이면 backoff 후 재시도
-                    await asyncio.sleep(backoff)
-                    backoff = min(backoff * 1.5, 10.0)
+            # 3) 파일로 저장
+            save_dir = "static/audio"
+            os.makedirs(save_dir, exist_ok=True)
 
-                # 4) 타임아웃
-                err_msg = "timeout waiting for music generation"
-                print(f"[music_worker] ⏰ {err_msg}")
+            file_name = f"music_{int(time.time())}_{task_id}.mp3"
+            file_path = os.path.join(save_dir, file_name)
+
+            with open(file_path, "wb") as f:
+                f.write(audio_bytes)
+
+            public_url = f"/{save_dir.replace(os.sep, '/')}/{file_name}"
+            print(f"[music_worker] 🎉 음악 파일 저장 완료: {file_path} (url={public_url})")
+
+            # 4) Track 업데이트 (READY + track_url)
+            await db.execute(
+                update(Track)
+                .where(Track.id == task_id)
+                .values(status="READY", track_url=public_url)
+            )
+            await db.commit()
+            print(f"[music_worker] ✅ Track(id={task_id}) 상태 READY, url 저장 완료")
+
+        except Exception as e:
+            # 트랜잭션이 이미 깨졌을 수 있으므로 롤백 후 에러 기록 시도
+            await db.rollback()
+            err_msg = _sanitize_for_db(f"exception: {e}")
+            print(f"[music_worker] 💥 예외 발생: {err_msg}")
+            try:
                 await db.execute(
                     update(Track)
                     .where(Track.id == task_id)
                     .values(status="FAILED", error=err_msg)
                 )
                 await db.commit()
-
-        except Exception as e:
-            err_msg = f"exception: {e}"
-            print(f"[music_worker] 💥 예외 발생: {err_msg}")
-            await db.execute(
-                update(Track)
-                .where(Track.id == task_id)
-                .values(status="FAILED", error=err_msg)
-            )
-            await db.commit()
-            # 필요 시 DLQ로 재전송 가능
+            except Exception as e2:
+                # 여기서 또 실패해도 그냥 로그만 남기고 끝냄
+                print(f"[music_worker] !!! 에러 저장 중 추가 예외: {e2}")
 
 
 async def main():
@@ -272,7 +198,10 @@ async def main():
             batch = await consumer.getmany(timeout_ms=1000)
             for tp, messages in batch.items():
                 for msg in messages:
-                    print(f"[music_worker] 📩 새 메시지 수신 - offset={msg.offset}, key={msg.key}, value={msg.value}")
+                    print(
+                        f"[music_worker] 📩 새 메시지 수신 - offset={msg.offset}, "
+                        f"key={msg.key}, value={msg.value}"
+                    )
                     await handle_message(msg.value)
                     await consumer.commit()
     finally:
