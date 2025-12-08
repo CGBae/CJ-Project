@@ -164,10 +164,19 @@ export default function MusicPlaylistPage() {
                 if (!response.ok) throw new Error('음악 목록 로딩 실패');
 
                 const musicData: MusicTrackInfo[] = await response.json();
-                const mappedMusicData = musicData.map(track => ({
-                    ...track,
-                    audioUrl: track.track_url || track.audioUrl || '',
-                }));
+                const mappedMusicData = musicData.map(track => {
+                    const raw = track.track_url || track.audioUrl || '';
+
+                    // 절대 URL이 아니면 API_URL을 붙여서 백엔드로 보내기
+                    const fullAudioUrl = raw
+                        ? (raw.startsWith('http') ? raw : `${API_URL}${raw}`)
+                        : '';
+
+                    return {
+                        ...track,
+                        audioUrl: fullAudioUrl,
+                    };
+                });
                 setPlaylist(mappedMusicData);
 
             } catch (err: unknown) {
