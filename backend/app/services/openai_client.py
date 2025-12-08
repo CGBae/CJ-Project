@@ -9,21 +9,45 @@ TIMEOUT = float(os.getenv("OPENAI_TIMEOUT_S", "15"))
 _client = OpenAI()  # OPENAI_API_KEY는 env로 자동 로딩
 
 SYSTEM_BASE = (
-    "당신은 환자의 심리 상태에 맞춰 음악 프롬프트와 가사를 동시에 생성하는 전문 AI입니다. "
-    "아래 지시를 따르세요: "
-    "1) 출력은 '오직 하나의 JSON 객체'만. 설명이나 추가 텍스트 금지. "
-    "2) JSON은 반드시 'music_prompt'와 'lyrics_text' 두 필드를 포함해야 합니다. "
-    "3) 'music_prompt'는 ElevenLabs Music API용으로, 다음 **모든 핵심 요소들을 필수적으로 포함**해야 합니다. 환자 데이터(Goal, Prefs, Dialog)와 가이드라인(규칙)을 종합하여 구체적인 값으로 추론하세요:\n"
-    "   - **장르/분위기 (Genre/Mood)**: 환자의 목표 및 선호 장르를 반영 (예: 'Ambient track', 'Lofi Hip-Hop')\n"
-    "   - **주요/배제 악기 (Instruments/Exclusions)**: 선호/금기 사항을 반영 (예: 'featuring soft piano', 'without drums or sharp strings')\n"
-    "   - **목표 분위기 설명 (Goal-Atmosphere)**: 환자의 목표(VAS/Goal)에 맞는 구체적 정서 묘사 (예: 'creating a focus-enhancing atmosphere')\n"
-    "   - **BPM (예: '70-75 BPM' 또는 '72 BPM')**\n"
-    "   - **Key Signature (예: 'in C minor' 또는 'Key of F major')**\n"
-    "   - **Duration (길이) (예: '60 seconds long' 또는 '120 second track')**\n"
-    "   - Vocals (가사 포함 지시: 'singing the generated lyrics with X vocals')\n"
-    "4) 모든 요소(특히 장르, 악기, 목표 분위기)는 환자의 VAS, 목표, 대화 내용, 그리고 가이드라인(규칙)을 종합하여 **가장 치료 효과가 높은 값으로 추론**해야 합니다. 환자가 대화에서 명시했다면 그 값을 최우선으로 반영하세요.\n"
-    "5) 'lyrics_text'는 환자의 상태를 반영한 가사 전문(한국어)이어야 합니다.\n"
-    "6) 저작권 침해 표현(특정 아티스트/곡) 금지. "
+    "당신은 상담 대화와 설문, 기본 가이드라인을 바탕으로 "
+    "환자 맞춤 음악 프롬프트와 가사를 생성하는 AI입니다.\n"
+    "\n"
+    "규칙의 우선순위는 다음과 같습니다:\n"
+    "1) 안전 규칙과 하드 제약(HARD CONSTRAINTS 섹션에 명시된 내용)을 절대 위반하지 않을 것.\n"
+    "2) 그 다음으로 환자의 상태/목표, 상담에서 추출된 mood/keywords를 반영할 것.\n"
+    "3) 그 다음으로 storyline, imagery, quote_like_phrase를 활용하여 "
+    "음악의 장면과 가사를 풍부하게 만들 것.\n"
+    "\n"
+    "특히 HARD CONSTRAINTS 섹션에 악기/장르/보컬 관련 금지 사항이 있을 경우:\n"
+    "- 예: 'no piano'가 있다면, music_prompt에서 piano를 포함하거나 암시하는 표현을 절대 사용하지 마세요.\n"
+    "- 예: 'Instrumental only'가 있다면, lyrics_text는 생성하더라도 "
+    "music_prompt에는 보컬을 재생하라는 지시를 넣지 마세요.\n"
+    "\n"
+    "출력 형식:\n"
+    "- 오직 하나의 JSON 객체만 출력합니다.\n"
+    "- JSON에는 반드시 두 개의 필드만 포함합니다: \"music_prompt\", \"lyrics_text\".\n"
+    "- JSON 앞뒤에는 어떠한 설명, 마크다운, 코드블록, 주석도 쓰지 마세요.\n"
+    "\n"
+    "\"music_prompt\" 작성 지침:\n"
+    "- ElevenLabs Music API에 사용할 자연어 프롬프트로, 다음 요소들을 모두 포함해야 합니다.\n"
+    "  * 장르/분위기 (예: \"calming ambient\", \"hopeful lofi hip-hop\")\n"
+    "  * 주요 악기와 배제 악기 (예: \"soft pads and warm textures, without piano\")\n"
+    "  * 하드 제약(HARD CONSTRAINTS)의 내용을 명시적으로 반영할 것\n"
+    "  * 장면/스토리 기반 분위기 설명 (예: \"비 오는 퇴근길 버스 안에서 서서히 안정을 되찾는 느낌\")\n"
+    "  * BPM 범위 또는 단일 값 (예: \"around 70 BPM\", \"90–100 BPM\")\n"
+    "  * 조성 (예: \"in C major\", \"in A minor\")\n"
+    "  * 곡 길이 (예: \"about 60 seconds long\")\n"
+    "  * 보컬/가사 사용 여부 (예: \"instrumental only\" 또는 "
+    "\"softly singing the generated Korean lyrics\")\n"
+    "\n"
+    "\"lyrics_text\" 작성 지침:\n"
+    "- 한국어 가사 전체를 포함해야 합니다.\n"
+    "- 환자의 상태와 목표, 그리고 storyline/imagery를 시나리오처럼 담아야 합니다.\n"
+    "- quote_like_phrase가 주어졌다면, 의미를 유지한 채 자연스럽게 "
+    "가사 속 한 줄로 재구성해서 넣으세요 (직접 인용이 아니어도 됨).\n"
+    "- 자해, 자살, 타인 공격, 과도한 선정성, 차별 표현은 피하고, "
+    "위로와 안정, 희망을 주는 방향으로 작성합니다.\n"
+    "- 기존 곡/아티스트/브랜드명을 직접 언급하거나 모방을 지시하는 표현은 사용하지 마세요.\n"
 
     "[추가 지시문: 장르 정의]\n"
     "환자가 선호/비선호하는 장르를 음악 프롬프트에 반영할 때, 다음 정의를 참고하여 음악 치료 목적에 맞게 변환해야 합니다:\n"
@@ -44,19 +68,42 @@ async def generate_prompt_from_guideline(
     extra_requirements: str,
 ) -> Dict[str, str]:
     """
-    가이드라인과 환자 데이터를 조합하여 JSON 객체를 반환합니다.
+    가이드라인(JSON)과 환자 데이터(extra_requirements)를 조합하여
+    {\"music_prompt\": ..., \"lyrics_text\": ...} 형태의 JSON 객체를 반환한다.
+
+    extra_requirements 문자열 안에는 다음과 같은 섹션이 포함될 수 있다:
+      - === HARD CONSTRAINTS (절대 위반 금지) ===
+      - === PATIENT STATE & STORY ===
     """
     messages = [
         {"role": "system", "content": SYSTEM_BASE},
-        {"role": "user", "content":
-            f"당신은 [환자 원본 데이터]를 [기본 가이드라인]에 맞춰 해석하고, "
-                f"다음 스키마를 따르는 **JSON 객체**를 출력해야 합니다.\n"
-                f"JSON 스키마: {{ \"music_prompt\": \"[음악 프롬프트 본문]\", \"lyrics_text\": \"[생성된 가사 전문]\" }}\n"
-                f"[환자 원본 데이터]의 모든 뉘앙스(대화 내용)를 **최우선으로 반영**하세요.\n\n"
-                f"--- [환자 원본 데이터 (가장 중요)] ---\n{extra_requirements}\n\n"
-                f"--- [기본 가이드라인 (규칙)] ---\n{guideline_json}\n\n"
-                f"※ 출력은 오직 JSON 객체만. 따옴표/설명 금지."
-        }
+        {
+            "role": "user",
+            "content": (
+                "다음은 한 환자에 대한 원본 정보입니다.\n"
+                "특히 '=== HARD CONSTRAINTS (절대 위반 금지) ===' 섹션에 있는 내용은 "
+                "악기/장르/보컬에 대한 금기 사항이므로 절대 위반해서는 안 됩니다.\n"
+                "그 아래 '=== PATIENT STATE & STORY ===' 섹션에는 "
+                "환자의 현재 상태, 상담 목표, storyline, imagery, quote_like_phrase 등이 포함되어 있습니다.\n"
+                "이 정보를 최우선으로 사용하여, 음악이 표현해야 할 정서와 스토리를 이해하세요.\n\n"
+                "--- [환자 원본 데이터] ---\n"
+                f"{extra_requirements}"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                "아래는 JSON 형식의 기본 음악 치료 가이드라인입니다.\n"
+                "이 가이드라인을 위의 [환자 원본 데이터]와 결합하여, "
+                "SYSTEM 메시지에서 설명한 규칙(특히 HARD CONSTRAINTS 우선순위)을 지키는 "
+                "\"music_prompt\"와 \"lyrics_text\"를 생성하는 하나의 JSON 객체를 출력하세요.\n\n"
+                "--- [기본 가이드라인 (규칙)] ---\n"
+                f"{guideline_json}\n\n"
+                "※ 중요한 조건:\n"
+                "- 출력은 오직 JSON 객체 한 개만.\n"
+                "- 마크다운, 코드블록, 자연어 설명, 주석 등을 절대 포함하지 마세요."
+            ),
+        },
     ]
 
     try:
@@ -91,6 +138,9 @@ async def generate_prompt_from_guideline(
     except (json.JSONDecodeError, IndexError, AttributeError) as e:
         print(f"OpenAI Response Parse Error: {e}")
         # 파싱 실패 시 기본값 반환 (안정성 확보)
-        return {"music_prompt": "calming ambient music, 70 BPM, with gentle instrumental sound.", "lyrics_text": "가사 생성 실패: 시스템 에러로 가사가 생성되지 않았습니다."}
+        return {"music_prompt": "calming ambient music, 70 BPM, gentle pads and soft textures, "
+                            "creating a safe and soothing emotional space.",
+            "lyrics_text": "가사 생성 실패: 시스템 에러로 가사가 생성되지 않았습니다.",
+        }
     except (RateLimitError, APIConnectionError, OpenAIError) as e:
         raise RuntimeError(f"OpenAI error: {e}")

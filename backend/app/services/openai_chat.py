@@ -14,11 +14,14 @@ ANALYSIS_SYSTEM_PROMPT = (
     "절대 설명이나 추가 텍스트를 붙이지 마세요."
 )
 ANALYSIS_GUIDELINE = {
-    "mood": "대화에서 파악된 가장 지배적인 심리적 분위기 (예: calming, exciting, melancholic, energizing)",
-    "keywords": "음악 생성에 사용될 수 있는 5개 이내의 핵심 심리/음악 키워드 (예: piano, ambient, deep, slow, hopeful)",
-    "target": "환자가 궁극적으로 개선하려 하거나 호소하는 증상 (예: anxiety, depression, insomnia, pain)",
-    "music_constraints": "환자가 대화 중 명시적으로 요구하거나 '싫다'고 말한 음악적 요소 (예: 'no piano', 'no drums', 'fast tempo', 'slow tempo dislike')",
-    "confidence": "분석 결과의 신뢰도 (0.0~1.0 사이의 float 값)"
+    "mood": "대화 전체를 관통하는 전반적인 정서(예: 'calming', 'hopeful', 'nostalgic' 등 영어 한 단어)",
+    "keywords": "음악이 표현해야 할 핵심 감정/상황 키워드 3~7개를 영어 단어 리스트로",
+    "target": "상담의 궁극적인 목표를 한국어 한 문장으로",
+    "music_constraints": "사용자가 명시적으로 언급한 음악 관련 선호/금기 사항을 영어로 한 문장으로 (없으면 빈 문자열)",
+    "storyline": "대화 내용을 바탕으로, 음악이 표현해야 할 장면/스토리를 한국어로 2~3문장으로 요약",
+    "imagery": "사용자가 언급한 인상적인 이미지/장소/상징(예: '비 오는 버스', '야근 후 야간 도로')를 한국어 짧은 문구 3개 이내 리스트로",
+    "quote_like_phrase": "대화에서 중요한 의미를 가진 사용자의 표현을 안전하게 재구성한 한국어 문장 1개 (민감한 개인정보는 제거)",
+    "confidence": "0.0 ~ 1.0 사이의 float"
 }
 def _messages_for_openai(system_prompt: str, history: List[Dict[str,str]]):
     messages = [{"role":"system", "content": system_prompt}]
@@ -84,7 +87,7 @@ async def analyze_dialog_for_mood(history: List[Dict[str,str]]) -> Dict[str, Any
         
     except (RateLimitError, APIConnectionError, OpenAIError) as e:
         print(f"OpenAI Analysis Error (falling back to default): {e}")
-        return {"mood": "calming", "keywords": [], "target": "n/a", "constraints": None, "confidence": 0.0}
+        return {"mood": "calming", "keywords": [], "target": "n/a", "music_constraints": None, "confidence": 0.0}
     except (json.JSONDecodeError, IndexError, AttributeError, TypeError) as e:
         print(f"OpenAI Response Parse Error (falling back to default): {e}")
-        return {"mood": "calming", "keywords": [], "target": "n/a", "constraints": None, "confidence": 0.0}
+        return {"mood": "calming", "keywords": [], "target": "n/a", "music_constraints": None, "confidence": 0.0}

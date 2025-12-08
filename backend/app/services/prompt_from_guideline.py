@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Dict, Any, List
+from typing import Dict, Any
 from app.services.openai_chat import chat_complete
 async def generate_first_counseling_message(
     user_name: str,
@@ -61,11 +61,17 @@ def build_extra_requirements_for_patient(
     vas: Dict[str,int]|None,
     prefs: Dict[str,Any]|None,
     goal: Dict[str,str]|None,
-    analyzed: Dict[str,Any]|None
+    analyzed: Dict[str,Any]|None,
 ) -> str:
     """
-    환자 흐름용: 제출값 + OpenAI 대화분석(키워드/무드/추정 목표 등)을
-    사람이 읽을 수 있는 짧은 bullet 텍스트로 정리.
+    VAS(불안/우울/통증), 음악 선호/금기, 상담 대화 분석 결과(analyzed)를 종합해
+    '환자 원본 데이터' 텍스트를 만든다.
+    여기에는 다음이 포함된다:
+      - HARD CONSTRAINTS (절대 위반 금지: 금지 장르, no piano, 가사 금지 등)
+      - 환자의 현재 상태(VAS)
+      - 상담 목표
+      - 대화에서 추출된 mood/keywords/storyline/imagery/quote_like_phrase
+      - 선호 장르, 선호 분위기, 템포 힌트 등
     """
     v = vas or {}
     p = prefs or {}
@@ -75,8 +81,7 @@ def build_extra_requirements_for_patient(
    # 💡 [핵심 수정] intake/patient/page.tsx의 handleSubmit이 보낸 키(Key)와 일치시킴
     preferred_genres = ", ".join(p.get("genres", []) or [])
     disliked_genres = ", ".join(p.get("contraindications", []) or [])
-    
-    vocals_instruction = "가사가 있는 보컬을 포함해야 합니다." if p.get("lyrics_allowed", False) else "보컬 없이 연주곡(Instrumental)으로만 구성해야 합니다."
+    lyrics_allowed = bool(p.get("lyrics_allowed", False))
 
     anxiety_level = v.get('anxiety', 'N/A')
     mood_level = v.get('depression', 'N/A') # 👈 'depression' 키 사용 (payload.vas.depression)
@@ -88,41 +93,110 @@ def build_extra_requirements_for_patient(
     analyzed_mood = a.get("mood", "calming")
     analyzed_keywords = ", ".join(a.get("keywords", []) or [])
     analyzed_constraints = a.get("music_constraints") # (예: "no piano", "fast tempo")
+    if isinstance(analyzed_constraints, list):
+        analyzed_constraints = ", ".join(analyzed_constraints)
 
+    storyline = a.get("storyline") or ""
+    imagery_list = a.get("imagery") or []
+    quote_like = a.get("quote_like_phrase") or ""
 
-    tempo_hint = "BPM은 70-80 사이의 느린 템포" 
+    tempo_hint = "BPM은 70-80 사이의 느린 템포가 적합합니다."
     try:
         mood_val = int(mood_level)
-        anxiety_val = int(anxiety_level)
-        if anxiety_val >= 7:
-            tempo_hint = "BPM은 60-70 사이의 매우 느린 템포 (불안 완화 우선)"
+        if mood_val <= 3:
+            tempo_hint = "BPM은 80-95 사이의 적당한 템포가 적합합니다."
+        elif mood_val >= 8:
+            tempo_hint = "BPM은 60-70 사이의 매우 느린 템포가 적합합니다."
         elif mood_val >= 7:
-            tempo_hint = "BPM은 90-110 사이의 중간 템포 (기분 전환)"
+            tempo_hint = "BPM은 90-110 사이의 중간 템포가 적합합니다."
     except (ValueError, TypeError):
-        pass 
+        # 숫자로 변환 실패 시 기본 템포 유지
+        pass
     
     # 2. (최우선) 만약 AI 분석가가 '채팅'에서 템포 관련 언급을 찾았다면, VAS 힌트를 덮어쓴다.
     if analyzed_constraints:
-        if "fast tempo" in analyzed_constraints or "slow tempo dislike" in analyzed_constraints:
-             # (예: "조용한 노래 싫고 상큼한 노래 원해요" -> "fast tempo")
-            tempo_hint = "BPM은 110-130 사이의 빠르고 활기찬 템포 (환자가 채팅에서 '빠른/상큼한' 템포를 명시적으로 요구함)"
-        elif "slow tempo" in analyzed_constraints or "fast tempo dislike" in analyzed_constraints:
-            tempo_hint = "BPM은 60-70 사이의 매우 느린 템포 (환자가 채팅에서 '느린' 템포를 명시적으로 요구함)"
+        ac_lower = str(analyzed_constraints).lower()
+        if "fast tempo" in ac_lower and "slow tempo" not in ac_lower:
+            tempo_hint = "BPM은 110-130 사이의 빠르고 활기찬 템포가 적합합니다."
+        elif "slow tempo" in ac_lower and "fast tempo" not in ac_lower:
+            tempo_hint = "BPM은 60-70 사이의 매우 느린 템포가 적합합니다."
 
-    # 💡 6. (수정) 이전 코드는 단순 나열('- VAS: ...') 방식이라 AI가 오해하기 쉬웠습니다.
-    # AI가 헷갈리지 않도록 완전한 문장 형식의 지시문으로 변경했습니다.
-    lines = [
-        f"환자의 현재 상태는 다음과 같습니다: 불안 점수 {anxiety_level}/10, 기분(우울) 점수 {mood_level}/10 (높을수록 부정적), 통증 점수 {pain_level}/10.",
-        f"환자의 궁극적인 상담 목표는 '{goal_text}'입니다.",
-        f"AI 채팅 분석 결과, 음악의 핵심 분위기(mood)는 '{analyzed_mood}'이어야 하며, '{analyzed_keywords or '없음'}' 키워드를 반영해야 합니다.",
-        f"AI 채팅 분석 결과, 환자가 명시적으로 요구하거나 거부한 음악 요소(constraints)는 '{analyzed_constraints}'입니다. 이 요소(예: 'no piano')는 프롬프트에 '반드시' 반영되어야 합니다."
-        f"환자가 선호하는 음악 장르는 '{preferred_genres or '특별히 없음'}'이며, 이는 중요한 참고사항입니다.",
-        f"환자가 싫어하는 장르는 '{disliked_genres or '없음'}'이므로, 이 장르들은 반드시 피해야 합니다.",
-        f"음악에는 {vocals_instruction}.",
-        f"환자 상태(VAS)에 기반한 추천 템포(BPM)는 '{tempo_hint}'입니다. (BPM 지시가 없다면 이것을 사용)",
-        "마지막으로, 급격한 볼륨 변화나 놀라게 하는 요소 없이 안정적인 흐름을 유지해야 합니다.",
-    ]
-    return "\n".join(lines)
+    hard_lines: list[str] = []
+    
+    if disliked_genres:
+        hard_lines.append(f"금지 장르: {disliked_genres}")
+
+    # 가사 금지
+    if not lyrics_allowed:
+        hard_lines.append("가사는 사용하지 말 것 (Instrumental only).")
+
+    # 분석 기반 제약
+    if analyzed_constraints:
+        hard_lines.append(f"대화 기반 음악 제약: {analyzed_constraints}")
+
+        # 예시: no piano 같은 금기 요소를 명시적으로 강조
+        ac_lower = str(analyzed_constraints).lower()
+        if "no piano" in ac_lower:
+            hard_lines.append("피아노는 절대 사용하지 말 것 (no piano).")
+
+    state_story_lines: list[str] = []
+
+    state_story_lines.append(
+        f"환자의 현재 상태는 불안 VAS {anxiety_level}/10, "
+        f"우울 VAS {mood_level}/10, 통증 VAS {pain_level}/10 입니다."
+    )
+
+    state_story_lines.append(f"환자의 궁극적인 상담 목표는 '{goal_text}' 입니다.")
+
+    state_story_lines.append(
+        f"AI 채팅 분석 결과, 음악의 핵심 분위기(mood)는 '{analyzed_mood}' 이며 "
+        f"핵심 키워드는 [{analyzed_keywords}] 입니다."
+    )
+
+    if storyline:
+        state_story_lines.append(f"음악이 표현해야 할 스토리: {storyline}")
+
+    if imagery_list:
+        state_story_lines.append(
+            "대화에서 추출한 핵심 이미지와 상징: "
+            + ", ".join(imagery_list)
+        )
+
+    if quote_like:
+        state_story_lines.append(
+            f"환자의 말 중 음악이 특히 담아야 할 메시지: \"{quote_like}\""
+        )
+
+    if preferred_genres:
+        state_story_lines.append(
+            f"환자가 선호하는 음악 장르는 {preferred_genres} 입니다."
+        )
+
+    vocals_instruction = (
+        "가사가 있는 보컬을 포함해도 됩니다."
+        if lyrics_allowed
+        else "보컬 없이 연주곡(Instrumental)으로만 구성해야 합니다."
+    )
+
+    state_story_lines.append(
+        f"보컬 및 가사 사용에 대한 기본 지침: {vocals_instruction}"
+    )
+
+    state_story_lines.append(f"템포에 대한 기본 권장 사항: {tempo_hint}")
+
+    # --- 최종 문자열 합치기 ---
+    lines: list[str] = []
+
+    if hard_lines:
+        lines.append("=== HARD CONSTRAINTS (절대 위반 금지) ===")
+        lines.extend(hard_lines)
+        lines.append("")  # 빈 줄
+
+    lines.append("=== PATIENT STATE & STORY ===")
+    lines.extend(state_story_lines)
+
+    # 빈 줄/빈 문자열 제거 후 합치기
+    return "\n".join(s for s in lines if s and str(s).strip())
 
 def build_extra_requirements_for_therapist(
     manual: Dict[str,Any]
