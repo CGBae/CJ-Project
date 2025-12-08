@@ -22,6 +22,10 @@ services:
     depends_on:
       - db
       - redpanda
+    volumes:
+      # 🔥 backend와 music-worker가 같이 쓰는 static 디렉토리
+      # 컨테이너 안 경로는 /app/static 으로 통일
+      - static-data:/app/static
 
   db:
     image: postgres:15-alpine # (또는 mysql:8)
@@ -70,6 +74,10 @@ services:
       - ./backend.env   # 아래에서 설명할 .env(or backend.env)
       - ./kafka.env
     command: ["python", "-m", "app.workers.music_worker"]
+    volumes:
+      # 🔥 워커도 같은 static-data 볼륨을 /app/static으로 마운트
+      - static-data:/app/static
 
 volumes:
   db-data:
+  static-data:
