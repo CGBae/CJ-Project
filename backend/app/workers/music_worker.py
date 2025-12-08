@@ -140,7 +140,7 @@ async def handle_message(payload: dict):
                     return
 
             # 3) 파일로 저장
-            save_dir = "static/audio"
+            save_dir = "/app/static/audio"
             os.makedirs(save_dir, exist_ok=True)
 
             file_name = f"music_{int(time.time())}_{task_id}.mp3"
@@ -149,7 +149,7 @@ async def handle_message(payload: dict):
             with open(file_path, "wb") as f:
                 f.write(audio_bytes)
 
-            public_url = f"/{save_dir.replace(os.sep, '/')}/{file_name}"
+            public_url = f"/static/audio/{file_name}"
             print(f"[music_worker] 🎉 음악 파일 저장 완료: {file_path} (url={public_url})")
 
             # 4) Track 업데이트 (READY + track_url)
