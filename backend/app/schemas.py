@@ -163,18 +163,12 @@ class ConnectionDetail(BaseModel):
         from_attributes = True
 
 class ConnectionResponse(str, Enum):
-    """
-    연결 요청에 대한 환자의 응답 유형
-    """
-    accept = "ACCEPTED"
-    reject = "REJECTED"
+    ACCEPTED = "ACCEPTED"
+    REJECTED = "REJECTED"
 
 class ConnectionRespondReq(BaseModel):
-    """
-    연결 요청에 응답 (/connection/respond) 요청 스키마
-    """
     connection_id: int
-    response: ConnectionResponse # "ACCEPTED" 또는 "REJECTED"
+    response: Literal["ACCEPTED", "REJECTED"]
     
 class SocialRegisterRequest(BaseModel):
     temp_token: str # 카카오 정보가 담긴 임시 토큰

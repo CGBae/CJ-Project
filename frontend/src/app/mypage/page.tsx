@@ -140,8 +140,10 @@ export default function MyPage() {
                 const err = await res.json();
                 alert(err.detail);
             }
+
         } catch (e) { alert("처리 실패"); }
     };
+
 
     // 연결 삭제/취소
     const handleDeleteConnection = async (connectionId: number) => {
@@ -355,11 +357,19 @@ export default function MyPage() {
                                                     <button onClick={() => handleRespond(conn.connection_id, 'REJECTED')} className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded hover:bg-red-200">거절</button>
                                                 </div>
                                             )
-                                        ) : (
+                                        ) : conn.status === 'ACCEPTED' ? (
                                             <span className="text-xs bg-green-100 text-green-700 px-2.5 py-1 rounded-full font-bold border border-green-200 flex items-center gap-1">
                                                 <CheckCircle className="w-3 h-3" /> 연결됨
                                             </span>
-                                        )}
+                                        ) : conn.status === 'REJECTED' ? (
+                                            <span className="text-xs bg-red-100 text-red-700 px-2.5 py-1 rounded-full font-bold border border-red-200">
+                                                거절됨
+                                            </span>
+                                        ) : conn.status === 'TERMINATED' ? (
+                                            <span className="text-xs bg-gray-300 text-gray-700 px-2.5 py-1 rounded-full font-bold border border-gray-400">
+                                                종료됨
+                                            </span>
+                                        ) : null}
                                         <button onClick={() => handleDeleteConnection(conn.connection_id)} className="text-gray-300 hover:text-red-500 transition-colors p-1" title="삭제/취소">
                                             <Trash2 className="w-4 h-4" />
                                         </button>
