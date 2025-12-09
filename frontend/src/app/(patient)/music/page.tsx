@@ -320,8 +320,11 @@ export default function MusicPlaylistPage() {
 
     const handleToggleDetails = async (trackId: number | string) => {
         if (expandedTrackId === trackId) {
-            setExpandedTrackId(null); setTrackDetail(null); return;
+            setExpandedTrackId(null);
+            setTrackDetail(null);
+            return;
         }
+
         setDetailLoadingId(trackId);
         setError(null);
         const token = localStorage.getItem('accessToken');
@@ -335,6 +338,19 @@ export default function MusicPlaylistPage() {
             const detailData: MusicTrackDetail = await response.json();
             setTrackDetail(detailData);
             setExpandedTrackId(trackId);
+
+            // 🔹 상세정보 열 때 audio.src 세팅
+            if (audioRef.current && detailData.track_url) {
+                const src = detailData.track_url.startsWith('http') ? detailData.track_url : `${API_URL}${detailData.track_url}`;
+                if (audioRef.current.src !== src) {
+                    audioRef.current.src = src;
+                    audioRef.current.load(); // 메타데이터 다시 읽기
+                    audioRef.current.onloadedmetadata = () => {
+                        setDuration(audioRef.current!.duration);
+                    };
+                }
+            }
+
         } catch (err) {
             console.error(err);
         } finally {
@@ -463,27 +479,59 @@ export default function MusicPlaylistPage() {
                                                             ref={audioRef}
                                                             preload="metadata"
                                                             onLoadedMetadata={() => {
-                                                                if (audioRef.current) {
-                                                                    setDuration(audioRef.current.duration);
-                                                                }
+                                                                if (audioRef.current) setDuration(audioRef.current.duration);
                                                             }}
                                                             onTimeUpdate={() => {
-                                                                if (audioRef.current) {
-                                                                    setCurrentTime(audioRef.current.currentTime);
-                                                                }
+                                                                if (audioRef.current) setCurrentTime(audioRef.current.currentTime);
                                                             }}
                                                         />
                                                         <div className="flex items-center gap-4">
                                                             <span className="text-xs font-mono text-gray-600">{formatTime(currentTime)}</span>
-                                                            <input type="range" min="0" max={duration || 0} value={currentTime} onChange={(e) => { const t = Number(e.target.value); setCurrentTime(t); if (audioRef.current) audioRef.current.currentTime = t; }} className="flex-1 h-1.5 bg-gray-300 rounded-full appearance-none cursor-pointer accent-indigo-600" />
+                                                            <input
+                                                                type="range"
+                                                                min="0"
+                                                                max={duration || 0}
+                                                                value={currentTime}
+                                                                onChange={(e) => {
+                                                                    const t = Number(e.target.value);
+                                                                    setCurrentTime(t);
+                                                                    if (audioRef.current) audioRef.current.currentTime = t;
+                                                                }}
+                                                                className="flex-1 h-1.5 bg-gray-300 rounded-full appearance-none cursor-pointer accent-indigo-600"
+                                                            />
                                                             <span className="text-xs font-mono text-gray-600">{formatTime(duration)}</span>
                                                         </div>
                                                         <div className="flex items-center justify-center gap-4 mt-3">
-                                                            <button onClick={() => { const v = volume > 0 ? 0 : 1; setVolume(v); if (audioRef.current) audioRef.current.volume = v; }}>
+                                                            <button
+                                                                onClick={() => {
+                                                                    const v = volume > 0 ? 0 : 1;
+                                                                    setVolume(v);
+                                                                    if (audioRef.current) audioRef.current.volume = v;
+                                                                }}
+                                                            >
                                                                 {volume === 0 ? <VolumeX className="w-5 h-5 text-gray-500" /> : <Volume1 className="w-5 h-5 text-gray-500" />}
                                                             </button>
-                                                            <input type="range" min="0" max="1" step="0.1" value={volume} onChange={(e) => { const v = Number(e.target.value); setVolume(v); if (audioRef.current) audioRef.current.volume = v; }} className="w-20 h-1.5 bg-gray-300 rounded-full appearance-none cursor-pointer accent-indigo-600" />
-                                                            <button onClick={() => { const l = !isLooping; setIsLooping(l); if (audioRef.current) audioRef.current.loop = l; }} className={`p-2 rounded-full ${isLooping ? 'bg-indigo-100 text-indigo-600' : 'text-gray-500'}`}>
+                                                            <input
+                                                                type="range"
+                                                                min="0"
+                                                                max="1"
+                                                                step="0.1"
+                                                                value={volume}
+                                                                onChange={(e) => {
+                                                                    const v = Number(e.target.value);
+                                                                    setVolume(v);
+                                                                    if (audioRef.current) audioRef.current.volume = v;
+                                                                }}
+                                                                className="w-20 h-1.5 bg-gray-300 rounded-full appearance-none cursor-pointer accent-indigo-600"
+                                                            />
+                                                            <button
+                                                                onClick={() => {
+                                                                    const l = !isLooping;
+                                                                    setIsLooping(l);
+                                                                    if (audioRef.current) audioRef.current.loop = l;
+                                                                }}
+                                                                className={`p-2 rounded-full ${isLooping ? 'bg-indigo-100 text-indigo-600' : 'text-gray-500'}`}
+                                                            >
                                                                 <RefreshCcw className="w-4 h-4" />
                                                             </button>
                                                         </div>
