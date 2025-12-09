@@ -133,12 +133,11 @@ Constraints:
     # 2) Track 레코드 생성
     new_track = Track(
         session_id=req.session_id,
-        created_by=current_user.id,  # 🔥 리스트 필터링용으로 꼭 넣어주기
         status="QUEUED",
         provider="ElevenLabs",
         prompt=full_prompt_text,     # 🔥 여기: 가사까지 포함된 최종 프롬프트
         duration_sec=duration_sec,
-        quality=(req.extra or {}).get("preset"),
+        quality=(req.extra or {}).get("preset") if req.extra else None,
     )
     db.add(new_track)
     await db.flush()  # new_track.id 확보
