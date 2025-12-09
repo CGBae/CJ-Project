@@ -51,17 +51,6 @@ app.add_middleware(
 os.makedirs("static/audio", exist_ok=True) # 폴더가 없으면 생성
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# 💡 2. [핵심] /static 경로 마운트 (라우터 포함 전에 추가)
-# (static 폴더가 app 폴더 내부에 있다고 가정)
-static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
-if not os.path.exists(static_dir):
-    os.makedirs(static_dir)
-    print(f"Created static directory at: {static_dir}")
-    
-app.mount("/static", StaticFiles(directory=static_dir), name="static")
-print(f"Serving static files from: {static_dir}")
-
-
 # 💡 2. 그 다음에 API 라우터들을 등록합니다.
 app.include_router(chat.router)
 app.include_router(patient.router)
