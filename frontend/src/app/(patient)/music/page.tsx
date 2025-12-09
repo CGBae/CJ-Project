@@ -3,9 +3,9 @@
 import React, { useState, useEffect, useRef, Fragment } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-    Play, Pause, Music, Trash2, ArrowLeft, Volume2, Loader2, FileText, 
+    Play, Pause, Music, Trash2, ArrowLeft, Volume2, Loader2, FileText,
     MessageSquare, ChevronDown, User, AlertTriangle, Heart,
-    Volume1, VolumeX, RefreshCcw, Edit2, Check, X, CheckSquare, Square, 
+    Volume1, VolumeX, RefreshCcw, Edit2, Check, X, CheckSquare, Square,
     Brain, Share2 // 💡 아이콘 추가
 } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext';
@@ -113,11 +113,11 @@ export default function MusicPlaylistPage() {
     const [detailLoadingId, setDetailLoadingId] = useState<number | string | null>(null);
     const [expandedTrackId, setExpandedTrackId] = useState<number | string | null>(null);
     const [trackDetail, setTrackDetail] = useState<MusicTrackDetail | null>(null);
-    
+
     const [editingTrackId, setEditingTrackId] = useState<number | null>(null);
     const [editTitle, setEditTitle] = useState('');
     const [currentTrack, setCurrentTrack] = useState<MusicTrackInfo | null>(null);
-    
+
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
@@ -201,6 +201,12 @@ export default function MusicPlaylistPage() {
         };
     }, [router, isAuthed]);
 
+    useEffect(() => {
+    if (audioRef.current && trackDetail?.track_url) {
+        audioRef.current.load();
+    }
+}, [trackDetail?.track_url]);
+
     // --- 기능 핸들러들 ---
     const handleDelete = async (idsToDelete: (number | string)[]) => {
         if (!confirm(idsToDelete.length > 1 ? `선택한 ${idsToDelete.length}곡을 삭제하시겠습니까?` : "정말 삭제하시겠습니까?")) return;
@@ -208,8 +214,8 @@ export default function MusicPlaylistPage() {
         if (!token) return;
 
         try {
-            await Promise.all(idsToDelete.map(id => 
-                fetch(`${API_URL}/music/track/${id}`, { 
+            await Promise.all(idsToDelete.map(id =>
+                fetch(`${API_URL}/music/track/${id}`, {
                     method: 'DELETE',
                     headers: { 'Authorization': `Bearer ${token}` }
                 })
@@ -273,7 +279,7 @@ export default function MusicPlaylistPage() {
             audio.src = track.audioUrl;
             setCurrentTrack(track);
             setCurrentTime(0);
-            
+
             await new Promise<void>((resolve, reject) => {
                 audio.oncanplaythrough = () => resolve();
                 audio.onerror = () => reject(new Error("로드 실패"));
@@ -357,7 +363,7 @@ export default function MusicPlaylistPage() {
                                 {selectedTrackIds.size === playlist.length ? '선택 해제' : '전체 선택'}
                             </button>
                             <button onClick={() => handleDelete(Array.from(selectedTrackIds))} disabled={selectedTrackIds.size === 0} className="text-xs font-medium text-white bg-red-500 hover:bg-red-600 px-3 py-1.5 rounded-md disabled:bg-gray-300 flex items-center gap-1">
-                                <Trash2 className="w-3 h-3"/> 삭제 ({selectedTrackIds.size})
+                                <Trash2 className="w-3 h-3" /> 삭제 ({selectedTrackIds.size})
                             </button>
                             <button onClick={() => { setIsSelectionMode(false); setSelectedTrackIds(new Set()); }} className="text-xs font-medium text-gray-600 hover:bg-gray-200 px-3 py-1.5 rounded-md">
                                 취소
@@ -390,7 +396,7 @@ export default function MusicPlaylistPage() {
                                 >
                                     {isSelectionMode && (
                                         <div className="absolute left-4 top-1/2 -translate-y-1/2 p-2 cursor-pointer z-10" onClick={(e) => { e.stopPropagation(); toggleSelect(track.id); }}>
-                                            {selectedTrackIds.has(track.id) ? <CheckSquare className="w-5 h-5 text-indigo-600 fill-indigo-50"/> : <Square className="w-5 h-5 text-gray-400"/>}
+                                            {selectedTrackIds.has(track.id) ? <CheckSquare className="w-5 h-5 text-indigo-600 fill-indigo-50" /> : <Square className="w-5 h-5 text-gray-400" />}
                                         </div>
                                     )}
 
@@ -432,7 +438,7 @@ export default function MusicPlaylistPage() {
                                                 {isPlaying && currentTrack?.id === track.id ? <Pause className="h-4 w-4 fill-current" /> : <Play className="h-4 w-4 fill-current ml-0.5" />}
                                             </button>
                                             <button onClick={(e) => { e.stopPropagation(); handleDelete([track.id]); }} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
-                                                <Trash2 className="w-5 h-5"/>
+                                                <Trash2 className="w-5 h-5" />
                                             </button>
                                             <ChevronDown className={`h-5 w-5 text-gray-400 transition-transform ${expandedTrackId === track.id ? 'rotate-180' : ''}`} />
                                         </div>
@@ -443,7 +449,7 @@ export default function MusicPlaylistPage() {
                                 {!isSelectionMode && expandedTrackId === track.id && (
                                     <div className="border-t border-gray-100 bg-gray-50/50 p-5 animate-in slide-in-from-top-2 duration-200 rounded-b-lg mb-3 -mt-2">
                                         {detailLoadingId === String(track.id) ? (
-                                            <div className="flex justify-center py-4"><Loader2 className="w-6 h-6 animate-spin text-indigo-400"/></div>
+                                            <div className="flex justify-center py-4"><Loader2 className="w-6 h-6 animate-spin text-indigo-400" /></div>
                                         ) : !trackDetail ? (
                                             <div className="text-center text-red-500 text-sm">정보를 불러오지 못했습니다.</div>
                                         ) : (
@@ -451,6 +457,21 @@ export default function MusicPlaylistPage() {
                                                 {/* 플레이어 (기존 유지) */}
                                                 {(currentTrack?.id === track.id || !currentTrack) && (
                                                     <div className="p-4 bg-gray-100 rounded-lg border">
+                                                        <audio
+                                                            ref={audioRef}
+                                                            src={trackDetail.track_url}
+                                                            preload="metadata"
+                                                            onLoadedMetadata={() => {
+                                                                if (audioRef.current) {
+                                                                    setDuration(audioRef.current.duration);
+                                                                }
+                                                            }}
+                                                            onTimeUpdate={() => {
+                                                                if (audioRef.current) {
+                                                                    setCurrentTime(audioRef.current.currentTime);
+                                                                }
+                                                            }}
+                                                        />
                                                         <div className="flex items-center gap-4">
                                                             <span className="text-xs font-mono text-gray-600">{formatTime(currentTime)}</span>
                                                             <input type="range" min="0" max={duration || 0} value={currentTime} onChange={(e) => { const t = Number(e.target.value); setCurrentTime(t); if (audioRef.current) audioRef.current.currentTime = t; }} className="flex-1 h-1.5 bg-gray-300 rounded-full appearance-none cursor-pointer accent-indigo-600" />
@@ -467,7 +488,7 @@ export default function MusicPlaylistPage() {
                                                         </div>
                                                     </div>
                                                 )}
-                                                
+
                                                 {/* 💡 (1) 접수 내용 (AI 상담) 복구 */}
                                                 {trackDetail.intake_data && <PatientIntakeView intake={trackDetail.intake_data} />}
 
@@ -512,10 +533,10 @@ const PatientIntakeView: React.FC<{ intake: SimpleIntakeData }> = ({ intake }) =
     return (
         <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
             <h4 className="font-bold text-gray-800 flex items-center mb-4">
-                <Brain className="w-5 h-5 mr-2 text-indigo-500"/>
+                <Brain className="w-5 h-5 mr-2 text-indigo-500" />
                 환자 자가 진단 (AI 상담)
             </h4>
-            
+
             <div className="mb-6">
                 <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">상담 목표</span>
                 <div className="mt-1.5 p-3 bg-indigo-50 rounded-lg text-sm text-indigo-900 font-medium">
@@ -564,15 +585,14 @@ const PatientIntakeView: React.FC<{ intake: SimpleIntakeData }> = ({ intake }) =
 const ChatHistoryView: React.FC<{ chatHistory: ChatMessage[] }> = ({ chatHistory }) => {
     return (
         <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-            <h4 className="font-bold text-gray-800 flex items-center mb-4"><MessageSquare className="w-5 h-5 mr-2 text-blue-500"/>상담 대화 기록</h4>
+            <h4 className="font-bold text-gray-800 flex items-center mb-4"><MessageSquare className="w-5 h-5 mr-2 text-blue-500" />상담 대화 기록</h4>
             <div className="space-y-3 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
                 {chatHistory.map(msg => (
                     <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed ${
-                            msg.role === 'user' 
-                            ? 'bg-indigo-600 text-white rounded-tr-none shadow-md' 
-                            : 'bg-gray-100 text-gray-800 rounded-tl-none'
-                        }`}>
+                        <div className={`max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed ${msg.role === 'user'
+                                ? 'bg-indigo-600 text-white rounded-tr-none shadow-md'
+                                : 'bg-gray-100 text-gray-800 rounded-tl-none'
+                            }`}>
                             {msg.content}
                         </div>
                     </div>
