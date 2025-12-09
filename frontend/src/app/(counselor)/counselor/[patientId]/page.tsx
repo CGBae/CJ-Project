@@ -184,6 +184,19 @@ function getApiUrl() {
 
 const API_URL = getApiUrl();
 
+function resolveAudioUrl(path?: string) {
+    if (!path) return '';
+    if (path.startsWith('http')) return path;
+
+    const base = process.env.NEXT_PUBLIC_API_URL;
+    if (!base) {
+        console.error('NEXT_PUBLIC_API_URL is not defined');
+        return '';
+    }
+
+    return `${base}${path}`;
+}
+
 export default function PatientDetailPage() {
     const router = useRouter();
     const params = useParams();
@@ -269,7 +282,7 @@ export default function PatientDetailPage() {
                 const musicData: MusicTrackDetail[] = await musicRes.json();
                 setMusic(musicData.map(t => ({
                     ...t,
-                    audioUrl: t.audioUrl || t.track_url || '',
+                    audioUrl: resolveAudioUrl(t.track_url || t.audioUrl),
                 })));
 
 
@@ -311,22 +324,20 @@ export default function PatientDetailPage() {
             return;
         }
 
+        const src = resolveAudioUrl(track.track_url || track.audioUrl);
+        if (!src) return;
+
         audio.pause();
-
-        // 🔹 절대 경로 처리
-        const src = track.audioUrl.startsWith('http')
-            ? track.audioUrl // 이미 절대경로라면 그대로
-            : `${API_URL}${track.audioUrl}`; // 상대경로라면 백엔드 절대경로 붙임
-
         audio.src = src;
         setCurrentTrackId(track.id);
 
         audio.play().catch(err => {
-            console.error("재생 실패:", err);
+            console.error('재생 실패:', err);
             setCurrentTrackId(null);
-            setError("오디오 재생 실패: " + (err instanceof Error ? err.message : ""));
+            setError("오디오 재생 실패");
         });
     };
+
 
     const handleToggleDetails = async (trackId: number | string) => {
         if (expandedTrackId === trackId) {
