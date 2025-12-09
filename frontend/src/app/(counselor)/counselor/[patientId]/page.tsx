@@ -301,28 +301,32 @@ export default function PatientDetailPage() {
 
     // 💡 9. [수정] handlePlay (async/await 적용)
     const handlePlay = (e: React.MouseEvent, track: MusicTrackDetail) => {
-    e.stopPropagation();
-    const audio = audioRef.current;
-    if (!audio) return;
+        e.stopPropagation();
+        const audio = audioRef.current;
+        if (!audio) return;
 
-    if (currentTrackId === track.id) {
+        if (currentTrackId === track.id) {
+            audio.pause();
+            setCurrentTrackId(null);
+            return;
+        }
+
         audio.pause();
-        setCurrentTrackId(null);
-        return;
-    }
 
-    audio.pause();
+        // 🔹 절대 경로 처리
+        const src = track.audioUrl.startsWith('http')
+            ? track.audioUrl // 이미 절대경로라면 그대로
+            : `${API_URL}${track.audioUrl}`; // 상대경로라면 백엔드 절대경로 붙임
 
-    // 🔹 URL 절대 경로 확인
-    audio.src = `${process.env.NEXT_PUBLIC_API_URL}${track.audioUrl}`;
-    setCurrentTrackId(track.id);
+        audio.src = src;
+        setCurrentTrackId(track.id);
 
-    audio.play().catch(err => {
-        console.error("재생 실패:", err);
-        setCurrentTrackId(null);
-        setError("오디오 재생 실패: " + (err instanceof Error ? err.message : ""));
-    });
-};
+        audio.play().catch(err => {
+            console.error("재생 실패:", err);
+            setCurrentTrackId(null);
+            setError("오디오 재생 실패: " + (err instanceof Error ? err.message : ""));
+        });
+    };
 
     const handleToggleDetails = async (trackId: number | string) => {
         if (expandedTrackId === trackId) {
