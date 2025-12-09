@@ -300,33 +300,29 @@ export default function PatientDetailPage() {
     }, [patientId, isAuthed, router]);
 
     // 💡 9. [수정] handlePlay (async/await 적용)
-    const handlePlay = async (e: React.MouseEvent, track: MusicTrackDetail) => {
-        e.stopPropagation(); // 👈 [추가] 상세정보 펼치기 방지
-        const audio = audioRef.current;
-        if (!audio) return;
-        if (currentTrackId === track.id) {
-            audio.pause();
-            setCurrentTrackId(null);
-            return;
-        }
-        try {
-            audio.pause();
-            audio.src = track.audioUrl;
-            setCurrentTrackId(track.id);
+    const handlePlay = (e: React.MouseEvent, track: MusicTrackDetail) => {
+    e.stopPropagation();
+    const audio = audioRef.current;
+    if (!audio) return;
 
-            await new Promise<void>((resolve, reject) => {
-                audio.oncanplaythrough = () => resolve();
-                audio.onerror = (err) => reject(new Error("오디오 로드 실패: " + String(err)));
-                audio.load();
-            });
+    if (currentTrackId === track.id) {
+        audio.pause();
+        setCurrentTrackId(null);
+        return;
+    }
 
-            await audio.play();
-        } catch (error: unknown) {
-            console.error("Audio playback failed", error);
-            setError(error instanceof Error ? error.message : `음악 재생/로드 실패: ${track.title}`);
-            setCurrentTrackId(null);
-        }
-    };
+    audio.pause();
+
+    // 🔹 URL 절대 경로 확인
+    audio.src = `${process.env.NEXT_PUBLIC_API_URL}${track.audioUrl}`;
+    setCurrentTrackId(track.id);
+
+    audio.play().catch(err => {
+        console.error("재생 실패:", err);
+        setCurrentTrackId(null);
+        setError("오디오 재생 실패: " + (err instanceof Error ? err.message : ""));
+    });
+};
 
     const handleToggleDetails = async (trackId: number | string) => {
         if (expandedTrackId === trackId) {
