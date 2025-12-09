@@ -96,16 +96,49 @@ async def compose_music(
     # --- (이하 로직은 변경 없음) ---
     
     prompt_data = session.prompt if isinstance(session.prompt, dict) else {}
-    prompt_text = prompt_data.get("music_prompt") or prompt_data.get("text") or ""
+    music_prompt: str = (
+        prompt_data.get("music_prompt")
+        or prompt_data.get("text")
+        or ""
+    )
+    lyrics_text: str = prompt_data.get("lyrics_text") or ""
+
+    # 요청 길이(ms)를 초 단위로
+    duration_sec = int(req.music_length_ms / 1000)
+
+    # 2-1) ElevenLabs에 넘길 최종 프롬프트 구성
+    #  - 음악 스타일/무드 설명 + 가사 전문 + 제약 조건을 한 문자열로 합침
+    full_prompt_text = f"""
+{music_prompt}
+
+---
+
+You are generating a therapeutic music track based on the counseling dialogue.
+Reflect the emotional tone and story implied in the prompt above.
+
+Use the following Korean lyrics EXACTLY as written.
+Do NOT change, add, or remove any words.
+Just sing them naturally over the music:
+
+{lyrics_text or "[no lyrics provided]"}
+
+---
+
+Constraints:
+- Approximate duration: {duration_sec} seconds.
+- Follow the requested mood, tempo, and style.
+- Do NOT invent new lyrics. If lyrics are empty, generate instrumental only.
+"""
     
     # 2) Track 레코드 생성
     new_track = Track(
         session_id=req.session_id,
+        created_by=current_user.id,  # 🔥 리스트 필터링용으로 꼭 넣어주기
         status="QUEUED",
         provider="ElevenLabs",
-        prompt=prompt_text,
-        duration_sec=int(req.music_length_ms / 1000),
-        quality=req.extra.get("preset") if req.extra else None,
+        prompt=full_prompt_text,     # 🔥 여기: 가사까지 포함된 최종 프롬프트
+        duration_sec=duration_sec,
+        quality=(req.extra or {}).get("preset"),
     )
     db.add(new_track)
     await db.flush()  # new_track.id 확보
@@ -116,10 +149,11 @@ async def compose_music(
     payload = {
         "task_id": new_track.id,
         "session_id": req.session_id,
-        "prompt": prompt_text,
+        "prompt": full_prompt_text,
         "music_length_ms": req.music_length_ms,
         "force_instrumental": req.force_instrumental,
         "extra": req.extra or {},
+        "lyrics_text": lyrics_text,
     }
     await kafka.producer.send_and_wait(
         os.getenv("KAFKA_TOPIC_REQUESTS", "music.gen.requests"),
