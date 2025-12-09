@@ -278,7 +278,6 @@ export default function PatientDetailPage() {
 
 
                 if (!musicRes.ok) throw new Error(`음악 목록 로딩 실패 (${musicRes.status})`);
-                // 💡 [수정] music state가 이제 MusicTrackDetail[] 타입을 가짐
                 const musicData: MusicTrackDetail[] = await musicRes.json();
                 setMusic(musicData.map(t => ({
                     ...t,
