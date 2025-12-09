@@ -11,10 +11,18 @@ from app.services.auth_service import get_current_user, get_current_user_optiona
 
 router = APIRouter(prefix="/board", tags=["board"])
 
-def map_track_to_schema(track: Track | None) -> BoardTrackInfo | None:
-    if not track: return None
-    display_title = track.title if track.title else f"공유된 음악 #{track.id}"
-    return BoardTrackInfo(id=track.id, title=display_title, audioUrl=track.track_url)
+def map_track_to_schema(track):
+    # track 없거나 track_url 없으면 아예 music info 안 내려보냄
+    if track is None or track.track_url is None:
+        return None
+
+    display_title = track.title or "Untitled"
+
+    return BoardTrackInfo(
+        id=track.id,
+        title=display_title,
+        audioUrl=track.track_url
+    )
 
 # 1. 게시글 목록 조회 (정렬 수정)
 @router.get("/", response_model=List[PostResponse])

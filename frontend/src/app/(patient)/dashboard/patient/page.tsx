@@ -293,15 +293,7 @@ export default function PatientDashboardPage() {
                         </p>
                       </div>
                     </div>
-                    <a
-                      href={track.audioUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="ml-4 text-sm text-indigo-600 hover:underline flex-shrink-0"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      재생하기
-                    </a>
+                    
                   </div>
                 ))}
               </div>
@@ -337,15 +329,7 @@ export default function PatientDashboardPage() {
                         </p>
                       </div>
                     </div>
-                    <a
-                      href={track.audioUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="ml-4 text-sm text-indigo-600 hover:underline flex-shrink-0"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      재생하기
-                    </a>
+                    
                   </div>
                 ))}
               </div>

@@ -47,6 +47,8 @@ export default function CounselorMusicPage() {
     const [currentTrackId, setCurrentTrackId] = useState<number | null>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
 
+    
+
     useEffect(() => {
         if (typeof window !== "undefined" && !audioRef.current) {
             const audio = new Audio();
@@ -77,7 +79,7 @@ export default function CounselorMusicPage() {
 
     const handlePlay = async (trackId: number, sessionId: number) => {
         if (!audioRef.current) return;
-        
+
         if (currentTrackId === trackId) {
             audioRef.current.pause();
             setCurrentTrackId(null);
@@ -85,15 +87,24 @@ export default function CounselorMusicPage() {
         }
 
         try {
-            // 트랙 상세 정보(URL) 가져오기 (이미 music.py에 있는 API 재사용)
             const token = localStorage.getItem('accessToken');
             const res = await fetch(`${API_URL}/music/track/${trackId}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (!res.ok) throw new Error();
+
             const data = await res.json();
-            
-            audioRef.current.src = data.audioUrl;
+
+            let audioSrc = data.audioUrl ?? data.audio_url;
+
+            if (!audioSrc) throw new Error("오디오 URL 없음");
+
+            if (!audioSrc.startsWith("http")) {
+                audioSrc = `${API_URL}${audioSrc}`;
+            }
+
+            audioRef.current.src = audioSrc;
+
             await audioRef.current.play();
             setCurrentTrackId(trackId);
         } catch (e) {
