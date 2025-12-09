@@ -184,6 +184,20 @@ function getApiUrl() {
 
 const API_URL = getApiUrl();
 
+function resolveAudioUrl(path?: string) {
+    if (!path) return '';
+    if (path.startsWith('http')) return path;
+
+    const base = process.env.NEXT_PUBLIC_API_URL;
+    if (!base) {
+        console.error('NEXT_PUBLIC_API_URL is not defined');
+        return '';
+    }
+
+    return `${base}${path}`;
+}
+
+
 export default function PatientDetailPage() {
     const router = useRouter();
     const params = useParams();
@@ -269,7 +283,7 @@ export default function PatientDetailPage() {
                 const musicData: MusicTrackDetail[] = await musicRes.json();
                 setMusic(musicData.map(t => ({
                     ...t,
-                    audioUrl: t.audioUrl || t.track_url || '',
+                    audioUrl: resolveAudioUrl(t.track_url || t.audioUrl),
                 })));
 
 
@@ -300,32 +314,28 @@ export default function PatientDetailPage() {
     }, [patientId, isAuthed, router]);
 
     // 💡 9. [수정] handlePlay (async/await 적용)
-    const handlePlay = async (e: React.MouseEvent, track: MusicTrackDetail) => {
-        e.stopPropagation(); // 👈 [추가] 상세정보 펼치기 방지
+    const handlePlay = (e: React.MouseEvent, track: MusicTrackDetail) => {
+        e.stopPropagation();
         const audio = audioRef.current;
         if (!audio) return;
+
         if (currentTrackId === track.id) {
             audio.pause();
             setCurrentTrackId(null);
             return;
         }
-        try {
-            audio.pause();
-            audio.src = track.audioUrl;
-            setCurrentTrackId(track.id);
 
-            await new Promise<void>((resolve, reject) => {
-                audio.oncanplaythrough = () => resolve();
-                audio.onerror = (err) => reject(new Error("오디오 로드 실패: " + String(err)));
-                audio.load();
-            });
+        const src = resolveAudioUrl(track.track_url || track.audioUrl);
+        if (!src) return;
 
-            await audio.play();
-        } catch (error: unknown) {
-            console.error("Audio playback failed", error);
-            setError(error instanceof Error ? error.message : `음악 재생/로드 실패: ${track.title}`);
+        audio.pause();
+        audio.src = src;
+        setCurrentTrackId(track.id);
+
+        audio.play().catch(err => {
+            console.error('audio play error:', err);
             setCurrentTrackId(null);
-        }
+        });
     };
 
     const handleToggleDetails = async (trackId: number | string) => {
