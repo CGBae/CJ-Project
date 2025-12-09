@@ -75,6 +75,69 @@ async def generate_prompt_from_guideline(
       - === HARD CONSTRAINTS (절대 위반 금지) ===
       - === PATIENT STATE & STORY ===
     """
+    target_duration_sec = 60  # 기본값: 60초
+    try:
+        g = json.loads(guideline_json) if guideline_json.strip() else {}
+        candidate_sec = None
+
+        # 자주 쓸 법한 키들을 폭넓게 지원
+        # 예: { "target_duration_sec": 30 } 또는 { "music_length_ms": 30000 } 등
+        for key in (
+            "target_duration_sec",
+            "length_sec",
+            "duration_sec",
+        ):
+            if isinstance(g.get(key), (int, float)):
+                candidate_sec = float(g[key])
+                break
+
+        if candidate_sec is None:
+            # ms 단위로 들어온 경우
+            for key in (
+                "target_duration_ms",
+                "music_length_ms",
+                "duration_ms",
+            ):
+                if isinstance(g.get(key), (int, float)):
+                    candidate_sec = float(g[key]) / 1000.0
+                    break
+
+        if candidate_sec is not None:
+            # 너무 말도 안 되는 값(5초 미만, 30분 이상)은 방어적으로 무시
+            if 5 <= candidate_sec <= 1800:
+                target_duration_sec = int(candidate_sec)
+    except Exception:
+        # guideline이 비어있거나 JSON이 아니어도 전체 동작엔 영향 없도록 무시
+        pass
+
+    # 2) 목표 길이에 따른 가사 길이 규칙(줄 수 / 줄당 글자 수) 동적 설정
+    if target_duration_sec <= 40:
+        max_lines = 4
+        max_chars_per_line = 15
+    elif target_duration_sec <= 80:
+        max_lines = 6
+        max_chars_per_line = 18
+    elif target_duration_sec <= 150:
+        max_lines = 8
+        max_chars_per_line = 22
+    else:
+        # 150초 이상이면 조금 더 여유
+        max_lines = 10
+        max_chars_per_line = 26
+
+    lyrics_length_guide = f"""
+[가사 길이 규칙]
+
+- 이번 곡의 목표 길이는 약 {target_duration_sec}초이다. (guideline_json 기준)
+- lyrics_text는 이 길이 안에서 충분히 다 부를 수 있을 만큼 작성해야 한다.
+- 구체적인 제약:
+  - 총 줄 수는 최대 {max_lines}줄을 넘지 않는다.
+  - 한 줄은 공백 포함 {max_chars_per_line}자를 넘지 않는다.
+  - 후렴처럼 동일하거나 비슷한 문장을 반복해도 좋다.
+  - 장문의 스토리텔링이나 여러 절(verse, bridge 등)을 만들지 않는다.
+  - 줄 앞뒤에 번호, 따옴표, 괄호 등 불필요한 기호를 붙이지 않는다.
+- 환자가 따라 부르기 쉽도록, 단순하고 반복 가능한 문장 위주로 작성한다.
+"""
     messages = [
         {"role": "system", "content": SYSTEM_BASE},
         {
@@ -101,7 +164,9 @@ async def generate_prompt_from_guideline(
                 f"{guideline_json}\n\n"
                 "※ 중요한 조건:\n"
                 "- 출력은 오직 JSON 객체 한 개만.\n"
-                "- 마크다운, 코드블록, 자연어 설명, 주석 등을 절대 포함하지 마세요."
+                "- 마크다운, 코드블록, 자연어 설명, 주석 등을 절대 포함하지 마세요.\n\n"
+                "또한, lyrics_text는 아래 [가사 길이 규칙]을 반드시 따라야 합니다.\n"
+                f"{lyrics_length_guide}"
             ),
         },
     ]
