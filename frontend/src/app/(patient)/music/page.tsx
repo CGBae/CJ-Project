@@ -124,6 +124,8 @@ export default function MusicPlaylistPage() {
     const [volume, setVolume] = useState(1.0);
     const [isLooping, setIsLooping] = useState(false);
     const metaAudioRef = useRef<HTMLAudioElement | null>(null);
+    const [panelTrack, setPanelTrack] = useState<MusicTrackDetail | null>(null);
+
 
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [selectedTrackIds, setSelectedTrackIds] = useState<Set<number | string>>(new Set());
@@ -309,12 +311,12 @@ export default function MusicPlaylistPage() {
         }
     };
     const normalizeAudioUrl = (url: string) =>
-            url.startsWith('http') ? url : `${API_URL}${url}`;
-    
+        url.startsWith('http') ? url : `${API_URL}${url}`;
+
     const handleToggleDetails = async (trackId: number | string) => {
         if (expandedTrackId === trackId) {
             setExpandedTrackId(null);
-            setTrackDetail(null);
+            setPanelTrack(null);
             return;
         }
 
@@ -327,24 +329,24 @@ export default function MusicPlaylistPage() {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const detailData: MusicTrackDetail = await res.json();
-            
 
-            setTrackDetail(detailData);
+            setPanelTrack(detailData);        // ✅ 여기
             setExpandedTrackId(trackId);
 
-            // ✅ 오직 길이(metadata)만 로드
+            // ✅ 길이만 미리 로드 (재생 ❌)
             if (metaAudioRef.current && detailData.audioUrl) {
-                const fullUrl = normalizeAudioUrl(detailData.audioUrl);
-                metaAudioRef.current.src = fullUrl;
+                metaAudioRef.current.src = normalizeAudioUrl(detailData.audioUrl);
                 metaAudioRef.current.load();
                 metaAudioRef.current.onloadedmetadata = () => {
                     setDuration(metaAudioRef.current!.duration);
                 };
             }
+
         } finally {
             setDetailLoadingId(null);
         }
     };
+
 
 
 
@@ -477,24 +479,38 @@ export default function MusicPlaylistPage() {
                                         ) : (
                                             <div className="space-y-5">
                                                 {/* 플레이어 (기존 유지) */}
-                                                {expandedTrackId === track.id && (
+                                                {panelTrack && panelTrack.id === track.id && (
                                                     <div className="p-4 bg-gray-100 rounded-lg border">
                                                         <div className="flex items-center gap-4">
-                                                            <span className="text-xs font-mono text-gray-600">{formatTime(currentTime)}</span>
-                                                            <input type="range" min="0" max={duration || 0} value={currentTime} onChange={(e) => { const t = Number(e.target.value); setCurrentTime(t); if (audioRef.current) audioRef.current.currentTime = t; }} className="flex-1 h-1.5 bg-gray-300 rounded-full appearance-none cursor-pointer accent-indigo-600" />
-                                                            <span className="text-xs font-mono text-gray-600">{formatTime(duration)}</span>
+                                                            <span className="text-xs font-mono text-gray-600">
+                                                                {formatTime(
+                                                                    currentTrack?.id === panelTrack.id ? currentTime : 0
+                                                                )}
+                                                            </span>
+
+                                                            <input
+                                                                type="range"
+                                                                min="0"
+                                                                max={duration || 0}
+                                                                value={
+                                                                    currentTrack?.id === panelTrack.id ? currentTime : 0
+                                                                }
+                                                                disabled={currentTrack?.id !== panelTrack.id}
+                                                            />
+
+                                                            <span className="text-xs font-mono text-gray-600">
+                                                                {formatTime(duration)}
+                                                            </span>
                                                         </div>
-                                                        <div className="flex items-center justify-center gap-4 mt-3">
-                                                            <button onClick={() => { const v = volume > 0 ? 0 : 1; setVolume(v); if (audioRef.current) audioRef.current.volume = v; }}>
-                                                                {volume === 0 ? <VolumeX className="w-5 h-5 text-gray-500" /> : <Volume1 className="w-5 h-5 text-gray-500" />}
-                                                            </button>
-                                                            <input type="range" min="0" max="1" step="0.1" value={volume} onChange={(e) => { const v = Number(e.target.value); setVolume(v); if (audioRef.current) audioRef.current.volume = v; }} className="w-20 h-1.5 bg-gray-300 rounded-full appearance-none cursor-pointer accent-indigo-600" />
-                                                            <button onClick={() => { const l = !isLooping; setIsLooping(l); if (audioRef.current) audioRef.current.loop = l; }} className={`p-2 rounded-full ${isLooping ? 'bg-indigo-100 text-indigo-600' : 'text-gray-500'}`}>
-                                                                <RefreshCcw className="w-4 h-4" />
-                                                            </button>
-                                                        </div>
+
+                                                        <p className="text-xs text-gray-500 mt-2">
+                                                            {currentTrack?.id === panelTrack.id
+                                                                ? '재생 중'
+                                                                : '재생 안됨'}
+                                                        </p>
                                                     </div>
                                                 )}
+
 
                                                 {/* 💡 (1) 접수 내용 (AI 상담) 복구 */}
                                                 {trackDetail.intake_data && <PatientIntakeView intake={trackDetail.intake_data} />}
