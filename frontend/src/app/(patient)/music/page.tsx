@@ -311,28 +311,58 @@ export default function MusicPlaylistPage() {
     };
 
     const handleToggleDetails = async (trackId: number | string) => {
-        if (expandedTrackId === trackId) {
-            setExpandedTrackId(null); setTrackDetail(null); return;
-        }
-        setDetailLoadingId(trackId);
-        setError(null);
-        const token = localStorage.getItem('accessToken');
-        if (!token) { setDetailLoadingId(null); return; }
+    if (expandedTrackId === trackId) {
+        setExpandedTrackId(null);
+        setTrackDetail(null);
+        return;
+    }
 
-        try {
-            const response = await fetch(`${API_URL}/music/track/${trackId}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (!response.ok) throw new Error();
-            const detailData: MusicTrackDetail = await response.json();
-            setTrackDetail(detailData);
-            setExpandedTrackId(trackId);
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setDetailLoadingId(null);
+    setDetailLoadingId(trackId);
+    setError(null);
+
+    const token = localStorage.getItem('accessToken');
+    if (!token) {
+        setDetailLoadingId(null);
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/music/track/${trackId}`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!response.ok) throw new Error();
+
+        const detailData: MusicTrackDetail = await response.json();
+        setTrackDetail(detailData);
+        setExpandedTrackId(trackId);
+
+        // ✅ ✅ ✅ 핵심 추가 부분
+        const audio = audioRef.current;
+        if (audio && detailData.audioUrl) {
+            if (audio.src !== detailData.audioUrl) {
+                audio.pause();                    // 재생 X
+                audio.src = detailData.audioUrl;  // src만 설정
+                audio.load();                     // ✅ metadata 로드
+                setCurrentTrack({
+                    id: detailData.id,
+                    title: detailData.title,
+                    prompt: detailData.prompt,
+                    audioUrl: detailData.audioUrl,
+                    created_at: detailData.created_at,
+                    is_favorite: detailData.is_favorite,
+                    session_id: detailData.session_id,
+                    initiator_type: detailData.initiator_type,
+                    has_dialog: detailData.has_dialog,
+                });
+            }
         }
-    };
+
+    } catch (err) {
+        console.error(err);
+    } finally {
+        setDetailLoadingId(null);
+    }
+};
 
     if (loading) return (<div className="flex justify-center items-center h-screen"><Loader2 className="h-8 w-8 animate-spin text-indigo-600" /></div>);
     if (error && playlist.length === 0) return (<div className="text-center p-10 text-red-500">{error}</div>);
