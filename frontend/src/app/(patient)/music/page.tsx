@@ -485,7 +485,7 @@ export default function MusicPlaylistPage() {
                                                 {/* 플레이어 (기존 유지) */}
                                                 {panelTrack && panelTrack.id === track.id && (
                                                     <div className="p-4 rounded-xl border border-indigo-100 bg-white shadow-sm">
-                                                        {/* 타임라인 */}
+                                                        {/* ⏱ 타임라인 */}
                                                         <div className="flex items-center gap-3">
                                                             <span className="text-xs font-mono text-indigo-600 w-10 text-right">
                                                                 {formatTime(
@@ -497,15 +497,16 @@ export default function MusicPlaylistPage() {
                                                                 type="range"
                                                                 min="0"
                                                                 max={duration || 0}
-                                                                value={
-                                                                    currentTrack?.id === panelTrack.id ? currentTime : 0
-                                                                }
+                                                                value={currentTrack?.id === panelTrack.id ? currentTime : 0}
                                                                 disabled={currentTrack?.id !== panelTrack.id}
-                                                                className="
-                                                                            flex-1 h-1.5 rounded-full
-                                                                            bg-indigo-100 accent-indigo-600
-                                                                            disabled:opacity-40
-                                                                        "
+                                                                onChange={(e) => {
+                                                                    const t = Number(e.target.value);
+                                                                    setCurrentTime(t);
+                                                                    if (audioRef.current) {
+                                                                        audioRef.current.currentTime = t;
+                                                                    }
+                                                                }}
+                                                                className="flex-1 h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-indigo-600"
                                                             />
 
                                                             <span className="text-xs font-mono text-gray-500 w-10">
@@ -513,7 +514,7 @@ export default function MusicPlaylistPage() {
                                                             </span>
                                                         </div>
 
-                                                        {/* 상태 표시 */}
+                                                        {/* ▶ 상태 표시 */}
                                                         <p className="text-xs font-medium mt-3 text-center">
                                                             {currentTrack?.id === panelTrack.id ? (
                                                                 <span className="text-indigo-600">● 재생 중</span>
@@ -521,8 +522,58 @@ export default function MusicPlaylistPage() {
                                                                 <span className="text-gray-400">재생 안됨</span>
                                                             )}
                                                         </p>
+
+                                                        {/* 🔊 볼륨 */}
+                                                        <div className="flex items-center justify-center gap-3 mt-3">
+                                                            <button
+                                                                onClick={() => {
+                                                                    const v = volume === 0 ? 1 : 0;
+                                                                    setVolume(v);
+                                                                    if (audioRef.current) audioRef.current.volume = v;
+                                                                }}
+                                                                className="text-gray-500 hover:text-indigo-600 transition-colors"
+                                                            >
+                                                                {volume === 0 ? (
+                                                                    <VolumeX className="w-4 h-4" />
+                                                                ) : (
+                                                                    <Volume1 className="w-4 h-4" />
+                                                                )}
+                                                            </button>
+
+                                                            <input
+                                                                type="range"
+                                                                min="0"
+                                                                max="1"
+                                                                step="0.05"
+                                                                value={volume}
+                                                                onChange={(e) => {
+                                                                    const v = Number(e.target.value);
+                                                                    setVolume(v);
+                                                                    if (audioRef.current) audioRef.current.volume = v;
+                                                                }}
+                                                                className="w-24 h-1.5 bg-gray-200 rounded-full appearance-none cursor-pointer accent-indigo-600"
+                                                            />
+                                                        </div>
+
+                                                        {/* 🔁 반복 */}
+                                                        <div className="flex justify-center mt-2">
+                                                            <button
+                                                                onClick={() => {
+                                                                    const next = !isLooping;
+                                                                    setIsLooping(next);
+                                                                    if (audioRef.current) audioRef.current.loop = next;
+                                                                }}
+                                                                className={`p-2 rounded-full transition-colors ${isLooping
+                                                                        ? 'bg-indigo-100 text-indigo-600'
+                                                                        : 'text-gray-400 hover:text-indigo-600'
+                                                                    }`}
+                                                            >
+                                                                <RefreshCcw className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 )}
+
 
 
 
