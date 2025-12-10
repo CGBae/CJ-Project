@@ -484,8 +484,10 @@ export default function MusicPlaylistPage() {
                                             <div className="space-y-6">
                                                 {/* 플레이어 (디자인만 수정) */}
                                                 {panelTrack && panelTrack.id === track.id && (
-                                                    <div className="rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white p-4 shadow-sm">
-                                                        <div className="flex items-center gap-4">
+                                                    <div className="rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white p-4 shadow-sm space-y-3">
+
+                                                        {/* 타임라인 */}
+                                                        <div className="flex items-center gap-3">
                                                             <span className="text-xs font-mono text-indigo-700 w-10 text-right">
                                                                 {formatTime(
                                                                     currentTrack?.id === panelTrack.id ? currentTime : 0
@@ -508,7 +510,39 @@ export default function MusicPlaylistPage() {
                                                             </span>
                                                         </div>
 
-                                                        <div className="mt-2 text-center text-xs font-medium">
+                                                        {/* 컨트롤 영역 */}
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="flex items-center gap-3">
+                                                                {/* 🔊 볼륨 */}
+                                                                <Volume1 className="w-4 h-4 text-gray-500" />
+                                                                <input
+                                                                    type="range"
+                                                                    min="0"
+                                                                    max="1"
+                                                                    step="0.01"
+                                                                    value={volume}
+                                                                    onChange={(e) => setVolume(Number(e.target.value))}
+                                                                    className="w-24 accent-indigo-600"
+                                                                />
+                                                            </div>
+
+                                                            <div className="flex items-center gap-2">
+                                                                {/* 🔁 반복 */}
+                                                                <button
+                                                                    onClick={() => setIsLooping(!isLooping)}
+                                                                    className={`p-2 rounded-full transition
+                                                                        ${isLooping
+                                                                            ? 'bg-indigo-600 text-white'
+                                                                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                                                        }`}
+                                                                >
+                                                                    <RefreshCcw className="w-4 h-4" />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* 상태 텍스트 */}
+                                                        <div className="text-center text-xs font-medium">
                                                             {currentTrack?.id === panelTrack.id ? (
                                                                 <span className="text-indigo-600">● 재생 중</span>
                                                             ) : (
@@ -516,6 +550,7 @@ export default function MusicPlaylistPage() {
                                                             )}
                                                         </div>
                                                     </div>
+
                                                 )}
 
                                                 {/* (1) 접수 내용 */}
