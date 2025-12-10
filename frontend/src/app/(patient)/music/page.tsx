@@ -3,9 +3,9 @@
 import React, { useState, useEffect, useRef, Fragment } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-    Play, Pause, Music, Trash2, ArrowLeft, Volume2, Loader2, FileText, 
+    Play, Pause, Music, Trash2, ArrowLeft, Volume2, Loader2, FileText,
     MessageSquare, ChevronDown, User, AlertTriangle, Heart,
-    Volume1, VolumeX, RefreshCcw, Edit2, Check, X, CheckSquare, Square, 
+    Volume1, VolumeX, RefreshCcw, Edit2, Check, X, CheckSquare, Square,
     Brain, Share2 // 💡 아이콘 추가
 } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext';
@@ -107,26 +107,32 @@ export default function MusicPlaylistPage() {
     const [playlist, setPlaylist] = useState<MusicTrackInfo[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [currentTrackId, setCurrentTrackId] = useState<number | string | null>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
+
 
     const [detailLoadingId, setDetailLoadingId] = useState<number | string | null>(null);
     const [expandedTrackId, setExpandedTrackId] = useState<number | string | null>(null);
     const [trackDetail, setTrackDetail] = useState<MusicTrackDetail | null>(null);
-    
+
     const [editingTrackId, setEditingTrackId] = useState<number | null>(null);
     const [editTitle, setEditTitle] = useState('');
     const [currentTrack, setCurrentTrack] = useState<MusicTrackInfo | null>(null);
-    
+
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
     const [volume, setVolume] = useState(1.0);
     const [isLooping, setIsLooping] = useState(false);
+    const metaAudioRef = useRef<HTMLAudioElement | null>(null);
 
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [selectedTrackIds, setSelectedTrackIds] = useState<Set<number | string>>(new Set());
-
+    useEffect(() => {
+        if (!metaAudioRef.current) {
+            metaAudioRef.current = new Audio();
+            metaAudioRef.current.preload = 'metadata';
+        }
+    }, []);
     useEffect(() => {
         if (typeof window !== "undefined" && !audioRef.current) {
             const audio = new Audio();
@@ -208,8 +214,8 @@ export default function MusicPlaylistPage() {
         if (!token) return;
 
         try {
-            await Promise.all(idsToDelete.map(id => 
-                fetch(`${API_URL}/music/track/${id}`, { 
+            await Promise.all(idsToDelete.map(id =>
+                fetch(`${API_URL}/music/track/${id}`, {
                     method: 'DELETE',
                     headers: { 'Authorization': `Bearer ${token}` }
                 })
@@ -260,28 +266,22 @@ export default function MusicPlaylistPage() {
         if (!audio) return;
 
         if (currentTrack?.id === track.id) {
-            if (isPlaying) audio.pause();
-            else await audio.play().catch(console.error);
+            if (isPlaying) {
+                audio.pause();
+            } else {
+                audio.play();
+            }
             return;
         }
 
         try {
-            if (expandedTrackId !== track.id) {
-                await handleToggleDetails(track.id);
-            }
             audio.pause();
             audio.src = track.audioUrl;
             setCurrentTrack(track);
             setCurrentTime(0);
-            
-            await new Promise<void>((resolve, reject) => {
-                audio.oncanplaythrough = () => resolve();
-                audio.onerror = () => reject(new Error("로드 실패"));
-                audio.load();
-            });
             await audio.play();
-        } catch (error) {
-            console.error(error);
+        } catch (err) {
+            console.error(err);
             setCurrentTrack(null);
         }
     };
@@ -311,38 +311,38 @@ export default function MusicPlaylistPage() {
     };
 
     const handleToggleDetails = async (trackId: number | string) => {
-    if (expandedTrackId === trackId) {
-        setExpandedTrackId(null);
-        setTrackDetail(null);
-        return;
-    }
+        if (expandedTrackId === trackId) {
+            setExpandedTrackId(null);
+            setTrackDetail(null);
+            return;
+        }
 
-    setDetailLoadingId(trackId);
-    setError(null);
+        setDetailLoadingId(trackId);
+        const token = localStorage.getItem('accessToken');
+        if (!token) return;
 
-    const token = localStorage.getItem('accessToken');
-    if (!token) {
-        setDetailLoadingId(null);
-        return;
-    }
+        try {
+            const res = await fetch(`${API_URL}/music/track/${trackId}`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            const detailData: MusicTrackDetail = await res.json();
 
-    try {
-        const response = await fetch(`${API_URL}/music/track/${trackId}`, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
-        if (!response.ok) throw new Error();
+            setTrackDetail(detailData);
+            setExpandedTrackId(trackId);
 
-        const detailData: MusicTrackDetail = await response.json();
-        setTrackDetail(detailData);
-        setExpandedTrackId(trackId);
+            if (metaAudioRef.current && detailData.audioUrl) {
+                metaAudioRef.current.src = detailData.audioUrl;
 
-        // ✅ ✅ ✅ 핵심 추가 부분
-        const audio = audioRef.current;
-        if (audio && detailData.audioUrl) {
-            if (audio.src !== detailData.audioUrl) {
-                audio.pause();                    // 재생 X
-                audio.src = detailData.audioUrl;  // src만 설정
-                audio.load();                     // ✅ metadata 로드
+                metaAudioRef.current.onloadedmetadata = null;
+                metaAudioRef.current.src = detailData.audioUrl;
+                metaAudioRef.current.load();
+
+                metaAudioRef.current.onloadedmetadata = () => {
+                    setDuration(metaAudioRef.current!.duration);
+                };
+
+
+                // 🔥 duration만 로드하지 말고 currentTrack도 설정해야 함
                 setCurrentTrack({
                     id: detailData.id,
                     title: detailData.title,
@@ -355,14 +355,12 @@ export default function MusicPlaylistPage() {
                     has_dialog: detailData.has_dialog,
                 });
             }
+        } finally {
+            setDetailLoadingId(null);
         }
+    };
 
-    } catch (err) {
-        console.error(err);
-    } finally {
-        setDetailLoadingId(null);
-    }
-};
+
 
     if (loading) return (<div className="flex justify-center items-center h-screen"><Loader2 className="h-8 w-8 animate-spin text-indigo-600" /></div>);
     if (error && playlist.length === 0) return (<div className="text-center p-10 text-red-500">{error}</div>);
@@ -387,7 +385,7 @@ export default function MusicPlaylistPage() {
                                 {selectedTrackIds.size === playlist.length ? '선택 해제' : '전체 선택'}
                             </button>
                             <button onClick={() => handleDelete(Array.from(selectedTrackIds))} disabled={selectedTrackIds.size === 0} className="text-xs font-medium text-white bg-red-500 hover:bg-red-600 px-3 py-1.5 rounded-md disabled:bg-gray-300 flex items-center gap-1">
-                                <Trash2 className="w-3 h-3"/> 삭제 ({selectedTrackIds.size})
+                                <Trash2 className="w-3 h-3" /> 삭제 ({selectedTrackIds.size})
                             </button>
                             <button onClick={() => { setIsSelectionMode(false); setSelectedTrackIds(new Set()); }} className="text-xs font-medium text-gray-600 hover:bg-gray-200 px-3 py-1.5 rounded-md">
                                 취소
@@ -420,13 +418,15 @@ export default function MusicPlaylistPage() {
                                 >
                                     {isSelectionMode && (
                                         <div className="absolute left-4 top-1/2 -translate-y-1/2 p-2 cursor-pointer z-10" onClick={(e) => { e.stopPropagation(); toggleSelect(track.id); }}>
-                                            {selectedTrackIds.has(track.id) ? <CheckSquare className="w-5 h-5 text-indigo-600 fill-indigo-50"/> : <Square className="w-5 h-5 text-gray-400"/>}
+                                            {selectedTrackIds.has(track.id) ? <CheckSquare className="w-5 h-5 text-indigo-600 fill-indigo-50" /> : <Square className="w-5 h-5 text-gray-400" />}
                                         </div>
                                     )}
 
                                     <div className="flex items-center gap-4 min-w-0">
-                                        <div className={`flex-shrink-0 p-3 rounded-full ${currentTrackId === track.id ? 'bg-indigo-600' : 'bg-indigo-100'}`}>
-                                            <Music className={`w-5 h-5 ${currentTrackId === track.id ? 'text-white' : 'text-indigo-600'}`} />
+                                        <div className={`flex-shrink-0 p-3 rounded-full ${currentTrack?.id === track.id ? 'bg-indigo-600' : 'bg-indigo-100'
+                                            }`}>
+                                            <Music className={`w-5 h-5 ${currentTrack?.id === track.id ? 'text-white' : 'text-indigo-600'
+                                                }`} />
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             {editingTrackId === track.id ? (
@@ -458,11 +458,21 @@ export default function MusicPlaylistPage() {
                                             <button onClick={(e) => handleToggleFavorite(e, track.id)} className={`p-2 rounded-full ${track.is_favorite ? 'text-pink-500 bg-pink-50' : 'text-gray-400 hover:bg-gray-100'}`}>
                                                 <Heart className={`h-5 w-5 ${track.is_favorite ? 'fill-current' : ''}`} />
                                             </button>
-                                            <button onClick={(e) => handlePlay(e, track)} className={`p-2.5 rounded-full ${isPlaying && currentTrack?.id === track.id ? 'bg-red-500 text-white' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
-                                                {isPlaying && currentTrack?.id === track.id ? <Pause className="h-4 w-4 fill-current" /> : <Play className="h-4 w-4 fill-current ml-0.5" />}
+                                            <button
+                                                onClick={(e) => handlePlay(e, track)}
+                                                className={`p-2.5 rounded-full ${isPlaying && currentTrack?.id === track.id
+                                                    ? 'bg-red-500 text-white'
+                                                    : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                                                    }`}
+                                            >
+                                                {isPlaying && currentTrack?.id === track.id ? (
+                                                    <Pause className="h-4 w-4" />
+                                                ) : (
+                                                    <Play className="h-4 w-4 ml-0.5" />
+                                                )}
                                             </button>
                                             <button onClick={(e) => { e.stopPropagation(); handleDelete([track.id]); }} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
-                                                <Trash2 className="w-5 h-5"/>
+                                                <Trash2 className="w-5 h-5" />
                                             </button>
                                             <ChevronDown className={`h-5 w-5 text-gray-400 transition-transform ${expandedTrackId === track.id ? 'rotate-180' : ''}`} />
                                         </div>
@@ -473,7 +483,7 @@ export default function MusicPlaylistPage() {
                                 {!isSelectionMode && expandedTrackId === track.id && (
                                     <div className="border-t border-gray-100 bg-gray-50/50 p-5 animate-in slide-in-from-top-2 duration-200 rounded-b-lg mb-3 -mt-2">
                                         {detailLoadingId === String(track.id) ? (
-                                            <div className="flex justify-center py-4"><Loader2 className="w-6 h-6 animate-spin text-indigo-400"/></div>
+                                            <div className="flex justify-center py-4"><Loader2 className="w-6 h-6 animate-spin text-indigo-400" /></div>
                                         ) : !trackDetail ? (
                                             <div className="text-center text-red-500 text-sm">정보를 불러오지 못했습니다.</div>
                                         ) : (
@@ -497,7 +507,7 @@ export default function MusicPlaylistPage() {
                                                         </div>
                                                     </div>
                                                 )}
-                                                
+
                                                 {/* 💡 (1) 접수 내용 (AI 상담) 복구 */}
                                                 {trackDetail.intake_data && <PatientIntakeView intake={trackDetail.intake_data} />}
 
@@ -542,10 +552,10 @@ const PatientIntakeView: React.FC<{ intake: SimpleIntakeData }> = ({ intake }) =
     return (
         <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
             <h4 className="font-bold text-gray-800 flex items-center mb-4">
-                <Brain className="w-5 h-5 mr-2 text-indigo-500"/>
+                <Brain className="w-5 h-5 mr-2 text-indigo-500" />
                 환자 자가 진단 (AI 상담)
             </h4>
-            
+
             <div className="mb-6">
                 <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">상담 목표</span>
                 <div className="mt-1.5 p-3 bg-indigo-50 rounded-lg text-sm text-indigo-900 font-medium">
@@ -594,15 +604,14 @@ const PatientIntakeView: React.FC<{ intake: SimpleIntakeData }> = ({ intake }) =
 const ChatHistoryView: React.FC<{ chatHistory: ChatMessage[] }> = ({ chatHistory }) => {
     return (
         <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-            <h4 className="font-bold text-gray-800 flex items-center mb-4"><MessageSquare className="w-5 h-5 mr-2 text-blue-500"/>상담 대화 기록</h4>
+            <h4 className="font-bold text-gray-800 flex items-center mb-4"><MessageSquare className="w-5 h-5 mr-2 text-blue-500" />상담 대화 기록</h4>
             <div className="space-y-3 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
                 {chatHistory.map(msg => (
                     <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed ${
-                            msg.role === 'user' 
-                            ? 'bg-indigo-600 text-white rounded-tr-none shadow-md' 
+                        <div className={`max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed ${msg.role === 'user'
+                            ? 'bg-indigo-600 text-white rounded-tr-none shadow-md'
                             : 'bg-gray-100 text-gray-800 rounded-tl-none'
-                        }`}>
+                            }`}>
                             {msg.content}
                         </div>
                     </div>
