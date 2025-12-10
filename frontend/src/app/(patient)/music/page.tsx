@@ -473,9 +473,13 @@ export default function MusicPlaylistPage() {
                                 {!isSelectionMode && expandedTrackId === track.id && (
                                     <div className="border-t border-gray-100 bg-gray-50/50 p-5 animate-in slide-in-from-top-2 duration-200 rounded-b-lg mb-3 -mt-2">
                                         {detailLoadingId === String(track.id) ? (
-                                            <div className="flex justify-center py-4"><Loader2 className="w-6 h-6 animate-spin text-indigo-400" /></div>
-                                        ) : !trackDetail ? (
-                                            <div className="text-center text-red-500 text-sm">정보를 불러오지 못했습니다.</div>
+                                            <div className="flex justify-center py-4">
+                                                <Loader2 className="w-6 h-6 animate-spin text-indigo-400" />
+                                            </div>
+                                        ) : !panelTrack ? (
+                                            <div className="text-center text-red-500 text-sm">
+                                                정보를 불러오지 못했습니다.
+                                            </div>
                                         ) : (
                                             <div className="space-y-5">
                                                 {/* 플레이어 (기존 유지) */}
@@ -513,18 +517,18 @@ export default function MusicPlaylistPage() {
 
 
                                                 {/* 💡 (1) 접수 내용 (AI 상담) 복구 */}
-                                                {trackDetail.intake_data && <PatientIntakeView intake={trackDetail.intake_data} />}
+                                                {panelTrack.intake_data && <PatientIntakeView intake={panelTrack.intake_data} />}
 
                                                 {/* (2) 가사 */}
-                                                {trackDetail.lyrics && (
+                                                {panelTrack.lyrics && (
                                                     <div>
                                                         <h4 className="font-semibold text-gray-800 flex items-center"><FileText className="w-4 h-4 mr-2 text-indigo-600" />가사</h4>
-                                                        <pre className="mt-2 p-3 bg-gray-50 rounded-md text-sm text-gray-600 whitespace-pre-wrap font-sans border">{trackDetail.lyrics}</pre>
+                                                        <pre className="mt-2 p-3 bg-gray-50 rounded-md text-sm text-gray-600 whitespace-pre-wrap font-sans border">{panelTrack.lyrics}</pre>
                                                     </div>
                                                 )}
 
                                                 {/* 💡 (3) 채팅 요약 복구 */}
-                                                {trackDetail.chat_history && trackDetail.chat_history.length > 0 && <ChatHistoryView chatHistory={trackDetail.chat_history} />}
+                                                {panelTrack.chat_history && panelTrack.chat_history.length > 0 && <ChatHistoryView chatHistory={panelTrack.chat_history} />}
                                             </div>
                                         )}
                                     </div>
