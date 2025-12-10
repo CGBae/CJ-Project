@@ -194,9 +194,9 @@ async def update_track_title(
     
     # 응답 생성 (헬퍼 로직 재사용 필요하지만 간단히 구성)
     return MusicTrackInfo(
-        id=track.id, title=track.title, prompt="", track_url=track.track_url,
+        id=track.id, title=track.title, prompt="", track_url=track.track_url or "",
         session_id=track.session_id, initiator_type=track.session.initiator_type, has_dialog=False,
-        created_at=track.created_at, is_favorite=track.is_favorite, audioUrl=track.track_url
+        created_at=track.created_at, is_favorite=track.is_favorite, audioUrl=track.track_url or ""
     )
 # --- (/my API는 변경 없음, track_url 필드명 수정된 버전) ---
 @router.get("/my", response_model=List[MusicTrackInfo])
@@ -523,8 +523,8 @@ async def get_track_details(
         id=track.id,
         title=final_title,
         prompt=prompt_text,
-        track_url=track.track_url,
-        audioUrl=track.track_url,
+        track_url=track.track_url or "",
+    audioUrl=track.track_url or "",
         session_id=session.id,
         initiator_type=session.initiator_type,
         has_dialog=bool(intake_data),
