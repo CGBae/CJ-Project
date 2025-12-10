@@ -325,29 +325,31 @@ export default function MusicPlaylistPage() {
             const res = await fetch(`${API_URL}/music/track/${trackId}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
+
             const detailData: MusicTrackDetail = await res.json();
 
             setTrackDetail(detailData);
             setExpandedTrackId(trackId);
 
+            // ✅ 핵심: audioUrl 보정
             if (metaAudioRef.current && detailData.audioUrl) {
-                metaAudioRef.current.src = detailData.audioUrl;
+                const audioUrl = detailData.audioUrl.startsWith('http')
+                    ? detailData.audioUrl
+                    : `${API_URL}${detailData.audioUrl}`;
 
-                metaAudioRef.current.onloadedmetadata = null;
-                metaAudioRef.current.src = detailData.audioUrl;
+                metaAudioRef.current.src = audioUrl;
                 metaAudioRef.current.load();
 
                 metaAudioRef.current.onloadedmetadata = () => {
                     setDuration(metaAudioRef.current!.duration);
                 };
 
-
-                // 🔥 duration만 로드하지 말고 currentTrack도 설정해야 함
+                // ✅ 재생은 안 하고, 상태만 맞춤
                 setCurrentTrack({
                     id: detailData.id,
                     title: detailData.title,
                     prompt: detailData.prompt,
-                    audioUrl: detailData.audioUrl,
+                    audioUrl: audioUrl,
                     created_at: detailData.created_at,
                     is_favorite: detailData.is_favorite,
                     session_id: detailData.session_id,
@@ -359,6 +361,7 @@ export default function MusicPlaylistPage() {
             setDetailLoadingId(null);
         }
     };
+
 
 
 
