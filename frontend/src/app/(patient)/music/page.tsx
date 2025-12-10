@@ -308,7 +308,9 @@ export default function MusicPlaylistPage() {
             setPlaylist(updateState); // 롤백
         }
     };
-
+    const normalizeAudioUrl = (url: string) =>
+            url.startsWith('http') ? url : `${API_URL}${url}`;
+    
     const handleToggleDetails = async (trackId: number | string) => {
         if (expandedTrackId === trackId) {
             setExpandedTrackId(null);
@@ -325,13 +327,15 @@ export default function MusicPlaylistPage() {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const detailData: MusicTrackDetail = await res.json();
+            
 
             setTrackDetail(detailData);
             setExpandedTrackId(trackId);
 
             // ✅ 오직 길이(metadata)만 로드
             if (metaAudioRef.current && detailData.audioUrl) {
-                metaAudioRef.current.src = detailData.audioUrl;
+                const fullUrl = normalizeAudioUrl(detailData.audioUrl);
+                metaAudioRef.current.src = fullUrl;
                 metaAudioRef.current.load();
                 metaAudioRef.current.onloadedmetadata = () => {
                     setDuration(metaAudioRef.current!.duration);
@@ -473,7 +477,7 @@ export default function MusicPlaylistPage() {
                                         ) : (
                                             <div className="space-y-5">
                                                 {/* 플레이어 (기존 유지) */}
-                                                {(currentTrack?.id === track.id || !currentTrack) && (
+                                                {expandedTrackId === track.id && (
                                                     <div className="p-4 bg-gray-100 rounded-lg border">
                                                         <div className="flex items-center gap-4">
                                                             <span className="text-xs font-mono text-gray-600">{formatTime(currentTime)}</span>
