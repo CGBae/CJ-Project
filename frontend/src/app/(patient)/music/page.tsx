@@ -471,24 +471,23 @@ export default function MusicPlaylistPage() {
 
                                 {/* 💡 [핵심] 상세 정보 패널 (접수 내용 & 채팅 기록 복구) */}
                                 {!isSelectionMode && expandedTrackId === track.id && (
-                                    <div className="border-t border-gray-200 bg-white p-6 animate-in slide-in-from-top-2 duration-200 rounded-b-xl mb-4 -mt-2">
+                                    <div className="border-t border-gray-100 bg-gray-50/50 p-5 animate-in slide-in-from-top-2 duration-200 rounded-b-lg mb-3 -mt-2">
                                         {detailLoadingId === String(track.id) ? (
-                                            <div className="flex justify-center py-8">
+                                            <div className="flex justify-center py-4">
                                                 <Loader2 className="w-6 h-6 animate-spin text-indigo-400" />
                                             </div>
                                         ) : !panelTrack ? (
-                                            <div className="text-center text-red-500 text-sm py-6">
+                                            <div className="text-center text-red-500 text-sm">
                                                 정보를 불러오지 못했습니다.
                                             </div>
                                         ) : (
-                                            <div className="space-y-6">
-                                                {/* 플레이어 (디자인만 수정) */}
+                                            <div className="space-y-5">
+                                                {/* 플레이어 (기존 유지) */}
                                                 {panelTrack && panelTrack.id === track.id && (
-                                                    <div className="rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white p-4 shadow-sm space-y-3">
-
+                                                    <div className="p-4 rounded-xl border border-indigo-100 bg-white shadow-sm">
                                                         {/* 타임라인 */}
                                                         <div className="flex items-center gap-3">
-                                                            <span className="text-xs font-mono text-indigo-700 w-10 text-right">
+                                                            <span className="text-xs font-mono text-indigo-600 w-10 text-right">
                                                                 {formatTime(
                                                                     currentTrack?.id === panelTrack.id ? currentTime : 0
                                                                 )}
@@ -502,87 +501,48 @@ export default function MusicPlaylistPage() {
                                                                     currentTrack?.id === panelTrack.id ? currentTime : 0
                                                                 }
                                                                 disabled={currentTrack?.id !== panelTrack.id}
-                                                                className="flex-1 accent-indigo-600 h-1.5 rounded-full bg-indigo-200 disabled:opacity-40"
+                                                                className="
+                                                                            flex-1 h-1.5 rounded-full
+                                                                            bg-indigo-100 accent-indigo-600
+                                                                            disabled:opacity-40
+                                                                        "
                                                             />
 
-                                                            <span className="text-xs font-mono text-gray-600 w-10">
+                                                            <span className="text-xs font-mono text-gray-500 w-10">
                                                                 {formatTime(duration)}
                                                             </span>
                                                         </div>
 
-                                                        {/* 컨트롤 영역 */}
-                                                        <div className="flex items-center justify-between">
-                                                            <div className="flex items-center gap-3">
-                                                                {/* 🔊 볼륨 */}
-                                                                <Volume1 className="w-4 h-4 text-gray-500" />
-                                                                <input
-                                                                    type="range"
-                                                                    min="0"
-                                                                    max="1"
-                                                                    step="0.01"
-                                                                    value={volume}
-                                                                    onChange={(e) => setVolume(Number(e.target.value))}
-                                                                    className="w-24 accent-indigo-600"
-                                                                />
-                                                            </div>
-
-                                                            <div className="flex items-center gap-2">
-                                                                {/* 🔁 반복 */}
-                                                                <button
-                                                                    onClick={() => setIsLooping(!isLooping)}
-                                                                    className={`p-2 rounded-full transition
-                                                                        ${isLooping
-                                                                            ? 'bg-indigo-600 text-white'
-                                                                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                                                                        }`}
-                                                                >
-                                                                    <RefreshCcw className="w-4 h-4" />
-                                                                </button>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* 상태 텍스트 */}
-                                                        <div className="text-center text-xs font-medium">
+                                                        {/* 상태 표시 */}
+                                                        <p className="text-xs font-medium mt-3 text-center">
                                                             {currentTrack?.id === panelTrack.id ? (
                                                                 <span className="text-indigo-600">● 재생 중</span>
                                                             ) : (
                                                                 <span className="text-gray-400">재생 안됨</span>
                                                             )}
-                                                        </div>
+                                                        </p>
                                                     </div>
-
                                                 )}
 
-                                                {/* (1) 접수 내용 */}
-                                                {panelTrack.intake_data && (
-                                                    <PatientIntakeView intake={panelTrack.intake_data} />
-                                                )}
+
+
+                                                {/* 💡 (1) 접수 내용 (AI 상담) 복구 */}
+                                                {panelTrack.intake_data && <PatientIntakeView intake={panelTrack.intake_data} />}
 
                                                 {/* (2) 가사 */}
                                                 {panelTrack.lyrics && (
-                                                    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-                                                        <h4 className="font-semibold text-gray-800 flex items-center mb-2">
-                                                            <FileText className="w-4 h-4 mr-2 text-indigo-600" />
-                                                            가사
-                                                        </h4>
-                                                        <pre className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                                                            {panelTrack.lyrics}
-                                                        </pre>
+                                                    <div>
+                                                        <h4 className="font-semibold text-gray-800 flex items-center"><FileText className="w-4 h-4 mr-2 text-indigo-600" />가사</h4>
+                                                        <pre className="mt-2 p-3 bg-gray-50 rounded-md text-sm text-gray-600 whitespace-pre-wrap font-sans border">{panelTrack.lyrics}</pre>
                                                     </div>
                                                 )}
 
-                                                {/* (3) 채팅 기록 */}
-                                                {panelTrack.chat_history &&
-                                                    panelTrack.chat_history.length > 0 && (
-                                                        <ChatHistoryView
-                                                            chatHistory={panelTrack.chat_history}
-                                                        />
-                                                    )}
+                                                {/* 💡 (3) 채팅 요약 복구 */}
+                                                {panelTrack.chat_history && panelTrack.chat_history.length > 0 && <ChatHistoryView chatHistory={panelTrack.chat_history} />}
                                             </div>
                                         )}
                                     </div>
                                 )}
-
                             </Fragment>
                         ))}
                     </ul>
