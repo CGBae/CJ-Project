@@ -336,6 +336,7 @@ export default function MusicPlaylistPage() {
                     ? detailData.audioUrl
                     : `${API_URL}${detailData.audioUrl}`;
 
+                // ✅ metadata용 (길이 계산용)
                 metaAudioRef.current.src = audioUrl;
                 metaAudioRef.current.load();
 
@@ -343,9 +344,14 @@ export default function MusicPlaylistPage() {
                     setDuration(metaAudioRef.current!.duration);
                 };
 
-                // 🔥 이 부분이 재생 문제 해결의 핵심
-                if (audioRef.current) {
-                    audioRef.current.src = audioUrl;   // <- 요거 추가!
+                // ✅ 현재 재생 중이 아닐 때만 audioRef 건드리기
+                const isCurrentlyPlayingThis =
+                    audioRef.current &&
+                    !audioRef.current.paused &&
+                    currentTrack?.id === detailData.id;
+
+                if (audioRef.current && !isCurrentlyPlayingThis) {
+                    audioRef.current.src = audioUrl;
                     audioRef.current.load();
                 }
 
@@ -353,7 +359,7 @@ export default function MusicPlaylistPage() {
                     id: detailData.id,
                     title: detailData.title,
                     prompt: detailData.prompt,
-                    audioUrl: audioUrl,
+                    audioUrl,
                     created_at: detailData.created_at,
                     is_favorite: detailData.is_favorite,
                     session_id: detailData.session_id,
