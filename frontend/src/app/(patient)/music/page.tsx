@@ -265,19 +265,17 @@ export default function MusicPlaylistPage() {
         const audio = audioRef.current;
         if (!audio) return;
 
+        // ✅ 같은 곡이면 토글
         if (currentTrack?.id === track.id) {
-            if (isPlaying) {
-                audio.pause();
-            } else {
-                audio.play();
-            }
+            if (isPlaying) audio.pause();
+            else await audio.play();
             return;
         }
 
         try {
             audio.pause();
             audio.src = track.audioUrl;
-            setCurrentTrack(track);
+            setCurrentTrack(track);   // ✅ 여기서만 currentTrack 변경
             setCurrentTime(0);
             await audio.play();
         } catch (err) {
@@ -285,6 +283,7 @@ export default function MusicPlaylistPage() {
             setCurrentTrack(null);
         }
     };
+
 
     const handleToggleFavorite = async (e: React.MouseEvent, trackId: number | string) => {
         e.stopPropagation();
@@ -325,53 +324,24 @@ export default function MusicPlaylistPage() {
             const res = await fetch(`${API_URL}/music/track/${trackId}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
-
             const detailData: MusicTrackDetail = await res.json();
 
             setTrackDetail(detailData);
             setExpandedTrackId(trackId);
 
+            // ✅ 오직 길이(metadata)만 로드
             if (metaAudioRef.current && detailData.audioUrl) {
-                const audioUrl = detailData.audioUrl.startsWith('http')
-                    ? detailData.audioUrl
-                    : `${API_URL}${detailData.audioUrl}`;
-
-                // ✅ metadata용 (길이 계산용)
-                metaAudioRef.current.src = audioUrl;
+                metaAudioRef.current.src = detailData.audioUrl;
                 metaAudioRef.current.load();
-
                 metaAudioRef.current.onloadedmetadata = () => {
                     setDuration(metaAudioRef.current!.duration);
                 };
-
-                // ✅ 현재 재생 중이 아닐 때만 audioRef 건드리기
-                const isCurrentlyPlayingThis =
-                    audioRef.current &&
-                    !audioRef.current.paused &&
-                    currentTrack?.id === detailData.id;
-
-                if (audioRef.current && !isCurrentlyPlayingThis) {
-                    audioRef.current.src = audioUrl;
-                    audioRef.current.load();
-                }
-
-                setCurrentTrack({
-                    id: detailData.id,
-                    title: detailData.title,
-                    prompt: detailData.prompt,
-                    audioUrl,
-                    created_at: detailData.created_at,
-                    is_favorite: detailData.is_favorite,
-                    session_id: detailData.session_id,
-                    initiator_type: detailData.initiator_type,
-                    has_dialog: detailData.has_dialog,
-                });
             }
-
         } finally {
             setDetailLoadingId(null);
         }
     };
+
 
 
 
