@@ -245,6 +245,53 @@ export default function PatientDetailPage() {
         };
     }, []);
 
+    useEffect(() => {
+        if (!isAuthed) return;
+
+        const fetchData = async () => {
+            setLoading(true);
+            setError(null);
+
+            const token = localStorage.getItem('accessToken');
+            if (!token) {
+                setError('인증 토큰이 없습니다.');
+                setLoading(false);
+                return;
+            }
+
+            try {
+                const [profileRes, musicRes] = await Promise.all([
+                    fetch(`${API_URL}/therapist/patient/${patientId}`, {
+                        headers: { Authorization: `Bearer ${token}` }
+                    }),
+                    fetch(`${API_URL}/therapist/patient/${patientId}/music`, {
+                        headers: { Authorization: `Bearer ${token}` }
+                    })
+                ]);
+
+                if (!profileRes.ok) throw new Error('환자 정보 로딩 실패');
+                if (!musicRes.ok) throw new Error('음악 목록 로딩 실패');
+
+                setPatient(await profileRes.json());
+
+                const musicData: MusicTrackDetail[] = await musicRes.json();
+                setMusic(musicData);
+
+            } catch (err: unknown) {
+                if (err instanceof Error) {
+                    setError(err.message);
+                } else {
+                    setError('데이터 로딩 오류');
+                }
+            } finally {
+                setLoading(false); // ✅ 이게 없어서 무한로딩이었던 것
+            }
+        };
+
+        fetchData();
+    }, [patientId, isAuthed]);
+
+
 
 
     const handlePlay = (e: React.MouseEvent, track: MusicTrackDetail) => {
