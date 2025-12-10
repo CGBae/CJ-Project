@@ -483,23 +483,25 @@ export default function MusicPlaylistPage() {
                                         ) : (
                                             <div className="space-y-5">
                                                 {/* 플레이어 (기존 유지) */}
-                                                {panelTrack && panelTrack.id === track.id && (
+                                                {currentTrack && currentTrack.id === track.id && (
                                                     <div className="p-4 bg-gray-100 rounded-lg border">
+                                                        {/* 타임라인 */}
                                                         <div className="flex items-center gap-4">
                                                             <span className="text-xs font-mono text-gray-600">
-                                                                {formatTime(
-                                                                    currentTrack?.id === panelTrack.id ? currentTime : 0
-                                                                )}
+                                                                {formatTime(currentTime)}
                                                             </span>
 
                                                             <input
                                                                 type="range"
                                                                 min="0"
                                                                 max={duration || 0}
-                                                                value={
-                                                                    currentTrack?.id === panelTrack.id ? currentTime : 0
-                                                                }
-                                                                disabled={currentTrack?.id !== panelTrack.id}
+                                                                value={currentTime}
+                                                                onChange={(e) => {
+                                                                    const t = Number(e.target.value);
+                                                                    setCurrentTime(t);
+                                                                    if (audioRef.current) audioRef.current.currentTime = t;
+                                                                }}
+                                                                className="flex-1 h-1.5 bg-gray-300 rounded-full appearance-none cursor-pointer accent-indigo-600"
                                                             />
 
                                                             <span className="text-xs font-mono text-gray-600">
@@ -507,11 +509,62 @@ export default function MusicPlaylistPage() {
                                                             </span>
                                                         </div>
 
-                                                        <p className="text-xs text-gray-500 mt-2">
-                                                            {currentTrack?.id === panelTrack.id
-                                                                ? '재생 중'
-                                                                : '재생 안됨'}
-                                                        </p>
+                                                        {/* 컨트롤 */}
+                                                        <div className="flex items-center justify-center gap-4 mt-3">
+                                                            {/* 재생 / 일시정지 */}
+                                                            <button
+                                                                onClick={() => {
+                                                                    if (!audioRef.current) return;
+                                                                    if (isPlaying) audioRef.current.pause();
+                                                                    else audioRef.current.play();
+                                                                }}
+                                                                className="p-2 rounded-full bg-indigo-600 text-white hover:bg-indigo-700"
+                                                            >
+                                                                {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+                                                            </button>
+
+                                                            {/* 볼륨 */}
+                                                            <button
+                                                                onClick={() => {
+                                                                    const v = volume > 0 ? 0 : 1;
+                                                                    setVolume(v);
+                                                                    if (audioRef.current) audioRef.current.volume = v;
+                                                                }}
+                                                            >
+                                                                {volume === 0 ? (
+                                                                    <VolumeX className="w-5 h-5 text-gray-600" />
+                                                                ) : (
+                                                                    <Volume1 className="w-5 h-5 text-gray-600" />
+                                                                )}
+                                                            </button>
+
+                                                            <input
+                                                                type="range"
+                                                                min="0"
+                                                                max="1"
+                                                                step="0.1"
+                                                                value={volume}
+                                                                onChange={(e) => {
+                                                                    const v = Number(e.target.value);
+                                                                    setVolume(v);
+                                                                    if (audioRef.current) audioRef.current.volume = v;
+                                                                }}
+                                                                className="w-20 h-1.5 bg-gray-300 rounded-full appearance-none cursor-pointer accent-indigo-600"
+                                                            />
+
+                                                            {/* 루프 */}
+                                                            <button
+                                                                onClick={() => {
+                                                                    const l = !isLooping;
+                                                                    setIsLooping(l);
+                                                                    if (audioRef.current) audioRef.current.loop = l;
+                                                                }}
+                                                                className={`p-2 rounded-full ${isLooping ? 'bg-indigo-100 text-indigo-600' : 'text-gray-500'
+                                                                    }`}
+                                                            >
+                                                                <RefreshCcw className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 )}
 
