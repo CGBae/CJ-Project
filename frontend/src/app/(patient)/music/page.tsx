@@ -331,7 +331,6 @@ export default function MusicPlaylistPage() {
             setTrackDetail(detailData);
             setExpandedTrackId(trackId);
 
-            // ✅ 핵심: audioUrl 보정
             if (metaAudioRef.current && detailData.audioUrl) {
                 const audioUrl = detailData.audioUrl.startsWith('http')
                     ? detailData.audioUrl
@@ -344,7 +343,12 @@ export default function MusicPlaylistPage() {
                     setDuration(metaAudioRef.current!.duration);
                 };
 
-                // ✅ 재생은 안 하고, 상태만 맞춤
+                // 🔥 이 부분이 재생 문제 해결의 핵심
+                if (audioRef.current) {
+                    audioRef.current.src = audioUrl;   // <- 요거 추가!
+                    audioRef.current.load();
+                }
+
                 setCurrentTrack({
                     id: detailData.id,
                     title: detailData.title,
@@ -357,6 +361,7 @@ export default function MusicPlaylistPage() {
                     has_dialog: detailData.has_dialog,
                 });
             }
+
         } finally {
             setDetailLoadingId(null);
         }
