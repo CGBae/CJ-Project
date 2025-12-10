@@ -471,121 +471,83 @@ export default function MusicPlaylistPage() {
 
                                 {/* 💡 [핵심] 상세 정보 패널 (접수 내용 & 채팅 기록 복구) */}
                                 {!isSelectionMode && expandedTrackId === track.id && (
-                                    <div className="border-t border-gray-100 bg-gray-50/50 p-5 animate-in slide-in-from-top-2 duration-200 rounded-b-lg mb-3 -mt-2">
+                                    <div className="border-t border-gray-200 bg-white p-6 animate-in slide-in-from-top-2 duration-200 rounded-b-xl mb-4 -mt-2">
                                         {detailLoadingId === String(track.id) ? (
-                                            <div className="flex justify-center py-4">
+                                            <div className="flex justify-center py-8">
                                                 <Loader2 className="w-6 h-6 animate-spin text-indigo-400" />
                                             </div>
                                         ) : !panelTrack ? (
-                                            <div className="text-center text-red-500 text-sm">
+                                            <div className="text-center text-red-500 text-sm py-6">
                                                 정보를 불러오지 못했습니다.
                                             </div>
                                         ) : (
-                                            <div className="space-y-5">
-                                                {/* 플레이어 (기존 유지) */}
-                                                {currentTrack && currentTrack.id === track.id && (
-                                                    <div className="p-4 bg-gray-100 rounded-lg border">
-                                                        {/* 타임라인 */}
+                                            <div className="space-y-6">
+                                                {/* 플레이어 (디자인만 수정) */}
+                                                {panelTrack && panelTrack.id === track.id && (
+                                                    <div className="rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white p-4 shadow-sm">
                                                         <div className="flex items-center gap-4">
-                                                            <span className="text-xs font-mono text-gray-600">
-                                                                {formatTime(currentTime)}
+                                                            <span className="text-xs font-mono text-indigo-700 w-10 text-right">
+                                                                {formatTime(
+                                                                    currentTrack?.id === panelTrack.id ? currentTime : 0
+                                                                )}
                                                             </span>
 
                                                             <input
                                                                 type="range"
                                                                 min="0"
                                                                 max={duration || 0}
-                                                                value={currentTime}
-                                                                onChange={(e) => {
-                                                                    const t = Number(e.target.value);
-                                                                    setCurrentTime(t);
-                                                                    if (audioRef.current) audioRef.current.currentTime = t;
-                                                                }}
-                                                                className="flex-1 h-1.5 bg-gray-300 rounded-full appearance-none cursor-pointer accent-indigo-600"
+                                                                value={
+                                                                    currentTrack?.id === panelTrack.id ? currentTime : 0
+                                                                }
+                                                                disabled={currentTrack?.id !== panelTrack.id}
+                                                                className="flex-1 accent-indigo-600 h-1.5 rounded-full bg-indigo-200 disabled:opacity-40"
                                                             />
 
-                                                            <span className="text-xs font-mono text-gray-600">
+                                                            <span className="text-xs font-mono text-gray-600 w-10">
                                                                 {formatTime(duration)}
                                                             </span>
                                                         </div>
 
-                                                        {/* 컨트롤 */}
-                                                        <div className="flex items-center justify-center gap-4 mt-3">
-                                                            {/* 재생 / 일시정지 */}
-                                                            <button
-                                                                onClick={() => {
-                                                                    if (!audioRef.current) return;
-                                                                    if (isPlaying) audioRef.current.pause();
-                                                                    else audioRef.current.play();
-                                                                }}
-                                                                className="p-2 rounded-full bg-indigo-600 text-white hover:bg-indigo-700"
-                                                            >
-                                                                {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
-                                                            </button>
-
-                                                            {/* 볼륨 */}
-                                                            <button
-                                                                onClick={() => {
-                                                                    const v = volume > 0 ? 0 : 1;
-                                                                    setVolume(v);
-                                                                    if (audioRef.current) audioRef.current.volume = v;
-                                                                }}
-                                                            >
-                                                                {volume === 0 ? (
-                                                                    <VolumeX className="w-5 h-5 text-gray-600" />
-                                                                ) : (
-                                                                    <Volume1 className="w-5 h-5 text-gray-600" />
-                                                                )}
-                                                            </button>
-
-                                                            <input
-                                                                type="range"
-                                                                min="0"
-                                                                max="1"
-                                                                step="0.1"
-                                                                value={volume}
-                                                                onChange={(e) => {
-                                                                    const v = Number(e.target.value);
-                                                                    setVolume(v);
-                                                                    if (audioRef.current) audioRef.current.volume = v;
-                                                                }}
-                                                                className="w-20 h-1.5 bg-gray-300 rounded-full appearance-none cursor-pointer accent-indigo-600"
-                                                            />
-
-                                                            {/* 루프 */}
-                                                            <button
-                                                                onClick={() => {
-                                                                    const l = !isLooping;
-                                                                    setIsLooping(l);
-                                                                    if (audioRef.current) audioRef.current.loop = l;
-                                                                }}
-                                                                className={`p-2 rounded-full ${isLooping ? 'bg-indigo-100 text-indigo-600' : 'text-gray-500'
-                                                                    }`}
-                                                            >
-                                                                <RefreshCcw className="w-4 h-4" />
-                                                            </button>
+                                                        <div className="mt-2 text-center text-xs font-medium">
+                                                            {currentTrack?.id === panelTrack.id ? (
+                                                                <span className="text-indigo-600">● 재생 중</span>
+                                                            ) : (
+                                                                <span className="text-gray-400">재생 안됨</span>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 )}
 
-
-                                                {/* 💡 (1) 접수 내용 (AI 상담) 복구 */}
-                                                {panelTrack.intake_data && <PatientIntakeView intake={panelTrack.intake_data} />}
+                                                {/* (1) 접수 내용 */}
+                                                {panelTrack.intake_data && (
+                                                    <PatientIntakeView intake={panelTrack.intake_data} />
+                                                )}
 
                                                 {/* (2) 가사 */}
                                                 {panelTrack.lyrics && (
-                                                    <div>
-                                                        <h4 className="font-semibold text-gray-800 flex items-center"><FileText className="w-4 h-4 mr-2 text-indigo-600" />가사</h4>
-                                                        <pre className="mt-2 p-3 bg-gray-50 rounded-md text-sm text-gray-600 whitespace-pre-wrap font-sans border">{panelTrack.lyrics}</pre>
+                                                    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+                                                        <h4 className="font-semibold text-gray-800 flex items-center mb-2">
+                                                            <FileText className="w-4 h-4 mr-2 text-indigo-600" />
+                                                            가사
+                                                        </h4>
+                                                        <pre className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                                                            {panelTrack.lyrics}
+                                                        </pre>
                                                     </div>
                                                 )}
 
-                                                {/* 💡 (3) 채팅 요약 복구 */}
-                                                {panelTrack.chat_history && panelTrack.chat_history.length > 0 && <ChatHistoryView chatHistory={panelTrack.chat_history} />}
+                                                {/* (3) 채팅 기록 */}
+                                                {panelTrack.chat_history &&
+                                                    panelTrack.chat_history.length > 0 && (
+                                                        <ChatHistoryView
+                                                            chatHistory={panelTrack.chat_history}
+                                                        />
+                                                    )}
                                             </div>
                                         )}
                                     </div>
                                 )}
+
                             </Fragment>
                         ))}
                     </ul>
