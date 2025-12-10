@@ -186,16 +186,14 @@ const API_URL = getApiUrl();
 
 function resolveAudioUrl(path?: string) {
     if (!path) return '';
+
+    // 이미 절대경로면 그대로
     if (path.startsWith('http')) return path;
 
-    const base = process.env.NEXT_PUBLIC_API_URL;
-    if (!base) {
-        console.error('NEXT_PUBLIC_API_URL is not defined');
-        return '';
-    }
-
-    return `${base}${path}`;
+    // 서버는 항상 8000에서 audio 제공
+    return `http://${window.location.hostname}:8000${path}`;
 }
+
 
 
 export default function PatientDetailPage() {
@@ -230,92 +228,28 @@ export default function PatientDetailPage() {
 
 
 
-    // 💡 8. [수정] useEffect (API 3개 호출)
     useEffect(() => {
-        if (typeof window !== "undefined" && !audioRef.current) {
+        if (!audioRef.current) {
             const audio = new Audio();
-            // 💡 [수정] 재생 종료 시 (루프가 아닐 때)
-            audio.onended = () => {
-                if (audioRef.current && !audioRef.current.loop) {
-                    setCurrentTrackId(null);
-                }
-            };
+            audio.preload = 'auto';   // ✅ metadata 미리 로드
+            audio.onended = () => setCurrentTrackId(null);
             audioRef.current = audio;
         }
 
-        if (!isAuthed) {
-            if (!localStorage.getItem('accessToken')) {
-                router.push('/login?next=/counselor');
-            }
-            return;
-        }
-
-        const fetchData = async () => {
-            setLoading(true);
-            setError(null);
-            const token = localStorage.getItem('accessToken');
-            if (!token) {
-                setError("인증 토큰이 없습니다.");
-                setLoading(false);
-                return;
-            }
-
-            try {
-                // 💡 [수정] 'sessions' API는 'music' API가 반환하므로 제거
-                const [profileRes, musicRes] = await Promise.all([
-                    fetch(`${API_URL}/therapist/patient/${patientId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-                    // 💡 [수정] /music API가 상세정보까지 모두 가져옴
-                    fetch(`${API_URL}/therapist/patient/${patientId}/music`, { headers: { 'Authorization': `Bearer ${token}` } })
-                ]);
-
-                // (에러 처리 - 변경 없음)
-                if (profileRes.status === 401 || musicRes.status === 401) throw new Error('인증 실패. 다시 로그인해주세요.');
-                if (profileRes.status === 403 || musicRes.status === 403) throw new Error('이 환자에 대한 접근 권한이 없습니다.');
-
-                // (데이터 set)
-                if (!profileRes.ok) throw new Error(`환자 정보 로딩 실패 (${profileRes.status})`);
-                setPatient(await profileRes.json());
-
-
-
-                if (!musicRes.ok) throw new Error(`음악 목록 로딩 실패 (${musicRes.status})`);
-                // 💡 [수정] music state가 이제 MusicTrackDetail[] 타입을 가짐
-                const musicData: MusicTrackDetail[] = await musicRes.json();
-                setMusic(musicData.map(t => ({
-                    ...t,
-                    audioUrl: resolveAudioUrl(t.track_url || t.audioUrl),
-                })));
-
-
-
-            } catch (err: unknown) {
-                // (catch 블록 - 변경 없음)
-                const errorMessage = err instanceof Error ? err.message : '데이터 로딩 오류';
-                setError(errorMessage);
-                if (errorMessage.includes('인증 실패')) {
-                    localStorage.removeItem('accessToken');
-                    router.push('/login?next=/counselor');
-                }
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchData();
-
-        // (cleanup 함수 - 변경 없음)
         return () => {
             if (audioRef.current) {
                 audioRef.current.pause();
-                audioRef.current.onended = null;
+                audioRef.current.src = '';
                 audioRef.current = null;
             }
         };
-    }, [patientId, isAuthed, router]);
+    }, []);
 
-    // 💡 9. [수정] handlePlay (async/await 적용)
+
+
     const handlePlay = (e: React.MouseEvent, track: MusicTrackDetail) => {
         e.stopPropagation();
+
         const audio = audioRef.current;
         if (!audio) return;
 
@@ -326,17 +260,23 @@ export default function PatientDetailPage() {
         }
 
         const src = resolveAudioUrl(track.track_url || track.audioUrl);
-        if (!src) return;
+        if (!src) {
+            console.error('audio src missing', track);
+            return;
+        }
 
         audio.pause();
         audio.src = src;
+        audio.load();                   // ✅ 필수
         setCurrentTrackId(track.id);
 
         audio.play().catch(err => {
-            console.error('audio play error:', err);
+            console.error('audio play failed', err, src);
             setCurrentTrackId(null);
         });
     };
+
+
 
     const handleToggleDetails = async (trackId: number | string) => {
         if (expandedTrackId === trackId) {
