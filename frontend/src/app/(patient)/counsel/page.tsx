@@ -254,7 +254,7 @@ function CounselChat() {
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
                     session_id: Number(sessionId),
-                    music_length_ms: 60000,
+                    music_length_ms: 180000,
                     force_instrumental: true
                 }),
             });
